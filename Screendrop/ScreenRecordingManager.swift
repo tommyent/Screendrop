@@ -579,7 +579,7 @@ final class ScreenRecordingManager {
     /// missing grant otherwise fails with a silent -3801. Trigger the system
     /// prompt on first use and route the user to System Settings after that
     /// (macOS only shows the prompt once per app).
-    private static func ensureScreenCapturePermission() -> Bool {
+    static func ensureScreenCapturePermission() -> Bool {
         if CGPreflightScreenCaptureAccess() {
             return true
         }
@@ -780,7 +780,7 @@ final class ScreenRecordingManager {
         )
     }
 
-    private static func sourceRect(
+    static func sourceRect(
         forAppKitSelectionRect selectionRect: CGRect,
         screenFrame: CGRect?,
         contentRect: CGRect
