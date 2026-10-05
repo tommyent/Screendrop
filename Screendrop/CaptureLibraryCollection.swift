@@ -231,9 +231,15 @@ final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
         minimumLineSpacing = displayLayout == .grid ? 16 : 6
         if displayLayout == .grid {
             // Finder-style: cells keep one size and a wider window fits more
-            // columns, with the leftover space spread between them.
+            // columns. Rows start at the left with fixed gaps; the leftover
+            // width goes to the right margin rather than between the cells,
+            // where two large cards would sit far apart.
             let cellWidth = min(cardWidth, width - 32)
             itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 0.625) + 62)
+            let columns = max(1, floor((width - 32 + 16) / (cellWidth + 16)))
+            let rowWidth = columns * cellWidth + (columns - 1) * 16
+            // A point of slack so rounding can't push the last column to the next row.
+            sectionInset.right = max(16, width - 16 - rowWidth - 1)
         } else {
             itemSize = CGSize(width: width - 32, height: 76)
         }
