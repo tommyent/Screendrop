@@ -131,8 +131,9 @@ final class CaptureCoordinator {
     /// No self-timer: the capture runs for as long as the user scrolls.
     @discardableResult
     private func performCaptureScrolling() async -> URL? {
-        guard let capture = await ScrollingCapturePresenter.shared.run(),
-              let url = ScreenshotManager.shared.writeCapture(capture.image, scale: capture.scale) else {
+        guard let capture = await ScrollingCapturePresenter.shared.run() else { return nil }
+        guard let url = ScreenshotManager.shared.writeCapture(capture.image, scale: capture.scale) else {
+            FailureAlert.present(message: "Scrolling capture couldn't be saved", error: CocoaError(.fileWriteUnknown))
             return nil
         }
         return finishCapture(url: url, displayID: capture.displayID)

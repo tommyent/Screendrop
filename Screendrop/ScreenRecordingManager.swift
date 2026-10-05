@@ -147,6 +147,11 @@ final class ScreenRecordingManager {
 
     func startRecording(source: ScreenRecordingSource) {
         guard state == .idle else { return }
+        // A scrolling capture is using the region highlight.
+        guard !ScrollingCapturePresenter.shared.isRunning else {
+            NSSound.beep()
+            return
+        }
         guard Self.ensureScreenCapturePermission() else { return }
 
         let targetDisplayID = source.displayID ?? ActiveDisplayResolver.activeDisplayID(preferPointer: true) ?? CGMainDisplayID()

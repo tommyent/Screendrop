@@ -24,9 +24,9 @@ actor ScrollingCaptureStitcher {
         case unchanged
         /// New rows scrolled into view and were added.
         case appended
-        /// The frame couldn't be lined up: scrolled further than the region
-        /// between frames, the content repeats too evenly to tell how far it
-        /// moved, or it changed in place.
+        /// The frame couldn't be lined up, or would leave a gap: scrolled too
+        /// far between frames, the content repeats too evenly to tell how far
+        /// it moved, or it changed in place.
         case noMatch
     }
 
@@ -48,6 +48,12 @@ actor ScrollingCaptureStitcher {
     /// pixels. A wider run of line-like columns is two-tone content - a dense
     /// grid, say - and holds the very positions matching needs.
     private static let maximumChromeWidth = 6
+    /// The bottom quarter of the band is held back rather than appended, so a
+    /// floating button or chat bubble that sits there - covering the content
+    /// scrolling under it - isn't copied into every slice. That content is
+    /// taken from higher up the frame once it has scrolled clear, and the held
+    /// rows are added once, from the last frame, at the end.
+    private static let heldBackFraction = 4
     private static let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue
         | CGBitmapInfo.byteOrder32Little.rawValue
 
@@ -162,26 +168,32 @@ actor ScrollingCaptureStitcher {
         // overlapping: nothing new below the last accepted frame yet.
         guard shift > 0 else { return .unchanged }
 
-        // The rows that just scrolled up into the band. Everything above them
-        // was already appended from earlier frames.
+        // The rows that just scrolled up past the cut. Everything above them
+        // was already appended from earlier frames. A scroll past the whole
+        // band above the cut leaves a gap only the held-back rows of the last
+        // frame could fill - where an overlay may have covered them - so it's
+        // treated like any other lost frame: scrolling back picks it up again.
+        let cut = Self.cut(in: band)
+        let start = cut - shift
+        guard start >= band.lowerBound else { return .noMatch }
         let bytesPerRow = width * 4
         fixedEdges = edges
-        appended.append(contentsOf: pixels[((band.upperBound - shift) * bytesPerRow)..<(band.upperBound * bytesPerRow)])
+        appended.append(contentsOf: pixels[(start * bytesPerRow)..<(cut * bytesPerRow)])
         last = pixels
         lastColumns = columns
         stitchedHeight += shift
         return .appended
     }
 
-    /// The first frame down to its footer, every row appended since, then
-    /// the footer as it looks in the last accepted frame.
+    /// The first frame down to the cut, every row appended since, then the
+    /// held-back rows and the footer as they look in the last accepted frame.
     func makeImage() -> CGImage? {
         let bytesPerRow = width * 4
-        let footerStart = (height - (fixedEdges?.bottom ?? 0)) * bytesPerRow
+        let cutStart = (fixedEdges.map { Self.cut(in: $0.top..<(height - $0.bottom)) } ?? height) * bytesPerRow
         var data = Data(capacity: stitchedHeight * bytesPerRow)
-        data.append(contentsOf: first[0..<footerStart])
+        data.append(contentsOf: first[0..<cutStart])
         data.append(contentsOf: appended)
-        data.append(contentsOf: last[footerStart...])
+        data.append(contentsOf: last[cutStart...])
 
         guard let provider = CGDataProvider(data: data as CFData) else { return nil }
         return CGImage(
@@ -197,6 +209,11 @@ actor ScrollingCaptureStitcher {
             shouldInterpolate: false,
             intent: .defaultIntent
         )
+    }
+
+    /// The row the band is appended up to; the rows below it are held back.
+    private static func cut(in band: Range<Int>) -> Int {
+        band.upperBound - band.count / heldBackFraction
     }
 
     // MARK: - Matching

@@ -47,6 +47,7 @@ final class ScrollingCapturePresenter {
 
     @ObservationIgnored private var outcome: Outcome?
     @ObservationIgnored private var isSelectingArea = false
+    @ObservationIgnored private var isCapturing = false
     @ObservationIgnored private var panel: NSPanel?
 
     private enum Outcome {
@@ -74,6 +75,7 @@ final class ScrollingCapturePresenter {
         }
         let pointerDisplayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
         guard let display = content.displays.first(where: { $0.displayID == pointerDisplayID }) ?? content.displays.first,
+              outcome == nil,
               let rect = await selectArea(on: display),
               outcome != .cancelled else {
             return nil
@@ -125,6 +127,8 @@ final class ScrollingCapturePresenter {
             return nil
         }
 
+        isCapturing = true
+        defer { isCapturing = false }
         // ponytail: a sample that fails is skipped silently; a display that
         // keeps failing leaves the height still until the user ends the session.
         while outcome == nil {
@@ -149,13 +153,14 @@ final class ScrollingCapturePresenter {
         return capped.map { Capture(image: $0, displayID: display.displayID, scale: scale) }
     }
 
-    /// Ends the session, keeping what was captured. While the region is
-    /// still being drawn there is nothing to keep, so it cancels instead.
+    /// Ends the session, keeping what was captured. Until frames are being
+    /// captured - the region still being drawn, or not yet on screen - there
+    /// is nothing to keep, so it cancels instead.
     func finish() {
-        if isSelectingArea {
-            cancel()
-        } else {
+        if isCapturing {
             outcome = outcome ?? .done
+        } else {
+            cancel()
         }
     }
 
