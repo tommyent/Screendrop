@@ -181,15 +181,23 @@ final class LibraryCollectionView: NSCollectionView {
 
 final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
     var displayLayout: CaptureLibraryLayout = .grid
+    /// The width the cells were last sized for.
+    private var preparedWidth: CGFloat?
+
+    private var availableWidth: CGFloat {
+        max(200, collectionView?.enclosingScrollView?.contentSize.width ?? 800)
+    }
 
     override func prepare() {
-        let width = max(200, collectionView?.enclosingScrollView?.contentSize.width ?? 800)
+        let width = availableWidth
+        preparedWidth = width
         sectionInset = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
         minimumInteritemSpacing = 16
         minimumLineSpacing = displayLayout == .grid ? 16 : 6
         if displayLayout == .grid {
-            let columns = min(3, max(1, floor((width - 16) / 236)))
-            let cellWidth = floor((width - 32 - (columns - 1) * 16) / columns)
+            // Finder-style: cells keep one size and a wider window fits more
+            // columns, with the leftover space spread between them.
+            let cellWidth = min(220, width - 32)
             itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 0.625) + 62)
         } else {
             itemSize = CGSize(width: width - 32, height: 76)
@@ -197,8 +205,20 @@ final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
         super.prepare()
     }
 
+    /// Compared with the width the cells were sized for, not the collection
+    /// view's own bounds: by the time a window resize asks, those already
+    /// have the new size.
     override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
-        newBounds.width != collectionView?.bounds.width
+        availableWidth != preparedWidth
+    }
+
+    /// The flow layout keeps the item sizes it measured, so a new `itemSize`
+    /// from `prepare()` only took effect on the next data reload, such as
+    /// switching to list and back.
+    override func invalidationContext(forBoundsChange newBounds: NSRect) -> NSCollectionViewLayoutInvalidationContext {
+        let context = super.invalidationContext(forBoundsChange: newBounds)
+        (context as? NSCollectionViewFlowLayoutInvalidationContext)?.invalidateFlowLayoutDelegateMetrics = true
+        return context
     }
 }
 
