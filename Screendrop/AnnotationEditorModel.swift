@@ -824,13 +824,23 @@ extension AnnotationEditorModel {
             return shape
         }
 
+        // Annotations the crop leaves entirely outside the image go with the
+        // part cut away; kept, they'd grow the canvas straight back out.
+        // Undoing the crop brings them back.
+        let cropped = AnnoDocument()
+        cropped.restore(AnnoDocument.Snapshot(shapes: moved, bindings: engine.document.bindings))
+        let image = Box(0, 0, Double(newImageSize.width), Double(newImageSize.height))
+        cropped.delete(Set(moved.compactMap { shape in
+            cropped.pageBounds(shape.id)?.collides(image) == false ? shape.id : nil
+        }))
+
         baseImageURL = result.url
         ownedCropURLs.insert(result.url)
         imageSize = newImageSize
         previewImage = makePreviewImage(from: result.url)
         previewCGImage = previewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         engine.viewport = AnnoViewport(imageFrame: engine.viewport.imageFrame, imageSize: imageSize)
-        engine.replaceDocument(shapes: moved, bindings: engine.document.bindings)
+        engine.replaceDocument(shapes: cropped.shapes, bindings: cropped.bindings)
 
         cropUndoStack.append(snapshot)
         cropRedoStack.removeAll()
