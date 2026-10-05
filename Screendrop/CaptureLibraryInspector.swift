@@ -297,8 +297,19 @@ struct CaptureLibraryInspector: View {
             sectionTitle("Tags")
             ForEach(tags, id: \.self) { tag in
                 HStack(spacing: 6) {
-                    Label(tag, systemImage: "tag")
+                    Label { Text(tag) } icon: { CaptureTagIcon(tag: tag) }
                     Spacer(minLength: 4)
+                    Menu {
+                        CaptureTagAppearanceMenu(tag: tag)
+                    } label: {
+                        Image(systemName: "paintpalette")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .foregroundStyle(.tertiary)
+                    .help("Color and icon for this tag, everywhere in the Library")
+                    .accessibilityLabel("Color and icon for tag \(tag)")
                     Button {
                         model.setTag(tag, applied: false)
                     } label: {
@@ -322,7 +333,9 @@ struct CaptureLibraryInspector: View {
                 if !suggestions.isEmpty {
                     Menu {
                         ForEach(suggestions, id: \.self) { tag in
-                            Button(tag) { model.setTag(tag, applied: true) }
+                            Button { model.setTag(tag, applied: true) } label: {
+                                Label(tag, systemImage: CaptureTagStyles.shared.symbol(for: tag))
+                            }
                         }
                     } label: {
                         Image(systemName: "tag")

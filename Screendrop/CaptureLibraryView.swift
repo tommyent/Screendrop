@@ -61,8 +61,9 @@ struct CaptureLibraryView: View {
                                         .foregroundStyle(.secondary)
                                         .font(.caption.monospacedDigit())
                                 }
-                            } icon: { Image(systemName: "tag") }
+                            } icon: { CaptureTagIcon(tag: tag) }
                             .tag(CaptureLibrarySidebarSelection.tag(tag))
+                            .contextMenu { CaptureTagAppearanceMenu(tag: tag) }
                         }
                     }
                 }
