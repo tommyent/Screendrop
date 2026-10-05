@@ -17,6 +17,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
     let items: [CaptureLibraryItem]
     let revision: Int
     let layout: CaptureLibraryLayout
+    let cardWidth: CGFloat
     @Binding var selection: Set<String>
     let isBusy: Bool
     let onAction: (CaptureLibraryAction) -> Void
@@ -62,6 +63,10 @@ struct CaptureLibraryCollection: NSViewRepresentable {
             (collection.collectionViewLayout as? LibraryCollectionLayout)?.displayLayout = layout
             collection.reloadData()
             collection.collectionViewLayout?.invalidateLayout()
+        }
+        if let flow = collection.collectionViewLayout as? LibraryCollectionLayout, flow.cardWidth != cardWidth {
+            flow.cardWidth = cardWidth
+            flow.invalidateLayout()
         }
         let paths = Set(selection.compactMap { id in
             coordinator.indices[id].map { IndexPath(item: $0, section: 0) }
@@ -181,6 +186,8 @@ final class LibraryCollectionView: NSCollectionView {
 
 final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
     var displayLayout: CaptureLibraryLayout = .grid
+    /// Grid cell width, from the Library's card size slider.
+    var cardWidth: CGFloat = 220
     /// The width the cells were last sized for.
     private var preparedWidth: CGFloat?
 
@@ -197,7 +204,7 @@ final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
         if displayLayout == .grid {
             // Finder-style: cells keep one size and a wider window fits more
             // columns, with the leftover space spread between them.
-            let cellWidth = min(220, width - 32)
+            let cellWidth = min(cardWidth, width - 32)
             itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 0.625) + 62)
         } else {
             itemSize = CGSize(width: width - 32, height: 76)
