@@ -5,6 +5,7 @@
 
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// Grows the canvas when annotations run past the screenshot's edge, as
 /// Shottr does, instead of cutting them off. The canvas then reaches a margin
@@ -24,6 +25,8 @@ nonisolated struct AnnotationCanvasExpansion: Equatable, Sendable {
     var isEmpty: Bool {
         left == 0 && top == 0 && right == 0 && bottom == 0
     }
+
+    init() {}
 
     /// The growth the shapes need on an image of `imageSize` pixels.
     init(shapes: [AnnoShape], imageSize: CGSize, pixelsPerPoint: CGFloat) {
@@ -48,6 +51,30 @@ nonisolated struct AnnotationCanvasExpansion: Equatable, Sendable {
         top = Int((max(0, -bounds.minY) + margin).rounded(.up))
         right = Int((max(0, bounds.maxX - imageSize.width) + margin).rounded(.up))
         bottom = Int((max(0, bounds.maxY - imageSize.height) + margin).rounded(.up))
+    }
+
+    /// Pixels per point from the DPI the image was saved with (144 for a
+    /// Retina capture), or 1 when it records none.
+    static func pixelsPerPoint(of source: CGImageSource) -> CGFloat {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let dpi = (properties?[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
+        return max(1, CGFloat(dpi) / 72)
+    }
+
+    func grownSize(_ imageSize: CGSize) -> CGSize {
+        CGSize(width: imageSize.width + CGFloat(left + right), height: imageSize.height + CGFloat(top + bottom))
+    }
+
+    /// Where the screenshot sits when the grown canvas is drawn in `frame`.
+    func imageFrame(in frame: CGRect, imageSize: CGSize) -> CGRect {
+        guard !isEmpty, imageSize.width > 0 else { return frame }
+        let scale = frame.width / grownSize(imageSize).width
+        return CGRect(
+            x: frame.minX + CGFloat(left) * scale,
+            y: frame.minY + CGFloat(top) * scale,
+            width: imageSize.width * scale,
+            height: imageSize.height * scale
+        )
     }
 
     /// The screenshot on the grown canvas, the new area filled with `fill`,

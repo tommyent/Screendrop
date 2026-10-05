@@ -185,12 +185,10 @@ enum AnnotationRenderer {
             throw CocoaError(.fileReadCorruptFile)
         }
 
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let dpi = (properties?[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue ?? 72
-        return (cgImage, max(1, CGFloat(dpi) / 72))
+        return (cgImage, AnnotationCanvasExpansion.pixelsPerPoint(of: source))
     }
 
-    nonisolated private static func exportColorSpace(for image: CGImage) -> CGColorSpace {
+    nonisolated static func exportColorSpace(for image: CGImage) -> CGColorSpace {
         // Fall back to device RGB unless the source space can actually back
         // the 8-bit premultiplied contexts the render pipeline creates -
         // otherwise an exotic embedded profile would fail the whole export.
