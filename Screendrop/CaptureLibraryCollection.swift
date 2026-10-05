@@ -348,7 +348,8 @@ struct LibraryCellContent: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(item.name), \(item.kindTitle), \(item.subtitle)")
+                .accessibilityLabel("\(item.name), \(item.kindTitle), \(item.subtitle)"
+                    + (item.tags.isEmpty ? "" : ", tags: \(item.tags.joined(separator: ", "))"))
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
             } else { Color.clear }
         }
@@ -376,6 +377,24 @@ struct LibraryCellContent: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
+            .overlay(alignment: .topLeading) {
+                if let tag = item.tags.first(where: { CaptureTagStyles.shared.color(for: $0) != nil }) ?? item.tags.first {
+                    // One small badge rather than a mark per tag, so small
+                    // cards keep room for their titles. The names are in the
+                    // tooltip, the inspector and the accessibility label.
+                    HStack(spacing: 3) {
+                        CaptureTagIcon(tag: tag)
+                        if item.tags.count > 1 {
+                            Text("\(item.tags.count)").foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 5).padding(.vertical, 3)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(6)
+                    .help(item.tags.joined(separator: ", "))
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if item.isVideo {
