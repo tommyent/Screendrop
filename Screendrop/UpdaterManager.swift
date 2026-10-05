@@ -38,21 +38,10 @@ final class UpdaterManager: NSObject, ObservableObject {
             .assign(to: &$canCheckForUpdates)
     }
 
-    func start() {
-        #if DEBUG
-        return
-        #else
-        controller.startUpdater()
-        #endif
-    }
+    /// This fork's personal builds never start Sparkle: the feed is upstream's,
+    /// and an upstream release would replace the build and drop the fork's
+    /// features. The fork is updated by rebuilding it instead.
+    func start() {}
 
-    func checkForUpdates() {
-        #if DEBUG
-        return
-        #else
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        controller.checkForUpdates(nil)
-        #endif
-    }
+    func checkForUpdates() {}
 }
