@@ -195,8 +195,9 @@ final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
         minimumInteritemSpacing = 16
         minimumLineSpacing = displayLayout == .grid ? 16 : 6
         if displayLayout == .grid {
-            let columns = min(3, max(1, floor((width - 16) / 236)))
-            let cellWidth = floor((width - 32 - (columns - 1) * 16) / columns)
+            // Finder-style: cells keep one size and a wider window fits more
+            // columns, with the leftover space spread between them.
+            let cellWidth = min(220, width - 32)
             itemSize = CGSize(width: cellWidth, height: floor(cellWidth * 0.625) + 62)
         } else {
             itemSize = CGSize(width: width - 32, height: 76)
