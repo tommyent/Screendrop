@@ -20,6 +20,8 @@ nonisolated struct RecordingProjectMetadata: Codable, Sendable, Equatable {
     /// draft, which is what makes "Delete and close" safe to offer.
     var savedAt: Date?
     var lastOpenedAt: Date?
+    /// Library tags. Optional so project files without them still decode.
+    var tags: [String]?
 
     init(
         version: Int? = RecordingProjectMetadata.currentVersion,

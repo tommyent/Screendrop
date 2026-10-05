@@ -27,6 +27,8 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
     var recordingSessionPath: String?
     /// A Library title, kept separate from the file name and editable sidecars.
     var displayName: String?
+    /// Library tags. Screendrop's own, not Finder tags.
+    var tags: [String] = []
 
     var recordingSession: RecordingSession? {
         guard let recordingSessionPath else { return nil }
@@ -63,6 +65,7 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
         hasEdits = try container.decodeIfPresent(Bool.self, forKey: .hasEdits) ?? false
         recordingSessionPath = try container.decodeIfPresent(String.self, forKey: .recordingSessionPath)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
     }
 
     init(
@@ -441,6 +444,17 @@ final class ScreenshotHistoryStore {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         items[index].displayName = trimmed.isEmpty ? nil : trimmed
         items[index].updatedAt = Date()
+        saveMetadata()
+    }
+
+    /// Adds `tag` to the items, or removes it, ignoring case. Leaves
+    /// `updatedAt` alone: tagging isn't an edit of the capture.
+    func setTag(_ tag: String, applied: Bool, ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        for index in items.indices where ids.contains(items[index].id) {
+            items[index].tags.removeAll { $0.caseInsensitiveCompare(tag) == .orderedSame }
+            if applied { items[index].tags.append(tag) }
+        }
         saveMetadata()
     }
 

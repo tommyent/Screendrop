@@ -13,9 +13,29 @@ struct CaptureLibraryView: View {
 
     private var activeFilter: CaptureLibraryFilter { model.filter ?? .all }
 
+    /// The sidebar picks either a kind of capture or a tag.
+    private var sidebarSelection: Binding<CaptureLibrarySidebarSelection?> {
+        Binding {
+            if let tag = model.tagFilter { return .tag(tag) }
+            return model.filter.map { .kind($0) }
+        } set: { selection in
+            switch selection {
+            case .tag(let tag):
+                model.filter = .all
+                model.tagFilter = tag
+            case .kind(let filter):
+                model.tagFilter = nil
+                model.filter = filter
+            case nil:
+                model.tagFilter = nil
+                model.filter = nil
+            }
+        }
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $model.filter) {
+            List(selection: sidebarSelection) {
                 Section("Library") {
                     ForEach(CaptureLibraryFilter.allCases) { filter in
                         Label {
@@ -27,7 +47,23 @@ struct CaptureLibraryView: View {
                                     .font(.caption.monospacedDigit())
                             }
                         } icon: { Image(systemName: filter.symbol) }
-                        .tag(filter)
+                        .tag(CaptureLibrarySidebarSelection.kind(filter))
+                    }
+                }
+                if !model.tags.isEmpty {
+                    Section("Tags") {
+                        ForEach(model.tags, id: \.self) { tag in
+                            Label {
+                                HStack {
+                                    Text(tag)
+                                    Spacer()
+                                    Text(model.tagCounts[tag] ?? 0, format: .number)
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption.monospacedDigit())
+                                }
+                            } icon: { Image(systemName: "tag") }
+                            .tag(CaptureLibrarySidebarSelection.tag(tag))
+                        }
                     }
                 }
             }
@@ -53,7 +89,7 @@ struct CaptureLibraryView: View {
                 statusBar
             }
             .modifier(LibraryDetailCorners(showsSidebar: columnVisibility != .detailOnly))
-            .navigationTitle(activeFilter.title)
+            .navigationTitle(model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
@@ -297,4 +333,9 @@ private struct LibraryDetailCorners: ViewModifier {
             content
         }
     }
+}
+
+enum CaptureLibrarySidebarSelection: Hashable {
+    case kind(CaptureLibraryFilter)
+    case tag(String)
 }

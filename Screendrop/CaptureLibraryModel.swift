@@ -54,6 +54,7 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
     let hasEdits: Bool
     let hasDraft: Bool
     let cloudURL: String?
+    let tags: [String]
     let thumbnailKey: String
 
     var ownedURL: URL { session?.directoryURL ?? fileURL }
@@ -88,6 +89,7 @@ nonisolated struct CaptureLibraryHistorySnapshot: Sendable {
     let isVideo: Bool
     let hasEdits: Bool
     let cloudURL: String?
+    let tags: [String]
 
     @MainActor init(_ item: ScreenshotHistoryItem) {
         id = item.id
@@ -102,6 +104,7 @@ nonisolated struct CaptureLibraryHistorySnapshot: Sendable {
         isVideo = item.isVideo
         hasEdits = item.hasEdits
         cloudURL = item.cloudURL
+        tags = item.tags
     }
 }
 
@@ -110,6 +113,11 @@ nonisolated struct CaptureLibraryHistorySnapshot: Sendable {
 final class CaptureLibraryModel {
     static let shared = CaptureLibraryModel()
     var filter: CaptureLibraryFilter? = .all { didSet { updateVisibleItems() } }
+    /// A tag chosen in the sidebar; shows only captures carrying it.
+    var tagFilter: String? { didSet { updateVisibleItems() } }
+    /// Every tag in the Library, sorted, with how many captures carry it.
+    private(set) var tags: [String] = []
+    private(set) var tagCounts: [String: Int] = [:]
     var searchText = "" { didSet { scheduleSearch() } }
     var sortOrder: CaptureLibrarySort = .newest { didSet { updateVisibleItems() } }
     var selection: Set<String> = []
@@ -140,6 +148,7 @@ final class CaptureLibraryModel {
     func show(filter: CaptureLibraryFilter? = nil) {
         if let filter {
             self.filter = filter
+            tagFilter = nil
             searchText = ""
         }
         guard let openWindow else { pendingOpen = true; return }
@@ -182,6 +191,11 @@ final class CaptureLibraryModel {
             guard !Task.isCancelled else { return }
             items = result
             screenshotCount = result.lazy.filter { !$0.isVideo }.count
+            tagCounts = result.reduce(into: [:]) { counts, item in
+                for tag in item.tags { counts[tag, default: 0] += 1 }
+            }
+            tags = tagCounts.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            if let tagFilter, tagCounts[tagFilter] == nil { self.tagFilter = nil }
             updateVisibleItems()
             isLoading = false
         }
@@ -201,8 +215,10 @@ final class CaptureLibraryModel {
         let filter = filter ?? .all
         let visible = items.filter { item in
             let matchesKind = filter == .all || (filter == .recordings ? item.isVideo : !item.isVideo)
-            return matchesKind && (query.isEmpty || item.name.localizedStandardContains(query)
-                || item.fileURL.lastPathComponent.localizedStandardContains(query))
+            let matchesTag = tagFilter.map(item.tags.contains) ?? true
+            return matchesKind && matchesTag && (query.isEmpty || item.name.localizedStandardContains(query)
+                || item.fileURL.lastPathComponent.localizedStandardContains(query)
+                || item.tags.contains { $0.localizedStandardContains(query) })
         }.sorted { lhs, rhs in
             switch sortOrder {
             case .newest where lhs.createdAt != rhs.createdAt: return lhs.createdAt > rhs.createdAt
@@ -254,6 +270,7 @@ nonisolated enum CaptureLibraryScanner {
                 duration: manifest?.duration ?? row?.duration,
                 isVideo: true, hasEdits: session.hasSavedProject, hasDraft: session.hasUnsavedDraft,
                 cloudURL: rows.compactMap(\.cloudURL).first,
+                tags: session.loadProjectMetadata()?.tags ?? [],
                 thumbnailKey: "\(fileURL.path):\(modified.timeIntervalSince1970)"
             ))
         }
@@ -267,7 +284,7 @@ nonisolated enum CaptureLibraryScanner {
                 id: row.id.uuidString, historyIDs: [row.id], name: row.name, fileURL: url, session: nil,
                 createdAt: row.createdAt, modifiedAt: max(modified, row.modifiedAt), pixelWidth: row.width,
                 pixelHeight: row.height, duration: row.duration, isVideo: row.isVideo,
-                hasEdits: row.hasEdits, hasDraft: false, cloudURL: row.cloudURL,
+                hasEdits: row.hasEdits, hasDraft: false, cloudURL: row.cloudURL, tags: row.tags,
                 thumbnailKey: "\(url.path):\(modified.timeIntervalSince1970)"
             ))
         }
