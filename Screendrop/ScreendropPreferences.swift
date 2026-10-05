@@ -339,7 +339,10 @@ enum ScreenshotFileActions {
             item.setData(tiffData, forType: .tiff)
         }
 
-        pasteboard.writeObjects([item])
+        // The pasteboard can refuse a write; callers treat a return as copied.
+        guard pasteboard.writeObjects([item]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
     }
     
     @discardableResult
