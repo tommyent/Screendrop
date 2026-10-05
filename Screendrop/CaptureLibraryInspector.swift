@@ -104,11 +104,8 @@ struct CaptureLibraryInspector: View {
             .help("Open a large preview")
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(item.name)
-                    .font(.system(size: 16, weight: .semibold))
-                    .lineLimit(3)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
+                LibraryInspectorTitle(item: item, model: model)
+                    .id(item.id)
                 HStack(spacing: 8) {
                     Text(item.kindTitle)
                         .font(.caption)
@@ -353,5 +350,61 @@ private struct LibraryInspectorActionChrome: ViewModifier {
         } else {
             tooltip.endHover(id: id)
         }
+    }
+}
+
+/// The capture's name, renamed in place like a name in Finder: click it to
+/// edit, Return or clicking away renames, Esc leaves it as it was.
+private struct LibraryInspectorTitle: View {
+    let item: CaptureLibraryItem
+    let model: CaptureLibraryModel
+    @State private var isEditing = false
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        if isEditing {
+            TextField("Name", text: $draft)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16, weight: .semibold))
+                .focused($isFocused)
+                .onSubmit(commit)
+                .onExitCommand { isEditing = false }
+                .onChange(of: isFocused) { _, focused in
+                    if !focused { commit() }
+                }
+                .onAppear {
+                    DispatchQueue.main.async { isFocused = true }
+                }
+        } else {
+            // A plain button rather than a tap gesture, so assistive
+            // technologies can press it too.
+            Button {
+                draft = item.name
+                isEditing = true
+            } label: {
+                Text(item.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy)
+            .help("Click to rename")
+            .accessibilityHint("Rename")
+        }
+    }
+
+    private func commit() {
+        guard isEditing else { return }
+        isEditing = false
+        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != item.name else { return }
+        model.renamingItem = item
+        model.renameText = name
+        model.rename()
     }
 }

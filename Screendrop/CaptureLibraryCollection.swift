@@ -160,12 +160,36 @@ final class LibraryCollectionView: NSCollectionView {
 
     override func menu(for event: NSEvent) -> NSMenu? { contextMenuProvider?(event) }
 
+    private var pendingRename: DispatchWorkItem?
+
+    /// Clicking the title of the one selected capture renames it, as in
+    /// Finder. It waits out the double-click interval first, so a double
+    /// click still previews, and a click that selects a capture never does.
     override func mouseDown(with event: NSEvent) {
+        pendingRename?.cancel()
+        pendingRename = nil
+        let clicked = indexPathForItem(at: convert(event.locationInWindow, from: nil))
+        let wasOnlySelection = clicked.map { selectionIndexPaths == [$0] } ?? false
         super.mouseDown(with: event)
-        if event.clickCount == 2, !selectionIndexPaths.isEmpty { command?(.preview) }
+        if event.clickCount == 2, !selectionIndexPaths.isEmpty {
+            command?(.preview)
+            return
+        }
+        guard event.clickCount == 1, wasOnlySelection, let clicked,
+              let cell = item(at: clicked) as? LibraryCollectionItem,
+              cell.titleContains(event.locationInWindow) else { return }
+        // Only if that capture is still the one selected when it fires.
+        let rename = DispatchWorkItem { [weak self] in
+            guard let self, selectionIndexPaths == [clicked] else { return }
+            command?(.rename)
+        }
+        pendingRename = rename
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: rename)
     }
 
     override func keyDown(with event: NSEvent) {
+        pendingRename?.cancel()
+        pendingRename = nil
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags.contains(.command), event.charactersIgnoringModifiers == "c" { command?(.copy); return }
         if flags.contains(.command), event.keyCode == 51 { command?(.trash); return }
@@ -207,6 +231,12 @@ final class LibraryCollectionItem: NSCollectionViewItem {
     private var entry: CaptureLibraryItem?
     private var displayLayout: CaptureLibraryLayout = .grid
     private var host: NSHostingView<LibraryCellContent>?
+    /// Where the title is drawn, in the cell's own (flipped) coordinates.
+    private var titleFrame: CGRect = .zero
+
+    func titleContains(_ windowPoint: NSPoint) -> Bool {
+        titleFrame.contains(view.convert(windowPoint, from: nil))
+    }
 
     override func loadView() {
         let host = NSHostingView(rootView: LibraryCellContent(item: nil, layout: .grid, selected: false))
@@ -235,7 +265,9 @@ final class LibraryCollectionItem: NSCollectionViewItem {
 
     private func updateContent() {
         _ = view
-        host?.rootView = LibraryCellContent(item: entry, layout: displayLayout, selected: isSelected)
+        host?.rootView = LibraryCellContent(item: entry, layout: displayLayout, selected: isSelected) { [weak self] frame in
+            self?.titleFrame = frame
+        }
     }
 }
 
@@ -243,6 +275,7 @@ struct LibraryCellContent: View {
     let item: CaptureLibraryItem?
     let layout: CaptureLibraryLayout
     let selected: Bool
+    var onTitleFrame: (CGRect) -> Void = { _ in }
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
@@ -293,12 +326,16 @@ struct LibraryCellContent: View {
             } else { Color.clear }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .coordinateSpace(.named(Self.cellSpace))
     }
+
+    private static let cellSpace = "LibraryCell"
 
     private func labels(_ item: CaptureLibraryItem) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.cellSpace)) } action: { onTitleFrame($0) }
                 if item.cloudURL != nil { Image(systemName: "link").foregroundStyle(.secondary) }
                 if item.hasDraft { Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(.orange) }
             }
