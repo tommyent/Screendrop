@@ -4,7 +4,7 @@ import SwiftUI
 enum CaptureLibraryAction: String {
     case preview = "Quick Look"
     case edit = "Edit"
-    case rename = "Rename…"
+    case rename = "Rename"
     case copy = "Copy"
     case export = "Export…"
     case reveal = "Reveal in Finder"
@@ -183,9 +183,13 @@ final class LibraryCollectionView: NSCollectionView {
         guard event.clickCount == 1, wasOnlySelection, let clicked,
               let cell = item(at: clicked) as? LibraryCollectionItem,
               cell.titleContains(event.locationInWindow) else { return }
-        // Only if that capture is still the one selected when it fires.
+        // Only if that capture is still the one selected when it fires, and
+        // the keyboard is still here: clicking into Search in the meantime
+        // must not have its typing turned into a rename.
         let rename = DispatchWorkItem { [weak self] in
-            guard let self, selectionIndexPaths == [clicked] else { return }
+            guard let self, selectionIndexPaths == [clicked],
+                  let window, window.isKeyWindow,
+                  (window.firstResponder as? NSView)?.isDescendant(of: self) == true else { return }
             command?(.rename)
         }
         pendingRename = rename
@@ -347,10 +351,11 @@ struct LibraryCellContent: View {
                 .onChange(of: item.id) { _, _ in isHovering = false }
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
-                .accessibilityElement(children: .ignore)
+                .accessibilityElement(children: isRenaming(item) ? .contain : .ignore)
                 .accessibilityLabel("\(item.name), \(item.kindTitle), \(item.subtitle)"
                     + (item.tags.isEmpty ? "" : ", tags: \(item.tags.joined(separator: ", "))"))
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
+                .accessibilityAction(named: "Rename") { CaptureLibraryModel.shared.beginRename(item, at: .card) }
             } else { Color.clear }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -359,11 +364,20 @@ struct LibraryCellContent: View {
 
     private static let cellSpace = "LibraryCell"
 
+    private func isRenaming(_ item: CaptureLibraryItem) -> Bool {
+        let session = CaptureLibraryModel.shared.renameSession
+        return session?.id == item.id && session?.location == .card
+    }
+
     private func labels(_ item: CaptureLibraryItem) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
-                Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.cellSpace)) } action: { onTitleFrame($0) }
+                if isRenaming(item) {
+                    CaptureNameField(id: item.id, location: .card, font: .system(size: 13, weight: .medium))
+                } else {
+                    Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.cellSpace)) } action: { onTitleFrame($0) }
+                }
                 if item.cloudURL != nil { Image(systemName: "link").foregroundStyle(.secondary) }
                 if item.hasDraft { Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(.orange) }
             }

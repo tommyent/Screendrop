@@ -128,8 +128,12 @@ final class CaptureLibraryModel {
     private(set) var isLoading = false
     var operationTitle: String?
     var errorMessage: String?
-    var renamingItem: CaptureLibraryItem?
-    var renameText = ""
+    /// The capture whose name is being edited in place, and where.
+    var renameSession: CaptureRenameSession?
+    /// Names saved since the last scan, which `items` doesn't show yet.
+    /// Every save starts a scan, and the one that lands replaces these with
+    /// the current names, so a failed save can't linger here.
+    @ObservationIgnored var savedNames: [String: String] = [:]
     var pendingTrash: [CaptureLibraryItem] = []
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
@@ -190,6 +194,7 @@ final class CaptureLibraryModel {
             } onCancel: { scan.cancel() }
             guard !Task.isCancelled else { return }
             items = result
+            savedNames.removeAll()
             screenshotCount = result.lazy.filter { !$0.isVideo }.count
             tagCounts = result.reduce(into: [:]) { counts, item in
                 for tag in item.tags { counts[tag, default: 0] += 1 }

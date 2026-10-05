@@ -118,15 +118,6 @@ struct CaptureLibraryView: View {
         .onChange(of: history.items) { _, _ in model.refresh() }
         .onChange(of: projects.projects) { _, _ in model.refresh() }
         .onChange(of: model.sortOrder) { _, value in savedSort = value }
-        .alert("Rename Capture", isPresented: Binding(
-            get: { model.renamingItem != nil },
-            set: { if !$0 { model.renamingItem = nil } }
-        )) {
-            TextField("Name", text: $model.renameText)
-            Button("Rename") { model.rename() }
-                .disabled(model.renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            Button("Cancel", role: .cancel) { model.renamingItem = nil }
-        }
         .alert("Move \(model.pendingTrash.count == 1 ? "capture" : "\(model.pendingTrash.count) captures") to Trash?", isPresented: Binding(
             get: { !model.pendingTrash.isEmpty },
             set: { if !$0 { model.pendingTrash = [] } }
@@ -260,7 +251,7 @@ struct CaptureLibraryView: View {
             Menu {
                 Button("Copy", systemImage: "doc.on.doc") { model.perform(.copy) }
                 Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
-                Button("Rename…", systemImage: "pencil") { model.perform(.rename) }
+                Button("Rename", systemImage: "pencil") { model.perform(.rename) }
                     .disabled(model.selection.count != 1)
                 Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
                 Divider()

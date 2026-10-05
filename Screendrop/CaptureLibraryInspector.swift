@@ -258,7 +258,9 @@ struct CaptureLibraryInspector: View {
     private func moreActions(allowsRename: Bool) -> some View {
         Menu {
             if allowsRename {
-                Button("Rename…", systemImage: "pencil") { model.perform(.rename) }
+                Button("Rename", systemImage: "pencil") {
+                    if let item = items.first { model.beginRename(item, at: .inspector) }
+                }
             }
             Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
             if items.count == 1, let item = items.first, let link = item.cloudURL {
@@ -424,30 +426,15 @@ private struct LibraryInspectorActionChrome: ViewModifier {
 private struct LibraryInspectorTitle: View {
     let item: CaptureLibraryItem
     let model: CaptureLibraryModel
-    @State private var isEditing = false
-    @State private var draft = ""
-    @FocusState private var isFocused: Bool
 
     var body: some View {
-        if isEditing {
-            TextField("Name", text: $draft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 16, weight: .semibold))
-                .focused($isFocused)
-                .onSubmit(commit)
-                .onExitCommand { isEditing = false }
-                .onChange(of: isFocused) { _, focused in
-                    if !focused { commit() }
-                }
-                .onAppear {
-                    DispatchQueue.main.async { isFocused = true }
-                }
+        if model.renameSession?.id == item.id, model.renameSession?.location == .inspector {
+            CaptureNameField(id: item.id, location: .inspector, font: .system(size: 16, weight: .semibold))
         } else {
             // A plain button rather than a tap gesture, so assistive
             // technologies can press it too.
             Button {
-                draft = item.name
-                isEditing = true
+                model.beginRename(item, at: .inspector)
             } label: {
                 Text(item.name)
                     .font(.system(size: 16, weight: .semibold))
@@ -462,15 +449,5 @@ private struct LibraryInspectorTitle: View {
             .help("Click to rename")
             .accessibilityHint("Rename")
         }
-    }
-
-    private func commit() {
-        guard isEditing else { return }
-        isEditing = false
-        let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != item.name else { return }
-        model.renamingItem = item
-        model.renameText = name
-        model.rename()
     }
 }

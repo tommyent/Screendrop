@@ -26,8 +26,7 @@ extension CaptureLibraryModel {
             else { PreviewPanelPresenter.shared.onAnnotate?(item.fileURL) }
         case .rename:
             guard selected.count == 1, let item = selected.first else { return }
-            renamingItem = item
-            renameText = item.name
+            beginRename(item, at: .card)
         case .copy:
             run("Copying \(selected.count == 1 ? "capture" : "captures")…") {
                 StudioProjectRegistry.shared.flushDrafts()
@@ -76,18 +75,42 @@ extension CaptureLibraryModel {
         refresh()
     }
 
-    func rename() {
-        guard let item = renamingItem else { return }
-        let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
+    func beginRename(_ item: CaptureLibraryItem, at location: CaptureRenameSession.Location) {
+        guard !isBusy else { return }
+        if let edit = renameSession {
+            guard edit.id != item.id else {
+                // Moving between the card and the inspector keeps what was typed.
+                renameSession?.location = location
+                return
+            }
+            commitRename(edit.id, at: edit.location)
+        }
+        renameSession = CaptureRenameSession(id: item.id, location: location, draft: savedNames[item.id] ?? item.name)
+    }
+
+    /// Saves the draft for the capture the session was opened on, whatever
+    /// that field is showing by now. Only the field that owns the session can
+    /// end it, so a field going away can't end an edit that has moved to the
+    /// other field or to another capture.
+    func commitRename(_ id: String, at location: CaptureRenameSession.Location) {
+        guard let edit = renameSession, edit.id == id, edit.location == location else { return }
+        renameSession = nil
+        let name = edit.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, let item = items.first(where: { $0.id == id }),
+              name != (savedNames[id] ?? item.name) else { return }
         if let session = item.session {
             session.updateProjectMetadata { $0.displayName = name }
             RecordingProjectStore.shared.reload()
-        } else if let id = item.historyIDs.first {
-            ScreenshotHistoryStore.shared.rename(id: id, to: name)
+        } else if let historyID = item.historyIDs.first {
+            ScreenshotHistoryStore.shared.rename(id: historyID, to: name)
         }
-        renamingItem = nil
+        savedNames[id] = name
         refresh()
+    }
+
+    func cancelRename(_ id: String, at location: CaptureRenameSession.Location) {
+        guard renameSession?.id == id, renameSession?.location == location else { return }
+        renameSession = nil
     }
 
     func movePendingItemsToTrash() {
@@ -273,5 +296,50 @@ struct CaptureLibraryEditorRegistration: ViewModifier {
         if let registered { CaptureLibraryOpenEditors.remove(registered) }
         registered = new
         if let new { CaptureLibraryOpenEditors.add(new) }
+    }
+}
+
+/// An in-place edit of one capture's name, on its card or in the inspector.
+struct CaptureRenameSession: Equatable {
+    enum Location { case card, inspector }
+    let id: String
+    var location: Location
+    var draft: String
+}
+
+/// Edits a capture's name in place while the model's rename session is on
+/// this field. Return or clicking away saves; Esc cancels.
+struct CaptureNameField: View {
+    let id: String
+    let location: CaptureRenameSession.Location
+    let font: Font
+    @FocusState private var isFocused: Bool
+
+    private var model: CaptureLibraryModel { .shared }
+
+    var body: some View {
+        TextField("Name", text: Binding(
+            get: { ownsSession ? model.renameSession?.draft ?? "" : "" },
+            set: { if ownsSession { model.renameSession?.draft = $0 } }
+        ))
+        .textFieldStyle(.plain)
+        .font(font)
+        .focused($isFocused)
+        .onSubmit { model.commitRename(id, at: location) }
+        .onExitCommand { model.cancelRename(id, at: location) }
+        .onChange(of: isFocused) { _, focused in
+            if !focused { model.commitRename(id, at: location) }
+        }
+        .onAppear {
+            // Only while this field still owns the session: Esc or a reused
+            // card can end it before focus arrives.
+            DispatchQueue.main.async {
+                if ownsSession { isFocused = true }
+            }
+        }
+    }
+
+    private var ownsSession: Bool {
+        model.renameSession?.id == id && model.renameSession?.location == location
     }
 }
