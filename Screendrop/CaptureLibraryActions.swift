@@ -52,6 +52,30 @@ extension CaptureLibraryModel {
         }
     }
 
+    /// Adds a tag to every selected capture, or removes it from every one.
+    /// A tag matching an existing one apart from case takes that spelling,
+    /// so "Bug" and "bug" stay one tag. Recordings keep their tags in their
+    /// own project, screenshots in the Library history.
+    func setTag(_ tag: String, applied: Bool) {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isBusy else { return }
+        let name = tags.first { $0.caseInsensitiveCompare(trimmed) == .orderedSame } ?? trimmed
+        var historyIDs = Set<UUID>()
+        for item in selectedItems {
+            if let session = item.session {
+                session.updateProjectMetadata { metadata in
+                    var tags = (metadata.tags ?? []).filter { $0.caseInsensitiveCompare(name) != .orderedSame }
+                    if applied { tags.append(name) }
+                    metadata.tags = tags.isEmpty ? nil : tags
+                }
+            } else {
+                historyIDs.formUnion(item.historyIDs)
+            }
+        }
+        ScreenshotHistoryStore.shared.setTag(name, applied: applied, ids: historyIDs)
+        refresh()
+    }
+
     func rename() {
         guard let item = renamingItem else { return }
         let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -7,6 +7,7 @@ struct CaptureLibraryInspector: View {
     @State private var pendingCloudDelete: CaptureLibraryItem?
     @State private var pendingCloudUpload: CaptureLibraryItem?
     @State private var tooltip = BarTooltipModel()
+    @State private var newTag = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var items: [CaptureLibraryItem] { model.selectedItems }
 
@@ -36,6 +37,8 @@ struct CaptureLibraryInspector: View {
                         } else {
                             multipleSelection
                         }
+                        Divider()
+                        tagsSection
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -282,6 +285,56 @@ struct CaptureLibraryInspector: View {
         .menuIndicator(.hidden)
         .simultaneousGesture(TapGesture().onEnded { tooltip.dismiss() })
         .accessibilityLabel("More capture actions")
+    }
+
+    /// The tags every selected capture shares. Adding or removing one
+    /// applies to all of them, so a selection can be tagged in one go.
+    private var tagsSection: some View {
+        let shared = items.dropFirst().reduce(Set(items.first?.tags ?? [])) { $0.intersection($1.tags) }
+        let tags = (items.first?.tags ?? []).filter(shared.contains)
+        let suggestions = model.tags.filter { !shared.contains($0) }
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Tags")
+            ForEach(tags, id: \.self) { tag in
+                HStack(spacing: 6) {
+                    Label(tag, systemImage: "tag")
+                    Spacer(minLength: 4)
+                    Button {
+                        model.setTag(tag, applied: false)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .help(items.count == 1 ? "Remove tag" : "Remove tag from all selected")
+                    .accessibilityLabel("Remove tag \(tag)")
+                }
+                .font(.system(size: 12))
+            }
+            HStack(spacing: 6) {
+                TextField(items.count == 1 ? "Add tag" : "Tag \(items.count) captures", text: $newTag)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .onSubmit {
+                        model.setTag(newTag, applied: true)
+                        newTag = ""
+                    }
+                if !suggestions.isEmpty {
+                    Menu {
+                        ForEach(suggestions, id: \.self) { tag in
+                            Button(tag) { model.setTag(tag, applied: true) }
+                        }
+                    } label: {
+                        Image(systemName: "tag")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Add an existing tag")
+                    .accessibilityLabel("Add an existing tag")
+                }
+            }
+            .disabled(model.isBusy)
+        }
     }
 
     private func sectionTitle(_ title: String) -> some View {
