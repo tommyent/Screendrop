@@ -116,6 +116,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
 
     enum ExportError: LocalizedError {
         case noVideoTrack
+        case readerFailed(Error?)
         case writerFailed(Error?)
         case cancelled
 
@@ -123,6 +124,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             switch self {
             case .noVideoTrack:
                 "The recording has no video track."
+            case .readerFailed(let error):
+                error?.localizedDescription ?? "Reading the recording for export failed."
             case .writerFailed(let error):
                 error?.localizedDescription ?? "Writing the exported video failed."
             case .cancelled:
@@ -350,7 +353,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let writerAudioInput = audioInput
 
         do {
-            async let videoDone: Void = pumpVideo(
+            async let videoDone: Int = pumpVideo(
                 output: videoOutput,
                 input: videoInput,
                 writer: writer,
@@ -368,7 +371,15 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 writer: writer,
                 cancelFlag: cancelFlag
             )
-            _ = try await (videoDone, audioDone)
+            let (renderedFrames, _) = try await (videoDone, audioDone)
+            if screenReader.status == .failed {
+                throw ExportError.readerFailed(screenReader.error)
+            }
+            if let replacementReader, replacementReader.status == .failed {
+                throw ExportError.readerFailed(replacementReader.error)
+            }
+            try cameraFeed?.checkFailure()
+            guard renderedFrames > 0 else { throw ExportError.readerFailed(nil) }
         } catch {
             screenReader.cancelReading()
             replacementReader?.cancelReading()
@@ -404,7 +415,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         timing: RecordingExportTiming,
         cancelFlag: CancelFlag,
         progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
+    ) async throws -> Int {
         // Render on a fixed output clock, not per source frame. Screen
         // captures only contain frames where pixels changed, so a static
         // screen has second-long gaps - but the virtual camera animates
@@ -521,6 +532,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             try await finishAndAppend(previous.frame, at: previous.index)
         }
         input.markAsFinished()
+        return renderedFrames
     }
 
     private func pumpAudio(
@@ -653,6 +665,12 @@ nonisolated private final class CameraFrameFeed: @unchecked Sendable {
 
     func cancel() {
         reader.cancelReading()
+    }
+
+    func checkFailure() throws {
+        if reader.status == .failed {
+            throw RecordingStudioExporter.ExportError.readerFailed(reader.error)
+        }
     }
 }
 
