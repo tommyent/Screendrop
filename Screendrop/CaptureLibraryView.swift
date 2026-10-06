@@ -52,16 +52,25 @@ struct CaptureLibraryView: View {
                 Divider()
                 statusBar
             }
-            .modifier(LibraryDetailCorners(showsSidebar: columnVisibility != .detailOnly))
+            .modifier(LibraryDetailCorners(
+                showsSidebar: columnVisibility != .detailOnly,
+                showsInspector: inspectorVisible
+            ))
+            // Inside the detail column the inspector sits under the toolbar,
+            // so the toolbar runs unbroken across it.
+            .inspector(isPresented: $inspectorVisible) {
+                CaptureLibraryInspector(model: model)
+                    // The inspector column paints its own grey, under the
+                    // toolbar too, so its content carries the sidebar's.
+                    .modifier(LibrarySidebarSurface())
+                    .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+            }
+            .modifier(LibraryWindowSurface())
             .navigationTitle(activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search captures")
-        .inspector(isPresented: $inspectorVisible) {
-            CaptureLibraryInspector(model: model)
-                .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
-        }
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
@@ -246,18 +255,23 @@ private struct LibrarySidebarSurface: ViewModifier {
     }
 }
 
-/// Round the entire detail surface, including the native toolbar's safe area.
-/// The browser keeps its normal insets so content doesn't move under controls.
+/// The detail as a card below the toolbar and above a small bottom margin,
+/// rounded on each inner side that has a column next to it. It goes before
+/// `.inspector`: a clip around the inspector drops the column's safe area, and
+/// the grid then lays out under the sidebar and the toolbar.
 private struct LibraryDetailCorners: ViewModifier {
     let showsSidebar: Bool
+    let showsInspector: Bool
     @Environment(\.displayScale) private var displayScale
 
-    private var cornerRadius: CGFloat { showsSidebar ? 16 : 0 }
-
-    private var surface: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: cornerRadius,
-            bottomLeadingRadius: cornerRadius,
+    private var card: UnevenRoundedRectangle {
+        let leading: CGFloat = showsSidebar ? 16 : 0
+        let trailing: CGFloat = showsInspector ? 16 : 0
+        return UnevenRoundedRectangle(
+            topLeadingRadius: leading,
+            bottomLeadingRadius: leading,
+            bottomTrailingRadius: trailing,
+            topTrailingRadius: trailing,
             style: .continuous
         )
     }
@@ -266,32 +280,29 @@ private struct LibraryDetailCorners: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
             content
-                // Only the lower corner intersects the body. The upper corner
-                // belongs to the background extended behind the toolbar below.
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        bottomLeadingRadius: cornerRadius,
-                        style: .continuous
-                    )
-                )
-                .background {
-                    ZStack {
-                        LibrarySidebarSurface.background
-                        surface.fill(Color(nsColor: .controlBackgroundColor))
-                    }
-                    .ignoresSafeArea(.container, edges: .top)
-                }
+                .background(Color(nsColor: .controlBackgroundColor))
+                .clipShape(card)
                 .overlay {
-                    if showsSidebar {
-                        surface
-                            .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1 / displayScale)
-                            .mask(alignment: .leading) {
-                                Rectangle().frame(width: cornerRadius)
-                            }
-                            .ignoresSafeArea(.container, edges: .top)
-                            .allowsHitTesting(false)
-                    }
+                    card
+                        .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1 / displayScale)
+                        .allowsHitTesting(false)
                 }
+                .padding(.bottom, 12)
+        } else {
+            content
+        }
+    }
+}
+
+/// The sidebar's grey behind the detail column and the toolbar, so the
+/// toolbar reads as one strip. Backgrounds around `.inspector` keep the safe
+/// area; clips don't.
+private struct LibraryWindowSurface: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27.0, *) {
+            content
+                .background { LibrarySidebarSurface.background.ignoresSafeArea() }
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         } else {
             content
