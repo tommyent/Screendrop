@@ -53,7 +53,7 @@ extension AnnotationEditorModel {
     }
 
     func setTextFontSize(_ pointSize: CGFloat) {
-        let clamped = max(pointSize, 4)
+        let clamped = AnnotationTextMetrics.clampedFontSize(pointSize)
         textFontSize = clamped
         engine.currentTextFontSize = Double(clamped)
         saveAnnotationPreset()
