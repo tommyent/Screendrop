@@ -232,15 +232,15 @@ private struct RecordingStudioContent: View {
             guard let model else { return }
             switch decision {
             case .save:
-                if model.saveProject() { done() }
+                done(model.saveProject())
             case .discard:
                 Task {
                     await model.discardChanges()
-                    done()
+                    done(true)
                 }
             case .delete:
                 model.deleteProject()
-                done()
+                done(true)
             case .cancel:
                 break
             }
