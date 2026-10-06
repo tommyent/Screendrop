@@ -199,7 +199,15 @@ final class CaptureCoordinator {
         if ScreendropPreferences.playSounds {
             CaptureFeedbackSound.play()
         }
-        return showPreview(url: url, displayID: displayID)
+        let historyURL = showPreview(url: url, displayID: displayID)
+        // History keeps its own copy, and the preview card, editor, copy, save,
+        // upload, pin and Shortcuts all get that copy, so the temp original is
+        // no longer used. Keep it only when the import failed and it is still
+        // the file the preview points at.
+        if historyURL != url {
+            try? FileManager.default.removeItem(at: url)
+        }
+        return historyURL
     }
 
     @discardableResult
