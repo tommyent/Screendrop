@@ -429,6 +429,10 @@ final class RecordingStudioModel {
                 lastSavedDocument = currentDocument()
             }
             session.updateProjectMetadata { $0.lastOpenedAt = Date() }
+        } else {
+            // A bare movie has nowhere to save its edits; this baseline only
+            // tells the close prompt whether there are any to lose.
+            lastSavedDocument = currentDocument()
         }
         StudioProjectRegistry.shared.register(self)
     }
@@ -1156,7 +1160,7 @@ final class RecordingStudioModel {
     }
 
     private func scheduleProjectSave() {
-        guard isLoaded, !isApplyingDocument, session != nil else { return }
+        guard isLoaded, !isApplyingDocument else { return }
         hasUnsavedChanges = true
         projectSaveTask?.cancel()
         projectSaveTask = Task { [weak self] in
@@ -1203,8 +1207,12 @@ final class RecordingStudioModel {
     /// committed `edit.json`, so a crash costs nothing and Save still means
     /// something.
     private func writeDraftNow() {
-        guard isLoaded, let session else { return }
+        guard isLoaded else { return }
         let document = currentDocument()
+        guard let session else {
+            hasUnsavedChanges = document != lastSavedDocument
+            return
+        }
         if document == lastSavedDocument {
             // Edited back to the saved state (undo, or a discard landing):
             // the draft is now noise and would reopen the project dirty.

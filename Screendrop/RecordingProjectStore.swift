@@ -219,8 +219,14 @@ final class StudioProjectRegistry {
         }
     }
 
+    /// Edits to a bare movie have no draft, so a quit loses them.
+    var hasUnsavedMovieEdits: Bool {
+        models.values.compactMap(\.model).contains { !$0.isProject && $0.hasUnsavedChanges }
+    }
+
     var unsavedProjectCount: Int {
-        models.values.compactMap(\.model).filter(\.hasUnsavedChanges).count
+        // Bare movies have no draft to restore, so they aren't counted here.
+        models.values.compactMap(\.model).filter { $0.isProject && $0.hasUnsavedChanges }.count
     }
 
     var hasRunningWork: Bool {

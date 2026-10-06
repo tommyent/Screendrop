@@ -229,6 +229,7 @@ private struct RecordingStudioContent: View {
         closeGuard.hasRunningWork = { [weak model] in model?.hasRunningWork ?? false }
         closeGuard.hasUnsavedChanges = { [weak model] in model?.hasUnsavedChanges ?? false }
         closeGuard.offersDelete = { [weak model] in model?.hasNeverBeenSaved ?? false }
+        closeGuard.offersSave = { [weak model] in model?.isProject ?? true }
         closeGuard.projectName = { [weak model] in model?.projectDisplayName ?? "this recording" }
         closeGuard.onDecision = { [weak model] decision, done in
             guard let model else { return }

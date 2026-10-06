@@ -29,6 +29,9 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     /// discarding a project the user already committed to is unrecoverable,
     /// so that case reverts to the saved state instead.
     var offersDelete: () -> Bool = { false }
+    /// False when the edits have nowhere to be saved (a plain movie rather
+    /// than a project), so the prompt can only warn before discarding them.
+    var offersSave: () -> Bool = { true }
     var projectName: () -> String = { "" }
     /// Call `done(true)` once the work is saved or discarded and the window
     /// may close, or `done(false)` when it must stay open (a failed save).
@@ -96,6 +99,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         canClose = { true }
         hasRunningWork = { false }
         offersDelete = { false }
+        offersSave = { true }
         projectName = { "" }
         onDecision = { _, done in done(true) }
         isPrompting = false
@@ -168,6 +172,10 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     }
 
     private func present(on window: NSWindow, then finished: ((Bool) -> Void)? = nil) {
+        guard offersSave() else {
+            presentDiscardOnly(on: window, then: finished)
+            return
+        }
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = offersDelete()
@@ -213,6 +221,27 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
                 window.close()
                 finished?(true)
             }
+        }
+    }
+
+    private func presentDiscardOnly(on window: NSWindow, then finished: ((Bool) -> Void)? = nil) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Your changes to “\(projectName())” can't be saved"
+        alert.informativeText = "This video isn't a recording project, so closing the window discards your edits. Export it first if you want to keep them."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Discard Changes")
+
+        alert.beginSheetModal(for: window) { [weak self, weak window] response in
+            guard let self, let window else { return }
+            self.isPrompting = false
+            guard response == .alertSecondButtonReturn else {
+                finished?(false)
+                return
+            }
+            self.isCloseApproved = true
+            window.close()
+            finished?(true)
         }
     }
 

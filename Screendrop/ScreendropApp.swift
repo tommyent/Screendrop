@@ -200,6 +200,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Studio's autosave is debounced. Flushing here means quitting never
         // costs the last edit - the project reopens on its draft.
         StudioProjectRegistry.shared.flushDrafts()
+        if StudioProjectRegistry.shared.hasUnsavedMovieEdits {
+            NSApp.activate(ignoringOtherApps: true)
+
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "Some video edits can't be saved"
+            alert.informativeText = "Videos that aren't recording projects lose their edits when Screendrop quits. Export them first if you want to keep them."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Quit Anyway")
+
+            guard alert.runModal() == .alertSecondButtonReturn else {
+                return .terminateCancel
+            }
+        }
         let unsavedProjectCount = StudioProjectRegistry.shared.unsavedProjectCount
         let unsavedCount = ScreenshotPreviewStack.shared.unsavedItems.count
         if StudioProjectRegistry.shared.hasRunningWork {
