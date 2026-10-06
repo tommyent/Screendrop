@@ -137,7 +137,14 @@ struct CaptureLibraryView: View {
                 } description: {
                     Text(emptyLibraryDescription)
                 } actions: {
-                    emptyActions
+                    VStack(spacing: 12) {
+                        emptyActions
+                        if let shortcutLine {
+                            Text(shortcutLine)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         } else {
@@ -179,6 +186,22 @@ struct CaptureLibraryView: View {
             }
         }
         .controlSize(.large)
+    }
+
+    /// The page's capture shortcuts as the user set them, so an empty page
+    /// teaches the keys that work from anywhere. Keys that failed to register
+    /// are left out.
+    private var shortcutLine: String? {
+        let actions: [(CaptureHotkeyAction, String)] = switch activeFilter {
+        case .all: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Fullscreen"), (.screenRecording, "Record")]
+        case .screenshots: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Fullscreen")]
+        case .recordings: [(.screenRecording, "Record")]
+        }
+        let keys = actions
+            .filter { HotkeyManager.shared.registrationErrors[$0.0] == nil }
+            .map { CaptureHotkeyPreferences.shortcut(for: $0.0).displayTokens.joined() + " " + $0.1 }
+        guard !keys.isEmpty else { return nil }
+        return "\(keys.count == 1 ? "Shortcut" : "Shortcuts") anywhere: " + keys.joined(separator: " · ")
     }
 
     private var captureAreaButton: some View {
