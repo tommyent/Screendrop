@@ -146,19 +146,40 @@ struct InspectorBackgroundFillPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            InspectorSegmented(
-                options: AnnotationBackgroundFillLibrary.allCases,
-                isSelected: { $0 == selectedFillLibrary },
-                onTap: { library in
-                    withAnimation(.snappy(duration: 0.16)) {
-                        selectedFillLibrary = library
-                    }
-                },
-                label: { library in
-                    Text(library.title)
-                        .font(.inspectorSegment)
+            HStack(spacing: 6) {
+                // Sits outside the library tabs so it's reachable whichever
+                // tab the current fill came from.
+                InspectorTile(title: "No background", isSelected: style == .none) {
+                    onEditorAction()
+                    style = .none
+                } content: {
+                    Rectangle()
+                        .fill(Color.white)
+                        .overlay {
+                            Canvas { context, size in
+                                var slash = Path()
+                                slash.move(to: CGPoint(x: size.width, y: 0))
+                                slash.addLine(to: CGPoint(x: 0, y: size.height))
+                                context.stroke(slash, with: .color(.red), lineWidth: 1.5)
+                            }
+                        }
                 }
-            )
+                .frame(width: InspectorMetrics.controlHeight, height: InspectorMetrics.controlHeight)
+
+                InspectorSegmented(
+                    options: AnnotationBackgroundFillLibrary.allCases,
+                    isSelected: { $0 == selectedFillLibrary },
+                    onTap: { library in
+                        withAnimation(.snappy(duration: 0.16)) {
+                            selectedFillLibrary = library
+                        }
+                    },
+                    label: { library in
+                        Text(library.title)
+                            .font(.inspectorSegment)
+                    }
+                )
+            }
 
             selectedFillPicker
                 .transition(.opacity)
