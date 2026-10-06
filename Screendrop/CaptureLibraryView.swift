@@ -53,10 +53,7 @@ struct CaptureLibraryView: View {
                 Divider()
                 statusBar
             }
-            .modifier(LibraryDetailCorners(
-                showsSidebar: columnVisibility != .detailOnly,
-                showsInspector: inspectorVisible
-            ))
+            .modifier(LibraryDetailCorners())
             // Inside the detail column the inspector sits under the toolbar,
             // so the toolbar runs unbroken across it.
             .inspector(isPresented: $inspectorVisible) {
@@ -256,39 +253,33 @@ private struct LibrarySidebarSurface: ViewModifier {
     }
 }
 
-/// The detail as a card below the toolbar and above a small bottom margin,
-/// rounded on each inner side that has a column next to it. It goes before
-/// `.inspector`: a clip around the inspector drops the column's safe area, and
-/// the grid then lays out under the sidebar and the toolbar.
+/// The detail as a raised card below the toolbar, rounded all round, with a
+/// margin to the sidebar, the inspector and the window's bottom edge so its
+/// shadow shows on every side. It goes before `.inspector`: a clip around the
+/// inspector drops the column's safe area, and the grid then lays out under
+/// the sidebar and the toolbar.
 private struct LibraryDetailCorners: ViewModifier {
-    let showsSidebar: Bool
-    let showsInspector: Bool
     @Environment(\.displayScale) private var displayScale
 
-    private var card: UnevenRoundedRectangle {
-        let leading: CGFloat = showsSidebar ? 16 : 0
-        let trailing: CGFloat = showsInspector ? 16 : 0
-        return UnevenRoundedRectangle(
-            topLeadingRadius: leading,
-            bottomLeadingRadius: leading,
-            bottomTrailingRadius: trailing,
-            topTrailingRadius: trailing,
-            style: .continuous
-        )
-    }
+    private let card = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
             content
-                .background(Color(nsColor: .controlBackgroundColor))
                 .clipShape(card)
+                // The fill sits outside the clip, so its shadow isn't cut off.
+                .background {
+                    card
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
+                }
                 .overlay {
                     card
                         .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1 / displayScale)
                         .allowsHitTesting(false)
                 }
-                .padding(.bottom, 12)
+                .padding([.horizontal, .bottom], 12)
         } else {
             content
         }
