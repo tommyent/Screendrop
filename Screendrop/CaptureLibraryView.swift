@@ -118,18 +118,24 @@ struct CaptureLibraryView: View {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.visibleItems.isEmpty {
             if !model.searchText.isEmpty {
-                if activeFilter == .all {
-                    ContentUnavailableView.search(text: model.searchText)
-                } else {
-                    ContentUnavailableView {
-                        Label("No Results in \(activeFilter.title)", systemImage: "magnifyingglass")
-                    } description: {
-                        Text("Check the spelling, or search all your captures.")
-                    } actions: {
-                        Button("Search All Captures") { model.filter = .all }
+                ContentUnavailableView {
+                    Label("No Results for “\(model.searchText)”", systemImage: "magnifyingglass")
+                } description: {
+                    Text(activeFilter == .all
+                        ? "Check the spelling or try a new search."
+                        : "Nothing in \(activeFilter.title) matches. Check the spelling, or search all your captures.")
+                } actions: {
+                    HStack {
+                        if activeFilter != .all {
+                            // Widening keeps the query and may find the other
+                            // kind of capture, so it's the likeliest next step.
+                            Button("Search All Captures") { model.filter = .all }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button("Clear Search") { model.searchText = "" }
                             .buttonStyle(.bordered)
-                            .controlSize(.large)
                     }
+                    .controlSize(.large)
                 }
             } else {
                 ContentUnavailableView {
@@ -141,8 +147,10 @@ struct CaptureLibraryView: View {
                         emptyActions
                         if let shortcutLine {
                             Text(shortcutLine)
-                                .font(.footnote)
+                                .font(.callout)
                                 .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -190,18 +198,20 @@ struct CaptureLibraryView: View {
 
     /// The page's capture shortcuts as the user set them, so an empty page
     /// teaches the keys that work from anywhere. Keys that failed to register
-    /// are left out.
+    /// are left out, and with none left there's no line at all. Non-breaking
+    /// spaces keep each key with its name, so the line wraps between them.
     private var shortcutLine: String? {
         let actions: [(CaptureHotkeyAction, String)] = switch activeFilter {
-        case .all: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Fullscreen"), (.screenRecording, "Record")]
-        case .screenshots: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Fullscreen")]
+        case .all: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Screen"), (.screenRecording, "Record")]
+        case .screenshots: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Screen")]
         case .recordings: [(.screenRecording, "Record")]
         }
         let keys = actions
             .filter { HotkeyManager.shared.registrationErrors[$0.0] == nil }
-            .map { CaptureHotkeyPreferences.shortcut(for: $0.0).displayTokens.joined() + " " + $0.1 }
+            .map { CaptureHotkeyPreferences.shortcut(for: $0.0).displayTokens.joined() + "\u{00A0}" + $0.1 }
         guard !keys.isEmpty else { return nil }
-        return "\(keys.count == 1 ? "Shortcut" : "Shortcuts") anywhere: " + keys.joined(separator: " · ")
+        let heading = keys.count == 1 ? "Shortcut that works anywhere" : "Shortcuts that work anywhere"
+        return heading + "\n" + keys.joined(separator: "\u{00A0}· ")
     }
 
     private var captureAreaButton: some View {
