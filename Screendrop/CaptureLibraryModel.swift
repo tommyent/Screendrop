@@ -118,6 +118,8 @@ final class CaptureLibraryModel {
     private(set) var contentRevision = 0
     private(set) var screenshotCount = 0
     private(set) var isLoading = false
+    /// The first scan has finished; later refreshes show only the status bar's spinner.
+    private(set) var hasLoaded = false
     var operationTitle: String?
     var errorMessage: String?
     var renamingItem: CaptureLibraryItem?
@@ -184,6 +186,7 @@ final class CaptureLibraryModel {
             screenshotCount = result.lazy.filter { !$0.isVideo }.count
             updateVisibleItems()
             isLoading = false
+            hasLoaded = true
         }
     }
 

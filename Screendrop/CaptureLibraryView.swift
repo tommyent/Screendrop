@@ -117,7 +117,7 @@ struct CaptureLibraryView: View {
     }
 
     @ViewBuilder private var browser: some View {
-        if model.items.isEmpty && model.isLoading {
+        if !model.hasLoaded {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.visibleItems.isEmpty {
             if !model.searchText.isEmpty {
