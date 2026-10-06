@@ -331,6 +331,7 @@ struct AnnotationEditorWindow: View {
                     try await AnnotationRenderer.renderInBackground(
                         sourceURL: baseURL,
                         shapes: model.shapes,
+                        bindings: model.bindings,
                         backgroundSettings: model.backgroundSettings,
                         destinationURL: destinationURL,
                         contentType: ScreenshotFileActions.exportContentType

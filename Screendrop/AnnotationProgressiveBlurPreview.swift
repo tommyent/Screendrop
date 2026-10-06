@@ -200,6 +200,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
     func renderScene(
         source: CGImage,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         settings: AnnotationBackgroundSettings,
         contentPixelWidth: CGFloat,
         colorSpace: CGColorSpace
@@ -210,6 +211,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
         return try? AnnotationScenePreviewRenderer.render(
             source: source,
             shapes: shapes,
+            bindings: bindings,
             settings: settings,
             contentPixelWidth: contentPixelWidth,
             colorSpace: colorSpace
@@ -223,6 +225,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
 struct AnnotationSceneSettleKey: Equatable {
     let sourceID: ObjectIdentifier
     let shapes: [AnnoShape]
+    let bindings: [ArrowBinding]
     let settings: AnnotationBackgroundSettings
     let contentPixelWidth: CGFloat
     let isEligible: Bool
@@ -240,6 +243,7 @@ nonisolated enum AnnotationScenePreviewRenderer {
     static func render(
         source: CGImage,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         settings: AnnotationBackgroundSettings,
         contentPixelWidth: CGFloat,
         colorSpace: CGColorSpace
@@ -256,6 +260,7 @@ nonisolated enum AnnotationScenePreviewRenderer {
             foregroundOverlay: { context, layout, imageRect, imageClipPath in
                 AnnotationRenderer.drawAnnotations(
                     shapes,
+                    bindings: bindings,
                     in: imageRect,
                     // Shapes are in the *source* image's pixels; this render may be downscaled.
                     pageSize: CGSize(width: source.width, height: source.height),

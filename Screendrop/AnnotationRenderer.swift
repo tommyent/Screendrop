@@ -20,6 +20,7 @@ enum AnnotationRenderer {
     static func renderInBackground(
         sourceURL: URL,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings(),
         destinationURL: URL,
         contentType: UTType
@@ -28,6 +29,7 @@ enum AnnotationRenderer {
             try render(
                 sourceURL: sourceURL,
                 shapes: shapes,
+                bindings: bindings,
                 backgroundSettings: backgroundSettings,
                 destinationURL: destinationURL,
                 contentType: contentType
@@ -38,12 +40,14 @@ enum AnnotationRenderer {
     static func renderToTemporaryFileInBackground(
         sourceURL: URL,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings()
     ) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
             try renderToTemporaryFile(
                 sourceURL: sourceURL,
                 shapes: shapes,
+                bindings: bindings,
                 backgroundSettings: backgroundSettings
             )
         }.value
@@ -52,6 +56,7 @@ enum AnnotationRenderer {
     nonisolated static func renderToTemporaryFile(
         sourceURL: URL,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings()
     ) throws -> URL {
         let destinationURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -59,6 +64,7 @@ enum AnnotationRenderer {
         try render(
             sourceURL: sourceURL,
             shapes: shapes,
+            bindings: bindings,
             backgroundSettings: backgroundSettings,
             destinationURL: destinationURL,
             contentType: .png
@@ -69,6 +75,7 @@ enum AnnotationRenderer {
     nonisolated static func render(
         sourceURL: URL,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings(),
         destinationURL: URL,
         contentType: UTType
@@ -115,6 +122,7 @@ enum AnnotationRenderer {
                     foregroundOverlay: { context, layout, imageRect, imageClipPath in
                         drawAnnotations(
                             shapes,
+                            bindings: bindings,
                             in: imageRect,
                             pageSize: CGSize(width: sourceImage.width, height: sourceImage.height),
                             canvasSize: layout.canvasSize,
@@ -132,7 +140,7 @@ enum AnnotationRenderer {
                     }
                 )
             } else {
-                renderedImage = try renderAnnotatedImage(sourceImage, shapes: shapes, colorSpace: colorSpace)
+                renderedImage = try renderAnnotatedImage(sourceImage, shapes: shapes, bindings: bindings, colorSpace: colorSpace)
             }
             // A grown canvas stays opaque, as Shottr's does, even under a
             // border with rounded corners.
@@ -207,6 +215,7 @@ enum AnnotationRenderer {
     nonisolated private static func renderAnnotatedImage(
         _ cgImage: CGImage,
         shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         colorSpace: CGColorSpace
     ) throws -> CGImage {
         let width = cgImage.width
@@ -228,6 +237,7 @@ enum AnnotationRenderer {
         context.draw(cgImage, in: fullRect)
         drawAnnotations(
             shapes,
+            bindings: bindings,
             in: fullRect,
             pageSize: fullRect.size,
             canvasSize: fullRect.size,
@@ -249,6 +259,7 @@ enum AnnotationRenderer {
     /// pixel space, so the transform between them is the only thing that differs from the canvas.
     nonisolated static func drawAnnotations(
         _ shapes: [AnnoShape],
+        bindings: [ArrowBinding],
         in imageRect: CGRect,
         pageSize: CGSize,
         canvasSize: CGSize,
@@ -259,7 +270,7 @@ enum AnnotationRenderer {
         guard !shapes.isEmpty else { return }
 
         let document = AnnoDocument()
-        document.restore(AnnoDocument.Snapshot(shapes: shapes, bindings: []))
+        document.restore(AnnoDocument.Snapshot(shapes: shapes, bindings: bindings))
 
         // Page space is the screenshot's own pixels; `imageRect` is where those pixels ended up in
         // this context, which is smaller than page space whenever the render is downscaled (the

@@ -91,6 +91,7 @@ struct AnnotationCanvas: View {
             let sceneSettleKey = AnnotationSceneSettleKey(
                 sourceID: ObjectIdentifier(image),
                 shapes: model.shapes,
+                bindings: model.bindings,
                 settings: model.backgroundSettings,
                 contentPixelWidth: previewPixelWidth,
                 isEligible: usesSceneBlur
@@ -589,6 +590,7 @@ struct AnnotationCanvas: View {
         guard let output = await AnnotationProgressiveBlurPreviewWorker.shared.renderScene(
             source: source,
             shapes: key.shapes,
+            bindings: key.bindings,
             settings: key.settings,
             contentPixelWidth: key.contentPixelWidth,
             colorSpace: colorSpace

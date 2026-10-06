@@ -353,6 +353,7 @@ final class AnnotationEditorModel {
             let annotatedURL = try await AnnotationRenderer.renderToTemporaryFileInBackground(
                 sourceURL: baseURL,
                 shapes: shapes,
+                bindings: bindings,
                 backgroundSettings: backgroundSettings
             )
             let document = AnnotationDocument(
