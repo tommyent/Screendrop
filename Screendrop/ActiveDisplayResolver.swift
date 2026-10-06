@@ -74,19 +74,17 @@ enum ActiveDisplayResolver {
     }
 
     private static func bestScreen(forWindowBounds windowBounds: CGRect) -> NSScreen? {
-        let desktopFrame = NSScreen.screens.reduce(CGRect.null) { partialResult, screen in
-            partialResult.union(screen.frame)
-        }
-
-        let appKitCandidate = windowBounds
-        let quartzCandidate = CGRect(
+        // Quartz's origin is the main display's top-left, not the top of the
+        // combined desktop. Convert once to AppKit's bottom-left origin.
+        let mainDisplayHeight = CGDisplayBounds(CGMainDisplayID()).height
+        let appKitBounds = CGRect(
             x: windowBounds.minX,
-            y: desktopFrame.maxY - windowBounds.maxY,
+            y: mainDisplayHeight - windowBounds.maxY,
             width: windowBounds.width,
             height: windowBounds.height
         )
 
-        return bestScreen(forCandidates: [appKitCandidate, quartzCandidate])
+        return bestScreen(forCandidates: [appKitBounds])
     }
 
     private static func bestScreen(forCandidates candidates: [CGRect]) -> NSScreen? {
