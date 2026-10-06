@@ -34,6 +34,12 @@ enum AnnoShapeDrawing {
         /// flipped case has to invert it back.
         var isFlippedContext = false
         var redactionPreviewCache: AnnoRedactionPreviewCache? = nil
+        /// Pixels `sample` returns per page pixel. Redaction strength is measured in page pixels,
+        /// so a canvas sampling a downscaled preview blurs and pixelates by proportionally less
+        /// and shows what the full-resolution export will produce. A pixelate block can't be
+        /// smaller than one sampled pixel, so on extremely downscaled previews (1200x57600 at a
+        /// 0.05 scale) the canvas shows coarser blocks than the export.
+        var sampleScale: CGFloat = 1
 
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
@@ -211,8 +217,8 @@ enum AnnoShapeDrawing {
             guard let sampled = sample(contextBounds) else { return nil as CGImage? }
             return autoreleasepool {
                 switch props.kind {
-                case .blur: blurred(sampled, density: props.density)
-                case .pixelate: pixelated(sampled, density: props.density)
+                case .blur: blurred(sampled, density: props.density, scale: target.sampleScale)
+                case .pixelate: pixelated(sampled, density: props.density, scale: target.sampleScale)
                 }
             }
         }
@@ -239,17 +245,17 @@ enum AnnoShapeDrawing {
         context.restoreGState()
     }
 
-    private static func blurred(_ image: CGImage, density: Double) -> CGImage? {
+    private static func blurred(_ image: CGImage, density: Double, scale: CGFloat) -> CGImage? {
         let input = CIImage(cgImage: image)
         let filter = CIFilter.gaussianBlur()
         filter.inputImage = input.clampedToExtent()
-        filter.radius = Float(RedactionImageProcessor.blurRadius(for: CGFloat(density)))
+        filter.radius = Float(RedactionImageProcessor.blurRadius(for: CGFloat(density)) * scale)
         guard let output = filter.outputImage else { return nil }
         return ciContext.createCGImage(output, from: input.extent)
     }
 
-    private static func pixelated(_ image: CGImage, density: Double) -> CGImage? {
-        let block = RedactionImageProcessor.pixelBlockSize(for: CGFloat(density))
+    private static func pixelated(_ image: CGImage, density: Double, scale: CGFloat) -> CGImage? {
+        let block = Swift.max(1, RedactionImageProcessor.pixelBlockSize(for: CGFloat(density)) * scale)
         let lowWidth = Swift.max(1, Int(CGFloat(image.width) / block))
         let lowHeight = Swift.max(1, Int(CGFloat(image.height) / block))
         guard let low = CGContext(

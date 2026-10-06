@@ -166,7 +166,9 @@ final class AnnoCanvasNSView: NSView {
             },
             spotlightClip: spotlightClip,
             isFlippedContext: true,
-            redactionPreviewCache: redactionCache
+            redactionPreviewCache: redactionCache,
+            // The preview can be downscaled from the full-resolution image the export samples.
+            sampleScale: sourceImage.map { CGFloat($0.width) / imageSize.width } ?? 1
         )
 
         // The shape being typed into is drawn by its text overlay instead, so the two don't double
