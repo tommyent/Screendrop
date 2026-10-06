@@ -2188,6 +2188,7 @@ final class RecordingStudioModel {
         let configuration = cachedDeliverable == nil ? makeExportConfiguration() : nil
         let session = session
         let renderedDocument = session == nil ? nil : currentDocument()
+        shareItemID = nil
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
 
         shareTask = Task { [weak self] in
@@ -2274,7 +2275,7 @@ final class RecordingStudioModel {
     func cancelShare() {
         shareTask?.cancel()
         shareTask = nil
-        if let shareItemID {
+        if shareState.isBusy, let shareItemID {
             CloudUploader.shared.cancelUpload(for: shareItemID)
         }
         if shareState.isBusy {
