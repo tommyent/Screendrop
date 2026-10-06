@@ -28,12 +28,49 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     /// so that case reverts to the saved state instead.
     var offersDelete: () -> Bool = { false }
     var projectName: () -> String = { "" }
-    var onDecision: (Decision, @escaping () -> Void) -> Void = { _, done in done() }
+    /// Call `done(true)` once the work is saved or discarded and the window
+    /// may close, or `done(false)` when it must stay open (a failed save).
+    var onDecision: (Decision, @escaping (Bool) -> Void) -> Void = { _, done in done(true) }
+    /// Studio keeps unsaved edits as a draft across launches, so quitting
+    /// costs it nothing. The annotation editor has no draft, so it asks.
+    let asksBeforeQuit: Bool
 
     private weak var attachedWindow: NSWindow?
     private nonisolated(unsafe) weak var previousDelegate: NSWindowDelegate?
     private var isPrompting = false
     private var isCloseApproved = false
+
+    init(asksBeforeQuit: Bool = false) {
+        self.asksBeforeQuit = asksBeforeQuit
+        super.init()
+    }
+
+    /// Quitting (⌘Q, a Sparkle relaunch, logout) never calls
+    /// `windowShouldClose`, so the app delegate runs the same prompt through
+    /// this, one editor at a time. Returns false when nothing needs asking.
+    /// Otherwise `completion(true)` follows once every editor was saved or
+    /// discarded and closed; `completion(false)` on Cancel or a failed save.
+    static func reviewBeforeQuit(completion: @escaping (Bool) -> Void) -> Bool {
+        let editor = NSApp.windows.lazy
+            .compactMap { window in (window.delegate as? EditorCloseGuard).map { (window, $0) } }
+            .first { $0.1.asksBeforeQuit && $0.1.hasUnsavedChanges() }
+        guard let (window, closeGuard) = editor else { return false }
+
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        // Already asking about this window, or mid-save: let that finish and
+        // leave quitting again to the user.
+        guard !closeGuard.isPrompting, closeGuard.canClose() else {
+            Task { completion(false) }
+            return true
+        }
+        closeGuard.isPrompting = true
+        closeGuard.present(on: window) { closed in
+            guard closed else { return completion(false) }
+            if !reviewBeforeQuit(completion: completion) { completion(true) }
+        }
+        return true
+    }
 
     func attach(to window: NSWindow?) {
         guard let window else {
@@ -57,7 +94,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         canClose = { true }
         offersDelete = { false }
         projectName = { "" }
-        onDecision = { _, done in done() }
+        onDecision = { _, done in done(true) }
         isPrompting = false
         isCloseApproved = false
     }
@@ -97,7 +134,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         delegate?.windowWillClose?(notification)
     }
 
-    private func present(on window: NSWindow) {
+    private func present(on window: NSWindow, then finished: ((Bool) -> Void)? = nil) {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = offersDelete()
@@ -127,14 +164,21 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
                 decision = .cancel
             }
 
-            guard decision != .cancel else { return }
+            guard decision != .cancel else {
+                finished?(false)
+                return
+            }
 
-            self.onDecision(decision) { [weak self, weak window] in
-                guard let self, let window else { return }
+            self.onDecision(decision) { [weak self, weak window] closes in
+                guard closes, let self, let window else {
+                    finished?(false)
+                    return
+                }
                 // Deleting already tore the project down; either way the
                 // window is now free to go.
                 self.isCloseApproved = true
                 window.close()
+                finished?(true)
             }
         }
     }
