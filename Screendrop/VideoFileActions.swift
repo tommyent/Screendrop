@@ -136,16 +136,17 @@ enum VideoFileActions {
     /// reject - the remux is what makes the rename honest. Matching containers
     /// take the copy path, which on APFS is a clone rather than a byte copy.
     static func save(from sourceURL: URL, to destinationURL: URL) async throws {
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
+        let stagingURL = try ScreenshotFileActions.stagingURL(from: sourceURL, to: destinationURL)
+        defer { try? FileManager.default.removeItem(at: stagingURL) }
+        try Task.checkCancellation()
 
-        guard let target = remuxTarget(from: sourceURL, to: destinationURL) else {
-            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-            return
+        if let target = remuxTarget(from: sourceURL, to: destinationURL) {
+            try await VideoContainerRemuxer.remux(from: sourceURL, to: stagingURL, as: target)
+        } else {
+            try FileManager.default.copyItem(at: sourceURL, to: stagingURL)
         }
-
-        try await VideoContainerRemuxer.remux(from: sourceURL, to: destinationURL, as: target)
+        try Task.checkCancellation()
+        try ScreenshotFileActions.installExport(from: stagingURL, at: destinationURL)
     }
 
     /// The container to rewrite into, or nil when a plain copy is correct.

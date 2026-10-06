@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Darwin
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -362,15 +363,15 @@ enum ScreenshotFileActions {
     }
     
     static func save(from sourceURL: URL, to destinationURL: URL) throws {
+        let stagingURL = try stagingURL(from: sourceURL, to: destinationURL)
+        defer { try? FileManager.default.removeItem(at: stagingURL) }
+
         if ScreendropPreferences.exportFormat == .png {
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
-                try FileManager.default.removeItem(at: destinationURL)
-            }
-            
-            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            try FileManager.default.copyItem(at: sourceURL, to: stagingURL)
         } else {
-            try exportImage(from: sourceURL, to: destinationURL, contentType: ScreendropPreferences.exportFormat.contentType)
+            try exportImage(from: sourceURL, to: stagingURL, contentType: ScreendropPreferences.exportFormat.contentType)
         }
+        try installExport(from: stagingURL, at: destinationURL)
     }
 
     /// Updates an already-associated export without changing its file format.
@@ -382,9 +383,7 @@ enum ScreenshotFileActions {
             throw CocoaError(.fileWriteUnknown)
         }
 
-        let stagingURL = destinationURL
-            .deletingLastPathComponent()
-            .appendingPathComponent(".Screendrop-\(UUID().uuidString)-\(destinationURL.lastPathComponent)")
+        let stagingURL = try stagingURL(from: sourceURL, to: destinationURL)
         defer { try? FileManager.default.removeItem(at: stagingURL) }
 
         if destinationType == .png, actualImageContentType(at: sourceURL) == .png {
@@ -393,10 +392,36 @@ enum ScreenshotFileActions {
             try exportImage(from: sourceURL, to: stagingURL, contentType: destinationType)
         }
 
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: stagingURL)
+        try installExport(from: stagingURL, at: destinationURL)
+    }
+
+    /// Shared by image, annotated-image and video saves. Keep the original source
+    /// and destination intact until a complete sibling file is ready to install.
+    nonisolated static func stagingURL(from sourceURL: URL, to destinationURL: URL) throws -> URL {
+        let source = ((try? URL(resolvingAliasFileAt: sourceURL, options: [.withoutUI, .withoutMounting])) ?? sourceURL)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let destination = ((try? URL(resolvingAliasFileAt: destinationURL, options: [.withoutUI, .withoutMounting])) ?? destinationURL)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let sameFile: Bool
+        if let sourceID = try? source.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier,
+           let destinationID = try? destination.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier {
+            sameFile = sourceID.isEqual(destinationID)
         } else {
-            try FileManager.default.moveItem(at: stagingURL, to: destinationURL)
+            sameFile = false
+        }
+        guard source != destination, !sameFile else {
+            throw CocoaError(.fileWriteInvalidFileName, userInfo: [
+                NSLocalizedDescriptionKey: "Choose a different destination to keep the original capture."
+            ])
+        }
+        return destinationURL.deletingLastPathComponent()
+            .appendingPathComponent(".Screendrop-\(UUID().uuidString)")
+            .appendingPathExtension(destinationURL.pathExtension)
+    }
+
+    nonisolated static func installExport(from stagingURL: URL, at destinationURL: URL) throws {
+        guard rename(stagingURL.path, destinationURL.path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
     
@@ -412,10 +437,6 @@ enum ScreenshotFileActions {
     }
     
     private static func exportImage(from sourceURL: URL, to destinationURL: URL, contentType: UTType) throws {
-        if FileManager.default.fileExists(atPath: destinationURL.path) {
-            try FileManager.default.removeItem(at: destinationURL)
-        }
-        
         guard let source = CGImageSourceCreateWithURL(
             sourceURL as CFURL,
             [kCGImageSourceShouldCache: false] as CFDictionary

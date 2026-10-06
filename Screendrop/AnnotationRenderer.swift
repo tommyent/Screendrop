@@ -80,6 +80,8 @@ enum AnnotationRenderer {
         destinationURL: URL,
         contentType: UTType
     ) throws {
+        let stagingURL = try ScreenshotFileActions.stagingURL(from: sourceURL, to: destinationURL)
+        defer { try? FileManager.default.removeItem(at: stagingURL) }
         defer {
             ciContext.clearCaches()
             AnnotationMockupEffectsRenderer.clearCaches()
@@ -149,12 +151,8 @@ enum AnnotationRenderer {
                 renderedImage = flattened
             }
 
-            if FileManager.default.fileExists(atPath: destinationURL.path) {
-                try FileManager.default.removeItem(at: destinationURL)
-            }
-
             guard let destination = CGImageDestinationCreateWithURL(
-                destinationURL as CFURL,
+                stagingURL as CFURL,
                 contentType.identifier as CFString,
                 1,
                 nil
@@ -174,6 +172,7 @@ enum AnnotationRenderer {
             guard CGImageDestinationFinalize(destination) else {
                 throw CocoaError(.fileWriteUnknown)
             }
+            try ScreenshotFileActions.installExport(from: stagingURL, at: destinationURL)
         }
 
     }
