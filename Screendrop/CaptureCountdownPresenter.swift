@@ -24,14 +24,19 @@ final class CaptureCountdownPresenter {
     private var countdownTask: Task<Bool, Never>?
     private var escapeMonitor: Any?
     private var globalEscapeMonitor: Any?
+    /// Whether the countdown on screen leads into a screen recording, so a
+    /// Stop can cancel it and leave a screenshot's alone. Set and cleared
+    /// with `isRunning`, so it always describes the countdown that's running.
+    private(set) var isCountingDownToRecord = false
 
     /// False means cancelled or another countdown is already in progress.
-    func runIfNeeded(seconds: Int, displayID: CGDirectDisplayID?) async -> Bool {
+    func runIfNeeded(seconds: Int, displayID: CGDirectDisplayID?, beforeRecording: Bool = false) async -> Bool {
         guard !isRunning, !Task.isCancelled else { return false }
         guard seconds > 0 else { return true }
         let id = UUID()
         runID = id
         isRunning = true
+        isCountingDownToRecord = beforeRecording
         installEscapeMonitors()
         let task = Task { @MainActor in
             guard runID == id, !Task.isCancelled else { return false }
@@ -67,6 +72,7 @@ final class CaptureCountdownPresenter {
         countdownTask = nil
         runID = nil
         isRunning = false
+        isCountingDownToRecord = false
         dismiss()
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
         if let globalEscapeMonitor { NSEvent.removeMonitor(globalEscapeMonitor) }

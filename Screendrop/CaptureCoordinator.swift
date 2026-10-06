@@ -181,7 +181,8 @@ final class CaptureCoordinator {
         Task {
             guard await CaptureCountdownPresenter.shared.runIfNeeded(
                 seconds: ScreendropPreferences.recordingStartDelaySeconds,
-                displayID: display.displayID
+                displayID: display.displayID,
+                beforeRecording: true
             ) else { return }
             ScreenRecordingManager.shared.startRecording(source: ScreenRecordingSource(kind: .fullscreen(display)))
         }
@@ -192,7 +193,8 @@ final class CaptureCoordinator {
             let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
             guard await CaptureCountdownPresenter.shared.runIfNeeded(
                 seconds: ScreendropPreferences.recordingStartDelaySeconds,
-                displayID: displayID
+                displayID: displayID,
+                beforeRecording: true
             ) else { return }
             ScreenRecordingManager.shared.startRecording(source: ScreenRecordingSource(kind: .window(window)))
         }
@@ -210,7 +212,8 @@ final class CaptureCoordinator {
             Task {
                 guard await CaptureCountdownPresenter.shared.runIfNeeded(
                     seconds: ScreendropPreferences.recordingStartDelaySeconds,
-                    displayID: display.displayID
+                    displayID: display.displayID,
+                    beforeRecording: true
                 ) else {
                     await CameraRecordingManager.shared.stopPreview()
                     return

@@ -25,6 +25,7 @@ nonisolated enum ScreendropIntentError: Error, CustomLocalizedStringResourceConv
     case noTextRecognized
     case recordingAlreadyActive
     case noActiveRecording
+    case recordingCancelled
     case noDisplayAvailable
 
     var localizedStringResource: LocalizedStringResource {
@@ -37,6 +38,8 @@ nonisolated enum ScreendropIntentError: Error, CustomLocalizedStringResourceConv
             "Screendrop is already recording."
         case .noActiveRecording:
             "Screendrop isn't currently recording."
+        case .recordingCancelled:
+            "The recording was stopped before it started, so nothing was saved."
         case .noDisplayAvailable:
             "No display was available to record."
         }
@@ -128,6 +131,27 @@ private func startFullScreenRecording() async throws {
     CaptureCoordinator.shared.recordFullscreen(display)
 }
 
+/// Shared by Stop and Toggle. A recording that hasn't started yet, still
+/// counting down or still setting up capture, is cancelled, and that throws:
+/// nothing was saved, so the Shortcut mustn't report success.
+@MainActor
+private func stopScreenRecording() throws {
+    let manager = ScreenRecordingManager.shared
+    switch manager.state {
+    case .idle:
+        guard CaptureCountdownPresenter.shared.isCountingDownToRecord else {
+            throw ScreendropIntentError.noActiveRecording
+        }
+        CaptureCountdownPresenter.shared.cancel()
+        throw ScreendropIntentError.recordingCancelled
+    case .starting:
+        manager.stopRecording()
+        throw ScreendropIntentError.recordingCancelled
+    case .recording, .paused, .finishing:
+        manager.stopRecording()
+    }
+}
+
 nonisolated struct StartScreenRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Screen Recording"
     static var description = IntentDescription(
@@ -149,10 +173,7 @@ nonisolated struct StopScreenRecordingIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        guard ScreenRecordingManager.shared.isActive else {
-            throw ScreendropIntentError.noActiveRecording
-        }
-        ScreenRecordingManager.shared.stopRecording()
+        try stopScreenRecording()
         return .result()
     }
 }
@@ -165,8 +186,8 @@ nonisolated struct ToggleScreenRecordingIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        if ScreenRecordingManager.shared.isActive {
-            ScreenRecordingManager.shared.stopRecording()
+        if ScreenRecordingManager.shared.isActive || CaptureCountdownPresenter.shared.isCountingDownToRecord {
+            try stopScreenRecording()
         } else {
             try await startFullScreenRecording()
         }

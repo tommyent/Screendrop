@@ -128,6 +128,10 @@ final class ScreenRecordingManager {
     private var timer: Timer?
     private var finishAction: ScreenRecordingFinishAction = .preview
     private var isStopping = false
+    /// Set by a Stop that arrives while capture is still being wired up.
+    /// The startup task sees it at its next check and tears down whatever it
+    /// had already started.
+    private var isStartCancelled = false
     private var currentSource: ScreenRecordingSource?
     private var activityToken: NSObjectProtocol?
     private var terminationCompletion: ((RecordingSession?) -> Void)?
@@ -161,6 +165,7 @@ final class ScreenRecordingManager {
         currentSource = source
         finishAction = .preview
         isStopping = false
+        isStartCancelled = false
 
         PreviewWindowPlacement.shared.setTargetDisplayID(targetDisplayID)
         RecordingControlPresenter.shared.show(displayID: targetDisplayID)
@@ -172,7 +177,7 @@ final class ScreenRecordingManager {
             do {
                 let requestedOptions = ScreenRecordingCaptureOptions.fromPreferences()
                 let (options, inputWarnings) = await Self.resolveCaptureOptions(requestedOptions)
-                guard state == .starting, !isStopping else { return }
+                guard try isStarting(session: nil) else { return }
 
                 if !inputWarnings.isEmpty {
                     Self.presentInputWarnings(inputWarnings)
@@ -191,7 +196,7 @@ final class ScreenRecordingManager {
                 // point must be able to remove or recover the directory.
                 self.session = session
                 let content = try await ScreenRecordingCapture.availableContent()
-                guard isStarting(session: session) else { return }
+                guard try isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)
 
                 try writer.setupWriter(
@@ -231,7 +236,7 @@ final class ScreenRecordingManager {
                         deviceID: cameraID,
                         displayID: targetDisplayID
                     )
-                    guard isStarting(session: session) else { return }
+                    guard try isStarting(session: session) else { return }
                     if !cameraStarted {
                         Self.presentInputWarnings([
                             "The selected camera could not start. The screen and selected audio will still be recorded."
@@ -252,7 +257,7 @@ final class ScreenRecordingManager {
                 // Camera setup and every permission prompt complete before the
                 // screen stream begins, so setup UI is never baked into video.
                 try await capture.startCapture(filter: target.filter, configuration: target.configuration)
-                guard isStarting(session: session) else { return }
+                guard try isStarting(session: session) else { return }
 
                 manifest = CaptureManifest()
                 manifest.pixelWidth = target.width
@@ -284,6 +289,10 @@ final class ScreenRecordingManager {
     }
 
     func stopRecording() {
+        if state == .starting {
+            isStartCancelled = true
+            return
+        }
         guard state == .recording || state == .paused else { return }
         finishAction = .preview
         stopCaptureAndFinish()
@@ -512,14 +521,29 @@ final class ScreenRecordingManager {
             RecordingSessionStore.deleteSession(session)
         }
         cleanupAfterRecording()
-        errorMessage = "Failed to start screen recording: \(error.localizedDescription)"
         RecordingControlPresenter.shared.hide()
         RecordingAreaHighlightPresenter.shared.hide()
+        // A Quit during this teardown found isStopping set and left its
+        // completion for us. Answer it, or AppKit waits forever to quit.
+        if let terminationCompletion {
+            self.terminationCompletion = nil
+            terminationCompletion(nil)
+            return
+        }
+        // A Stop during startup isn't a failure to report.
+        guard !(error is CancellationError) else { return }
+        errorMessage = "Failed to start screen recording: \(error.localizedDescription)"
         Self.presentStartFailureAlert(error: error)
     }
 
-    private func isStarting(session: RecordingSession) -> Bool {
-        state == .starting && !isStopping && self.session == session
+    /// False when another path (termination, a capture error) has taken
+    /// over and cleans up itself. Throws when a Stop cancelled this start,
+    /// so the catch tears down what it had started. `session` is nil before
+    /// the start has created one.
+    private func isStarting(session: RecordingSession?) throws -> Bool {
+        guard state == .starting, !isStopping, self.session == session else { return false }
+        if isStartCancelled { throw CancellationError() }
+        return true
     }
 
     /// Resolves stale devices and TCC before creating writers or starting any
