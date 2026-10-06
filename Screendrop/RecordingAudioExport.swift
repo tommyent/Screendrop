@@ -159,6 +159,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
                 try Task.checkCancellation()
                 while !input.isReadyForMoreMediaData {
                     try Task.checkCancellation()
+                    if writer.status == .failed { throw ExportError.writerFailed(writer.error) }
                     try await Task.sleep(nanoseconds: 2_000_000)
                 }
                 guard input.append(sampleBuffer) else {

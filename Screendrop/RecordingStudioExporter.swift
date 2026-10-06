@@ -353,6 +353,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             async let videoDone: Void = pumpVideo(
                 output: videoOutput,
                 input: videoInput,
+                writer: writer,
                 adaptor: adaptor,
                 compositor: compositor,
                 cameraFeed: cameraFeed,
@@ -364,6 +365,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             async let audioDone: Void = pumpAudio(
                 output: screenAudioOutput,
                 input: writerAudioInput,
+                writer: writer,
                 cancelFlag: cancelFlag
             )
             _ = try await (videoDone, audioDone)
@@ -394,6 +396,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
     private func pumpVideo(
         output: AVAssetReaderTrackOutput,
         input: AVAssetWriterInput,
+        writer: AVAssetWriter,
         adaptor: AVAssetWriterInputPixelBufferAdaptor,
         compositor: StudioFrameCompositor,
         cameraFeed: CameraFrameFeed?,
@@ -445,12 +448,13 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             let waitStart = CFAbsoluteTimeGetCurrent()
             while !input.isReadyForMoreMediaData {
                 if cancelFlag.isCancelled { throw ExportError.cancelled }
+                if writer.status == .failed { throw ExportError.writerFailed(writer.error) }
                 try await Task.sleep(nanoseconds: 2_000_000)
             }
             writerWaitSeconds += CFAbsoluteTimeGetCurrent() - waitStart
 
             if !adaptor.append(begun.destination, withPresentationTime: timing.presentationTime(forFrame: index)) {
-                throw ExportError.writerFailed(nil)
+                throw ExportError.writerFailed(writer.error)
             }
             if index % 10 == 0 {
                 progress(min(0.98, Double(index) / Double(frameCount)))
@@ -483,12 +487,12 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             guard let sourceBuffer = currentBuffer ?? pending?.buffer else { break }
 
             guard let pool = adaptor.pixelBufferPool else {
-                throw ExportError.writerFailed(nil)
+                throw ExportError.writerFailed(writer.error)
             }
             var destinationBuffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &destinationBuffer)
             guard let destinationBuffer else {
-                throw ExportError.writerFailed(nil)
+                throw ExportError.writerFailed(writer.error)
             }
 
             let cameraBuffer = cameraFeed?.latestFrame(at: sourceTime)
@@ -522,6 +526,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
     private func pumpAudio(
         output: AVAssetReaderAudioMixOutput?,
         input: AVAssetWriterInput?,
+        writer: AVAssetWriter,
         cancelFlag: CancelFlag
     ) async throws {
         guard let output, let input else { return }
@@ -530,10 +535,11 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             if cancelFlag.isCancelled { throw ExportError.cancelled }
             while !input.isReadyForMoreMediaData {
                 if cancelFlag.isCancelled { throw ExportError.cancelled }
+                if writer.status == .failed { throw ExportError.writerFailed(writer.error) }
                 try await Task.sleep(nanoseconds: 2_000_000)
             }
             if !input.append(sampleBuffer) {
-                throw ExportError.writerFailed(nil)
+                throw ExportError.writerFailed(writer.error)
             }
         }
         input.markAsFinished()
