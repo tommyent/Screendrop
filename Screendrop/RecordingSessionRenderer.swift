@@ -15,9 +15,15 @@ import CoreGraphics
 enum RecordingSessionRenderer {
     private enum RenderError: LocalizedError {
         case missingCameraTrack
+        case missingReplacementAudio
 
         var errorDescription: String? {
-            "The camera recording does not contain a readable video track."
+            switch self {
+            case .missingCameraTrack:
+                "The camera recording does not contain a readable video track."
+            case .missingReplacementAudio:
+                "The project's replacement soundtrack is missing. Open the recording in Studio, then reset to recorded audio or import the soundtrack again."
+            }
         }
     }
 
@@ -63,6 +69,18 @@ enum RecordingSessionRenderer {
         let manifest = session.loadCaptureManifest()
         let pointerSynthesized = manifest?.pointerSynthesized == true
         let editDocument = session.effectiveEditDocument()
+        let exportSettings = editDocument?.exportSettings ?? VideoCompressionSettings()
+        let audioVolume = RecordingAudioGain.normalized(editDocument?.audioVolume ?? 1)
+        let audioReplacementURL = !exportSettings.removeAudio && audioVolume > 0
+            ? editDocument?.replacementAudioFileName.map {
+                session.directoryURL.appendingPathComponent($0)
+            }
+            : nil
+        if let audioReplacementURL {
+            guard FileManager.default.fileExists(atPath: audioReplacementURL.path) else {
+                throw RenderError.missingReplacementAudio
+            }
+        }
         let asset = AVURLAsset(url: session.screenURL)
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else {
@@ -177,8 +195,9 @@ enum RecordingSessionRenderer {
             videoCropRect: document?.normalizedVideoCropRect
                 ?? CGRect(x: 0, y: 0, width: 1, height: 1),
             clipTimeline: clipTimeline,
-            exportSettings: document?.exportSettings ?? VideoCompressionSettings(),
-            audioVolume: document?.audioVolume ?? 1,
+            exportSettings: exportSettings,
+            audioReplacementURL: audioReplacementURL,
+            audioVolume: audioVolume,
             reframe: reframe,
             fitContentAspect: fitContentAspect,
             usesUniformPadding: aspect == .original

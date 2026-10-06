@@ -244,17 +244,9 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     // MARK: - Render stamp
 
     private struct RenderStamp: Codable {
-        var layoutVersion = 1
+        static let currentLayoutVersion = 2
+        var layoutVersion = currentLayoutVersion
         var document: RecordingEditDocument?
-    }
-
-    func loadRenderStamp() -> RecordingEditDocument? {
-        guard let data = try? Data(contentsOf: renderStampURL) else { return nil }
-        if let stamp = try? CaptureManifest.decoder.decode(RenderStamp.self, from: data) {
-            return stamp.document
-        }
-        // Older builds stored the edit document directly.
-        return try? CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data)
     }
 
     func writeRenderStamp(_ document: RecordingEditDocument?) {
@@ -266,15 +258,13 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     /// Export and Share can then skip the render instead of trusting that
     /// nothing has changed since it was made.
     func freshFinalURL(matching document: RecordingEditDocument?) -> URL? {
-        guard let existing = existingFinalURL else { return nil }
-        let stamp = loadRenderStamp()
-        // Original's geometry changed even when no edit settings changed.
-        // This also versions default renders that have no edit document yet.
-        if document?.exportAspectPreset ?? .original == .original {
-            guard let data = try? Data(contentsOf: renderStampURL),
-                  let stamp = try? CaptureManifest.decoder.decode(RenderStamp.self, from: data),
-                  stamp.layoutVersion == 1 else { return nil }
-        }
+        // Older shared renders omitted replacement audio for every aspect,
+        // even though their stamp named the selected soundtrack.
+        guard let existing = existingFinalURL,
+              let data = try? Data(contentsOf: renderStampURL),
+              let renderStamp = try? CaptureManifest.decoder.decode(RenderStamp.self, from: data),
+              renderStamp.layoutVersion == RenderStamp.currentLayoutVersion else { return nil }
+        let stamp = renderStamp.document
         if stamp == document { return existing }
         // Swapping only the container leaves every encoded sample intact, so
         // the render survives and export converts it on the way out.
