@@ -102,6 +102,9 @@ final class CloudUploader: NSObject {
         }
         let mimeType = mimeTypeForFile(fileURL)
         let isVideo = mimeType.hasPrefix("video/")
+        let transcriptData = isVideo && RecordingSession.isSessionDirectory(sessionDirectory)
+            ? CloudSidecarUploader.transcriptData(sessionDirectory: sessionDirectory, uploadedFileURL: fileURL)
+            : nil
         let dimensions: (width: Int, height: Int)?
         let duration: Double?
 
@@ -153,7 +156,7 @@ final class CloudUploader: NSObject {
             uploadProgress.removeValue(forKey: itemID)
             uploadedURLs[itemID] = result.url
             if isVideo {
-                scheduleSidecarUpload(uploadID: result.id, fileURL: fileURL, title: title, creds: creds)
+                scheduleSidecarUpload(uploadID: result.id, fileURL: fileURL, transcriptData: transcriptData, title: title, creds: creds)
             }
             return result
         } catch is CancellationError {
@@ -175,17 +178,16 @@ final class CloudUploader: NSObject {
     /// Ships the share-page extras (poster, title, transcript) after the
     /// video itself is up. Best-effort and detached: the share link is
     /// already usable, sidecars enrich the page when they land.
-    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, title: String?, creds: CloudCredentials) {
+    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, transcriptData: Data?, title: String?, creds: CloudCredentials) {
         let item = ScreenshotHistoryStore.shared.items.first {
             $0.url.standardizedFileURL == fileURL.standardizedFileURL
         }
-        let sessionDirectory = item?.recordingSession?.directoryURL
         let createdAt = item?.createdAt ?? Date()
         Task.detached(priority: .utility) {
             await CloudSidecarUploader.uploadVideoSidecars(
                 uploadID: uploadID,
                 uploadedFileURL: fileURL,
-                sessionDirectory: sessionDirectory,
+                transcriptData: transcriptData,
                 createdAt: createdAt,
                 customTitle: title,
                 creds: creds
