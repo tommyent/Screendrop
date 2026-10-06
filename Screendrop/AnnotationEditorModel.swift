@@ -601,7 +601,8 @@ final class AnnotationEditorModel {
         strokeWidth = CGFloat(preset.strokeWidth)
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
-        textFontSize = CGFloat(preset.textFontSize)
+        // Clamped here too, so a preset saved out of range by an older build heals on open.
+        textFontSize = AnnotationTextMetrics.clampedFontSize(CGFloat(preset.textFontSize))
         textIsBold = preset.textIsBold
         textIsItalic = preset.textIsItalic
         textIsUnderline = preset.textIsUnderline

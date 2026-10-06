@@ -159,13 +159,13 @@ struct AnnotationTextStyleControls: View {
 
     private func commitFontSizeText() {
         let trimmedText = fontSizeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let size = Double(trimmedText) else {
+        guard let size = Double(trimmedText), size.isFinite else {
             syncFontSizeText()
             return
         }
 
-        let clampedSize = max(size.rounded(), Double(AnnotationTextMetrics.minimumFontSize))
-        model.selectedTextFontSize = CGFloat(clampedSize)
+        let clampedSize = AnnotationTextMetrics.clampedFontSize(CGFloat(size.rounded()))
+        model.selectedTextFontSize = clampedSize
         fontSizeText = String(Int(clampedSize))
     }
 
