@@ -48,7 +48,8 @@ struct CaptureLibraryView: View {
             .modifier(LibrarySidebarSurface())
         } detail: {
             VStack(spacing: 0) {
-                browser
+                // Empty pages are only as tall as their message; fill the column anyway.
+                browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 statusBar
             }
