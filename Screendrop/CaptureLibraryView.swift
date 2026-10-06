@@ -237,7 +237,16 @@ struct CaptureLibraryView: View {
 /// Share one adaptive color between the sidebar and the detail's corner
 /// cutouts; separate visual-effect views can resolve to different tints.
 private struct LibrarySidebarSurface: ViewModifier {
-    static var background: Color { Color(nsColor: .underPageBackgroundColor) }
+    static var background: Color { Color(nsColor: NSColor(name: nil, dynamicProvider: chrome)) }
+
+    /// A darker grey than the system's in light mode, so the white card stands
+    /// out. Dark mode keeps the system colour. Nonisolated: AppKit can resolve
+    /// colours off the main thread.
+    nonisolated private static func chrome(for appearance: NSAppearance) -> NSColor {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .underPageBackgroundColor
+            : NSColor(srgbRed: 230 / 255, green: 230 / 255, blue: 230 / 255, alpha: 1)
+    }
 
     @ViewBuilder
     func body(content: Content) -> some View {
