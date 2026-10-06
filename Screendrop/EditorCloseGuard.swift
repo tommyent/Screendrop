@@ -23,6 +23,8 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     /// Nothing to ask about when this is false.
     var hasUnsavedChanges: () -> Bool = { false }
     var canClose: () -> Bool = { true }
+    /// An export or upload that closing would cancel; asked about first.
+    var hasRunningWork: () -> Bool = { false }
     /// Only a project that was never saved offers "Delete and close":
     /// discarding a project the user already committed to is unrecoverable,
     /// so that case reverts to the saved state instead.
@@ -92,6 +94,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         detachFromWindow()
         hasUnsavedChanges = { false }
         canClose = { true }
+        hasRunningWork = { false }
         offersDelete = { false }
         projectName = { "" }
         onDecision = { _, done in done(true) }
@@ -116,6 +119,12 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard canClose() else { return false }
         if isCloseApproved { return true }
+        if hasRunningWork() {
+            guard !isPrompting else { return false }
+            isPrompting = true
+            presentRunningWork(on: sender)
+            return false
+        }
         guard hasUnsavedChanges() else { return true }
         guard !isPrompting else { return false }
 
@@ -132,6 +141,30 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         // We implement this delegate method, so forwardingTarget no longer
         // forwards it. SwiftUI still needs the notification to tear down.
         delegate?.windowWillClose?(notification)
+    }
+
+    private func presentRunningWork(on window: NSWindow) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "An export or upload is still in progress"
+        alert.informativeText = "Closing the window cancels it. The recording itself is kept."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Close Anyway")
+
+        alert.beginSheetModal(for: window) { [weak self, weak window] response in
+            guard let self, let window else { return }
+            self.isPrompting = false
+            guard response == .alertSecondButtonReturn else { return }
+            // Unsaved edits still get their own prompt; it closes the
+            // window itself, so this approval can't outlive it.
+            if self.hasUnsavedChanges() {
+                self.isPrompting = true
+                self.present(on: window)
+            } else {
+                self.isCloseApproved = true
+                window.close()
+            }
+        }
     }
 
     private func present(on window: NSWindow, then finished: ((Bool) -> Void)? = nil) {

@@ -179,6 +179,10 @@ final class RecordingStudioModel {
     var exportState: RecordingStudioExportState = .idle
     var audioExportState: RecordingStudioExportState = .idle
     var shareState: RecordingStudioShareState = .idle
+    /// Work that closing the window or quitting would cancel.
+    var hasRunningWork: Bool {
+        exportState.isExporting || audioExportState.isExporting || shareState.isBusy
+    }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
     private(set) var shareItemID: UUID?

@@ -202,6 +202,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         StudioProjectRegistry.shared.flushDrafts()
         let unsavedProjectCount = StudioProjectRegistry.shared.unsavedProjectCount
         let unsavedCount = ScreenshotPreviewStack.shared.unsavedItems.count
+        if StudioProjectRegistry.shared.hasRunningWork {
+            NSApp.activate(ignoringOtherApps: true)
+
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "An export or upload is still in progress"
+            alert.informativeText = "Quitting cancels it. The recording itself is kept."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Quit Anyway")
+
+            guard alert.runModal() == .alertSecondButtonReturn else {
+                return .terminateCancel
+            }
+        }
         if ScreenRecordingManager.shared.isActive {
             NSApp.activate(ignoringOtherApps: true)
 

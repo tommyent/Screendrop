@@ -223,6 +223,10 @@ final class StudioProjectRegistry {
         models.values.compactMap(\.model).filter(\.hasUnsavedChanges).count
     }
 
+    var hasRunningWork: Bool {
+        models.values.contains { $0.model?.hasRunningWork == true }
+    }
+
     /// Called before the app goes away. The autosave is debounced, so without
     /// this a quit can drop the last fraction of a second of edits.
     func flushDrafts() {

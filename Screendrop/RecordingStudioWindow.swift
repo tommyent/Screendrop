@@ -226,6 +226,7 @@ private struct RecordingStudioContent: View {
     }
 
     private func configureCloseGuard() {
+        closeGuard.hasRunningWork = { [weak model] in model?.hasRunningWork ?? false }
         closeGuard.hasUnsavedChanges = { [weak model] in model?.hasUnsavedChanges ?? false }
         closeGuard.offersDelete = { [weak model] in model?.hasNeverBeenSaved ?? false }
         closeGuard.projectName = { [weak model] in model?.projectDisplayName ?? "this recording" }
