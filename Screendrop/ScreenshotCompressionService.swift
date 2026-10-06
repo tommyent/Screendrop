@@ -39,18 +39,7 @@ enum ScreenshotCompressionService {
         let originalByteCount = try byteCount(at: sourceURL)
         let outputURL = try temporaryJPEGURL(for: sourceURL)
 
-        guard let source = CGImageSourceCreateWithURL(
-            sourceURL as CFURL,
-            [kCGImageSourceShouldCache: false] as CFDictionary
-        ) else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
-        guard let sourceImage = CGImageSourceCreateImageAtIndex(
-            source,
-            0,
-            [kCGImageSourceShouldCache: true] as CFDictionary
-        ) else {
+        guard let sourceImage = ScreenshotImageLoader.uprightImage(at: sourceURL) else {
             throw CocoaError(.fileReadCorruptFile)
         }
 

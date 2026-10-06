@@ -235,6 +235,80 @@ final class AnnoDocument {
     }
 }
 
+extension AnnoDocument.Snapshot {
+    /// Moves shapes placed on an image's raw pixel grid onto the upright image its EXIF
+    /// `orientation` (2-8) describes, so every shape covers exactly the pixels it covered before.
+    /// `uprightSize` is the image's size with the orientation applied. In a mirrored orientation
+    /// a text or callout box moves exactly, but its glyphs keep their up direction unmirrored.
+    func uprighted(exifOrientation orientation: Int, uprightSize: CGSize) -> Self {
+        let quarterTurned = (5...8).contains(orientation)
+        let w = Double(quarterTurned ? uprightSize.height : uprightSize.width)
+        let h = Double(quarterTurned ? uprightSize.width : uprightSize.height)
+        // Raw -> upright is translate(offset) * rotate(angle) * (mirrored ? flip x : identity).
+        let angle: Double, mirrored: Bool, offset: Vec
+        switch orientation {
+        case 2: (angle, mirrored, offset) = (0, true, Vec(w, 0))
+        case 3: (angle, mirrored, offset) = (.pi, false, Vec(w, h))
+        case 4: (angle, mirrored, offset) = (.pi, true, Vec(0, h))
+        case 5: (angle, mirrored, offset) = (-.pi / 2, true, Vec(0, 0))
+        case 6: (angle, mirrored, offset) = (.pi / 2, false, Vec(h, 0))
+        case 7: (angle, mirrored, offset) = (.pi / 2, true, Vec(h, w))
+        case 8: (angle, mirrored, offset) = (-.pi / 2, false, Vec(0, w))
+        default: return self
+        }
+        let map = Mat.multiply(
+            Mat.multiply(Mat.translate(offset.x, offset.y), Mat.rotate(angle)),
+            Mat.scale(mirrored ? -1 : 1, 1)
+        )
+
+        var result = self
+        result.shapes = shapes.map { shape in
+            var shape = shape
+            let origin = map.applyToPoint(Vec(shape.x, shape.y))
+            shape.x = origin.x
+            shape.y = origin.y
+            guard mirrored else {
+                shape.rotation += angle
+                return shape
+            }
+            // rotate(angle) * flip * rotate(r) == rotate(angle - r) * flip: the shape turns by
+            // angle - r and its own geometry flips across its local y axis.
+            shape.rotation = angle - shape.rotation
+            let boxWidth: Double
+            switch shape.kind {
+            case var .draw(props):
+                props.points = props.points.map { Vec(-$0.x, $0.y, $0.z) }
+                shape.kind = .draw(props)
+                return shape
+            case var .arrow(props):
+                props.start = Vec(-props.start.x, props.start.y, props.start.z)
+                props.end = Vec(-props.end.x, props.end.y, props.end.z)
+                props.bend = -props.bend
+                shape.kind = .arrow(props)
+                return shape
+            case let .geo(props): boxWidth = props.w
+            case let .redaction(props): boxWidth = props.w
+            case let .highlight(props): boxWidth = props.w
+            case let .numbered(props): boxWidth = props.diameter
+            case let .text(props): boxWidth = Double(TextMeasure.measure(props).width)
+            }
+            // The flipped box spans -w...0; it is the same box with its origin moved by -w.
+            let shift = Mat.rotate(shape.rotation).applyToPoint(Vec(-boxWidth, 0))
+            shape.x += shift.x
+            shape.y += shift.y
+            return shape
+        }
+        if mirrored {
+            result.bindings = bindings.map { binding in
+                var binding = binding
+                binding.normalizedAnchor.x = 1 - binding.normalizedAnchor.x
+                return binding
+            }
+        }
+        return result
+    }
+}
+
 /// Builds the local-space geometry for a shape, mirroring each shape util's `getGeometry`.
 enum AnnoShapeGeometry {
     static func build(_ shape: AnnoShape, in document: AnnoDocument) -> Geometry2d {

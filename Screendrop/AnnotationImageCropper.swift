@@ -25,9 +25,7 @@ enum AnnotationImageCropper {
 
     /// Crop the image at `url` to `normalizedRect` (0...1, top-left origin).
     static func crop(url: URL, normalizedRect: CGRect) -> Result? {
-        let options = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else {
+        guard let image = ScreenshotImageLoader.uprightImage(at: url) else {
             return nil
         }
 

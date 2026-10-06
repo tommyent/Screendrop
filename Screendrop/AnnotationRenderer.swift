@@ -170,18 +170,14 @@ enum AnnotationRenderer {
 
     }
 
-    /// The image, and its pixels per point from the DPI it was saved with
-    /// (144 for a Retina capture), or 1 when it records none.
+    /// The image, upright, and its pixels per point from the DPI it was saved
+    /// with (144 for a Retina capture), or 1 when it records none.
     nonisolated private static func loadSourceImage(sourceURL: URL) throws -> (image: CGImage, pixelsPerPoint: CGFloat) {
         guard let source = CGImageSourceCreateWithURL(
             sourceURL as CFURL,
             [kCGImageSourceShouldCache: false] as CFDictionary
         ),
-              let cgImage = CGImageSourceCreateImageAtIndex(
-                source,
-                0,
-                [kCGImageSourceShouldCache: false] as CFDictionary
-              ) else {
+              let cgImage = ScreenshotImageLoader.uprightImage(at: sourceURL) else {
             throw CocoaError(.fileReadCorruptFile)
         }
 

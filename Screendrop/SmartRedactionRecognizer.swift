@@ -38,8 +38,7 @@ nonisolated enum SmartRedactionRecognizer {
         at url: URL, cancellation: RecognitionCancellation
     ) -> [SmartRedactionRegion] {
         guard !cancellation.isCancelled,
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+              let cgImage = ScreenshotImageLoader.uprightImage(at: url) else {
             return []
         }
 

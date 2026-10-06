@@ -15,9 +15,11 @@ import SwiftUI
 ///
 /// Version 2 stores engine shapes. Version 1 stored the old normalized-rect annotation items,
 /// which had no rotation and no shared geometry; there is no faithful conversion, so a v1 sidecar
-/// is ignored and its screenshot opens as a flat image.
+/// is ignored and its screenshot opens as a flat image. Version 3 places shapes on the upright
+/// image (its EXIF orientation applied); version 2 placed them on the raw pixel grid, which only
+/// differs for a photo with an orientation tag, and the editor moves those shapes on load.
 struct AnnotationDocument: Codable, Equatable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     /// Schema version, for forward-compatible migrations.
     var version: Int

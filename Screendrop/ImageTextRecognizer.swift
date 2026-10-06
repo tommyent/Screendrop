@@ -17,8 +17,7 @@ enum ImageTextRecognizer {
     static func recognizeText(at url: URL) async -> String {
         await withCheckedContinuation { (continuation: CheckedContinuation<String, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                      let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+                guard let cgImage = ScreenshotImageLoader.uprightImage(at: url) else {
                     continuation.resume(returning: "")
                     return
                 }
