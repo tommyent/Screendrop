@@ -2993,7 +2993,7 @@ private struct StudioInspector: View {
                     summary: audioSummary,
                     isExpanded: expansionBinding(for: .audio),
                     accessory: {
-                        if model.replacementAudio != nil {
+                        if model.hasReplacementAudio {
                             if model.hasRecordedAudio {
                                 InspectorResetButton(help: "Use the recorded audio again") {
                                     model.removeReplacementAudio()
