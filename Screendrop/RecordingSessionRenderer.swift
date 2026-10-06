@@ -46,7 +46,7 @@ enum RecordingSessionRenderer {
         }
         if let existing = session.freshFinalURL(matching: editDocument) { return existing }
 
-        let configuration = try await makeConfiguration(for: session)
+        let configuration = try await makeConfiguration(for: session, editDocument: editDocument)
         let temporaryURL = try await RecordingStudioExporter().export(configuration) { progress in
             onProgress?(progress)
         }
@@ -66,9 +66,15 @@ enum RecordingSessionRenderer {
     static func makeConfiguration(
         for session: RecordingSession
     ) async throws -> RecordingStudioExporter.Configuration {
+        try await makeConfiguration(for: session, editDocument: session.effectiveEditDocument())
+    }
+
+    private static func makeConfiguration(
+        for session: RecordingSession,
+        editDocument: RecordingEditDocument?
+    ) async throws -> RecordingStudioExporter.Configuration {
         let manifest = session.loadCaptureManifest()
         let pointerSynthesized = manifest?.pointerSynthesized == true
-        let editDocument = session.effectiveEditDocument()
         let exportSettings = editDocument?.exportSettings ?? VideoCompressionSettings()
         let audioVolume = RecordingAudioGain.normalized(editDocument?.audioVolume ?? 1)
         let audioReplacementURL = !exportSettings.removeAudio && audioVolume > 0

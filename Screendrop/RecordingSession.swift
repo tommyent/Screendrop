@@ -249,6 +249,15 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         var document: RecordingEditDocument?
     }
 
+    func loadRenderStamp() -> RecordingEditDocument? {
+        guard let data = try? Data(contentsOf: renderStampURL) else { return nil }
+        if let stamp = try? CaptureManifest.decoder.decode(RenderStamp.self, from: data) {
+            return stamp.document
+        }
+        // Older builds stored the edit document directly.
+        return try? CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data)
+    }
+
     func writeRenderStamp(_ document: RecordingEditDocument?) {
         guard let data = try? CaptureManifest.encoder.encode(RenderStamp(document: document)) else { return }
         try? data.write(to: renderStampURL, options: .atomic)

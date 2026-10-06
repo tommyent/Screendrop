@@ -37,11 +37,11 @@ nonisolated private struct CloudTranscriptPayload: Encodable {
 
 nonisolated enum CloudSidecarUploader {
     /// Fire-and-forget sidecar upload for a video that just finished its
-    /// primary upload. `sessionDirectory` is nil for bare video files.
+    /// primary upload. `transcriptData` is nil for videos without a transcript.
     static func uploadVideoSidecars(
         uploadID: String,
         uploadedFileURL: URL,
-        sessionDirectory: URL?,
+        transcriptData: Data?,
         createdAt: Date,
         customTitle: String? = nil,
         creds: CloudCredentials
@@ -61,13 +61,8 @@ nonisolated enum CloudSidecarUploader {
             fields.append(("storyboard_meta", storyboard.metaJSON))
         }
 
-        if let sessionDirectory,
-           let transcript = transcriptPayload(
-               sessionDirectory: sessionDirectory,
-               uploadedFileURL: uploadedFileURL
-           ),
-           let encoded = try? JSONEncoder().encode(transcript) {
-            fields.append(("transcript", String(decoding: encoded, as: UTF8.self)))
+        if let transcriptData {
+            fields.append(("transcript", String(decoding: transcriptData, as: UTF8.self)))
         }
 
         do {
@@ -236,15 +231,27 @@ nonisolated enum CloudSidecarUploader {
 
     // MARK: - Transcript
 
+    /// Freeze the transcript before uploading, while the render stamp still
+    /// describes the movie being sent. Later Studio edits must not change it.
+    static func transcriptData(sessionDirectory: URL, uploadedFileURL: URL) -> Data? {
+        guard let transcript = transcriptPayload(
+            sessionDirectory: sessionDirectory,
+            uploadedFileURL: uploadedFileURL
+        ) else { return nil }
+        return try? JSONEncoder().encode(transcript)
+    }
+
     private static func transcriptPayload(
         sessionDirectory: URL,
         uploadedFileURL: URL
     ) -> CloudTranscriptPayload? {
         let session = RecordingSession(directoryURL: sessionDirectory)
-        // The upload was rendered from what the editor currently shows, so
-        // the transcript has to come from the same document - the draft when
-        // there is one, not the last saved state.
-        guard let document = session.effectiveEditDocument(),
+        // Every flattened container uses the document that produced its
+        // movie. Only the raw master shares the transcript's source timeline.
+        let uploadedFinalCut =
+            uploadedFileURL.standardizedFileURL != session.screenURL.standardizedFileURL
+        let document = uploadedFinalCut ? session.loadRenderStamp() : session.effectiveEditDocument()
+        guard let document,
               let cues = document.subtitleCues, !cues.isEmpty else {
             return nil
         }
@@ -253,8 +260,6 @@ nonisolated enum CloudSidecarUploader {
         // The raw screen movie shares the transcript's source timeline;
         // only the exported cut needs its times remapped through the
         // clip timeline (which also accounts for per-clip speed).
-        let uploadedFinalCut =
-            uploadedFileURL.standardizedFileURL == session.finalURL.standardizedFileURL
         guard uploadedFinalCut else {
             return CloudTranscriptPayload(
                 cues: cues.map { .init(start: $0.start, end: $0.end, text: $0.text) },
