@@ -28,6 +28,9 @@ final class AnnotationEditorModel {
     /// re-editing an existing document this is the preserved base image;
     /// otherwise it is the same as `sourceURL`.
     var baseImageURL: URL?
+    /// The sidecar predates v2. Its marks exist only in the display image the
+    /// editor loaded as its base, so restoring `.base.png` would erase them.
+    private var isLegacyDocument = false
     var previewImage: NSImage?
     /// The preview image's pixels, for the canvas's redaction passes to sample.
     @ObservationIgnored private(set) var previewCGImage: CGImage?
@@ -156,6 +159,7 @@ final class AnnotationEditorModel {
         sourceURL = url
 
         let document = ScreenshotHistoryStore.shared.loadEditDocument(for: url)
+        isLegacyDocument = document.map { $0.version < 2 } ?? false
         let candidateBaseURL = ScreenshotHistoryStore.baseImageURL(for: url)
         let renderSourceURL: URL
         // Background-only and crop-only edits still have a preserved base.
@@ -255,7 +259,8 @@ final class AnnotationEditorModel {
         let bindings = self.bindings
         let backgroundSettings = self.backgroundSettings
         let hasContent = !shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
-        let hadDocument = ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
+        // A pre-v2 sidecar has nothing the editor can remove: its marks are the image.
+        let hadDocument = !isLegacyDocument && ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
 
         // Nothing drawn and nothing previously saved: there is no work to lose.
         guard hasContent || hadDocument else {
@@ -282,6 +287,8 @@ final class AnnotationEditorModel {
                 document: document
             )
             self.baseImageURL = ScreenshotHistoryStore.baseImageURL(for: resultURL)
+            // The sidecar is v2 now, and its base is the composite the old marks live in.
+            self.isLegacyDocument = false
         } else {
             // All annotations were cleared on a previously-edited image:
             // restore the untouched original.
