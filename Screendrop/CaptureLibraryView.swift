@@ -118,26 +118,26 @@ struct CaptureLibraryView: View {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.visibleItems.isEmpty {
             if !model.searchText.isEmpty {
-                ContentUnavailableView {
-                    Label("No Results", systemImage: "magnifyingglass")
-                } description: {
-                    Text("No matches for “\(model.searchText)” in \(activeFilter.title).")
-                } actions: {
-                    Button("Clear Search") { model.searchText = "" }
+                if activeFilter == .all {
+                    ContentUnavailableView.search(text: model.searchText)
+                } else {
+                    ContentUnavailableView {
+                        Label("No Results in \(activeFilter.title)", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Check the spelling, or search all your captures.")
+                    } actions: {
+                        Button("Search All Captures") { model.filter = .all }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                    }
                 }
             } else {
                 ContentUnavailableView {
-                    Label("No \(activeFilter == .all ? "Captures" : activeFilter.title)", systemImage: activeFilter.symbol)
+                    Label(emptyLibraryTitle, systemImage: activeFilter.symbol)
                 } description: {
                     Text(emptyLibraryDescription)
                 } actions: {
-                    if activeFilter != .recordings {
-                        Button("Capture Area") { CaptureCoordinator.shared.captureArea() }
-                    }
-                    if activeFilter != .screenshots {
-                        Button("Record Screen") { RecordingPickerPresenter.shared.show() }
-                            .disabled(ScreenRecordingManager.shared.isActive)
-                    }
+                    emptyActions
                 }
             }
         } else {
@@ -146,12 +146,49 @@ struct CaptureLibraryView: View {
         }
     }
 
+    private var emptyLibraryTitle: String {
+        switch activeFilter {
+        case .all: "No Captures Yet"
+        case .screenshots: "No Screenshots Yet"
+        case .recordings: "No Recordings Yet"
+        }
+    }
+
     private var emptyLibraryDescription: String {
         switch activeFilter {
-        case .all: "Screenshots and recordings you capture will appear here."
-        case .screenshots: "Take a screenshot to start your screenshot library."
-        case .recordings: "Record your screen to start your recording library."
+        case .all: "Screenshots and recordings you make appear here."
+        case .screenshots: "Capture an area, a window or the whole screen."
+        case .recordings: "Record your screen, a window or an area."
         }
+    }
+
+    /// One prominent button for the page's likeliest action and at most one
+    /// standard one beside it, at the same size (HIG: Buttons).
+    private var emptyActions: some View {
+        HStack {
+            switch activeFilter {
+            case .all:
+                captureAreaButton.buttonStyle(.borderedProminent)
+                recordScreenButton.buttonStyle(.bordered)
+            case .screenshots:
+                captureAreaButton.buttonStyle(.borderedProminent)
+                Button("Capture Window") { CaptureCoordinator.shared.captureWindow() }
+                    .buttonStyle(.bordered)
+            case .recordings:
+                recordScreenButton.buttonStyle(.borderedProminent)
+            }
+        }
+        .controlSize(.large)
+    }
+
+    private var captureAreaButton: some View {
+        Button("Capture Area") { CaptureCoordinator.shared.captureArea() }
+    }
+
+    /// The ellipsis: it opens the recording picker rather than starting at once.
+    private var recordScreenButton: some View {
+        Button("Record Screen…") { RecordingPickerPresenter.shared.show() }
+            .disabled(ScreenRecordingManager.shared.isActive)
     }
 
     private var statusBar: some View {
