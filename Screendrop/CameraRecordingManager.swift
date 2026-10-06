@@ -407,7 +407,6 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
     private var pauseStartTime: CMTime?
     private var totalPauseDuration: CMTime = .zero
     private var needsPauseDurationUpdate = false
-    private var latestSampleTime: CMTime?
     private var pixelWidth = 0
     private var pixelHeight = 0
 
@@ -445,7 +444,6 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
             pauseStartTime = nil
             totalPauseDuration = .zero
             needsPauseDurationUpdate = false
-            latestSampleTime = nil
             pixelWidth = width
             pixelHeight = height
         }
@@ -455,7 +453,14 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
         writingQueue.async { [weak self] in
             guard let self, !isPaused else { return }
             isPaused = true
-            pauseStartTime = latestSampleTime
+            // The first paused frame sets this, as in the screen writer.
+            // Starting at the last written frame instead gave the first frame
+            // after Resume that frame's exact timestamp again. If no frame
+            // has applied the last Resume yet, keep its start so that pause
+            // still counts.
+            if !needsPauseDurationUpdate {
+                pauseStartTime = nil
+            }
         }
     }
 
@@ -507,8 +512,6 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
                     self.isSessionStarted = true
                 }
 
-                self.latestSampleTime = time
-
                 var adjusted = time
                 if let sessionStartTime = self.sessionStartTime {
                     adjusted = CMTimeSubtract(adjusted, sessionStartTime)
@@ -541,6 +544,18 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
                         pixelWidth: self.pixelWidth,
                         pixelHeight: self.pixelHeight
                     )
+                }
+
+                guard assetWriter.status == .writing else {
+                    // No longer writing (it failed): skip finalization, as the
+                    // screen writer does, and leave whatever fragments reached
+                    // disk, unless the session never started.
+                    if result == nil, let outputURL = self.outputURL {
+                        try? FileManager.default.removeItem(at: outputURL)
+                    }
+                    self.reset()
+                    continuation.resume(returning: result)
+                    return
                 }
 
                 self.videoInput?.markAsFinished()
@@ -583,7 +598,6 @@ nonisolated private final class CameraMovieWriter: @unchecked Sendable {
         pauseStartTime = nil
         totalPauseDuration = .zero
         needsPauseDurationUpdate = false
-        latestSampleTime = nil
     }
 
     private static func retime(_ sampleBuffer: CMSampleBuffer, to newPTS: CMTime) -> CMSampleBuffer? {
