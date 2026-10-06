@@ -222,13 +222,30 @@ enum AnnoShapeDrawing {
         } else {
             processed = render()
         }
-        guard let processed else { return }
-
         context.saveGState()
         context.concatenate(full)
         context.clip(to: localRect)
         // Back to context space, where the sampled rect is axis-aligned.
         context.concatenate(full.inverted())
+        // Fail closed: cover the screenshot under the redaction - inside its frame, as the
+        // spotlight clips it - before laying the tile down. A tile that couldn't be sampled or
+        // processed then leaves the cover, and one whose blocks averaged the screenshot with
+        // transparent margin past its edge can't let the original show through. Off the
+        // screenshot, and outside a rounded frame's corners, there is nothing to hide.
+        context.saveGState()
+        if let frame = target.spotlightClip {
+            context.addPath(frame)
+            context.clip()
+        } else {
+            context.clip(to: target.pageRect.applying(target.transform))
+        }
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.fill(contextBounds)
+        context.restoreGState()
+        guard let processed else {
+            context.restoreGState()
+            return
+        }
         context.interpolationQuality = props.kind == .pixelate ? .none : .high
         if target.isFlippedContext {
             context.translateBy(x: 0, y: contextBounds.midY)
