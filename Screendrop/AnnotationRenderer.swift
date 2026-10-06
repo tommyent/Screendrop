@@ -269,7 +269,8 @@ enum AnnotationRenderer {
                 return snapshot.cropping(to: flipped)
             },
             spotlightClip: highlightClipPath,
-            isFlippedContext: false
+            isFlippedContext: false,
+            sampleScale: scale
         )
 
         _ = canvasSize
