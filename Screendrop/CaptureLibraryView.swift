@@ -86,20 +86,27 @@ struct CaptureLibraryView: View {
             .modifier(LibrarySidebarSurface())
         } detail: {
             VStack(spacing: 0) {
-                browser
+                // Empty pages are only as tall as their message; fill the column anyway.
+                browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 statusBar
             }
-            .modifier(LibraryDetailCorners(showsSidebar: columnVisibility != .detailOnly))
+            .modifier(LibraryDetailCorners())
+            // Inside the detail column the inspector sits under the toolbar,
+            // so the toolbar runs unbroken across it.
+            .inspector(isPresented: $inspectorVisible) {
+                CaptureLibraryInspector(model: model)
+                    // The inspector column paints its own grey, under the
+                    // toolbar too, so its content carries the sidebar's.
+                    .modifier(LibrarySidebarSurface())
+                    .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+            }
+            .modifier(LibraryWindowSurface())
             .navigationTitle(model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search captures")
-        .inspector(isPresented: $inspectorVisible) {
-            CaptureLibraryInspector(model: model)
-                .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
-        }
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
@@ -136,29 +143,44 @@ struct CaptureLibraryView: View {
     }
 
     @ViewBuilder private var browser: some View {
-        if model.items.isEmpty && model.isLoading {
+        if !model.hasLoaded {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.visibleItems.isEmpty {
             if !model.searchText.isEmpty {
                 ContentUnavailableView {
-                    Label("No Results", systemImage: "magnifyingglass")
+                    Label("No Results for “\(model.searchText)”", systemImage: "magnifyingglass")
                 } description: {
-                    Text("No matches for “\(model.searchText)” in \(activeFilter.title).")
+                    Text(activeFilter == .all
+                        ? "Check the spelling or try a new search."
+                        : "Nothing in \(activeFilter.title) matches. Check the spelling, or search all your captures.")
                 } actions: {
-                    Button("Clear Search") { model.searchText = "" }
+                    HStack {
+                        if activeFilter != .all {
+                            // Widening keeps the query and may find the other
+                            // kind of capture, so it's the likeliest next step.
+                            Button("Search All Captures") { model.filter = .all }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        Button("Clear Search") { model.searchText = "" }
+                            .buttonStyle(.bordered)
+                    }
+                    .controlSize(.large)
                 }
             } else {
                 ContentUnavailableView {
-                    Label("No \(activeFilter == .all ? "Captures" : activeFilter.title)", systemImage: activeFilter.symbol)
+                    Label(emptyLibraryTitle, systemImage: activeFilter.symbol)
                 } description: {
                     Text(emptyLibraryDescription)
                 } actions: {
-                    if activeFilter != .recordings {
-                        Button("Capture Area") { CaptureCoordinator.shared.captureArea() }
-                    }
-                    if activeFilter != .screenshots {
-                        Button("Record Screen") { RecordingPickerPresenter.shared.show() }
-                            .disabled(ScreenRecordingManager.shared.isActive)
+                    VStack(spacing: 12) {
+                        emptyActions
+                        if let shortcutLine {
+                            Text(shortcutLine)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
@@ -168,12 +190,67 @@ struct CaptureLibraryView: View {
         }
     }
 
+    private var emptyLibraryTitle: String {
+        switch activeFilter {
+        case .all: "No Captures Yet"
+        case .screenshots: "No Screenshots Yet"
+        case .recordings: "No Recordings Yet"
+        }
+    }
+
     private var emptyLibraryDescription: String {
         switch activeFilter {
-        case .all: "Screenshots and recordings you capture will appear here."
-        case .screenshots: "Take a screenshot to start your screenshot library."
-        case .recordings: "Record your screen to start your recording library."
+        case .all: "Screenshots and recordings you make appear here."
+        case .screenshots: "Capture an area, a window or the whole screen."
+        case .recordings: "Record your screen, a window or an area."
         }
+    }
+
+    /// One prominent button for the page's likeliest action and at most one
+    /// standard one beside it, at the same size (HIG: Buttons).
+    private var emptyActions: some View {
+        HStack {
+            switch activeFilter {
+            case .all:
+                captureAreaButton.buttonStyle(.borderedProminent)
+                recordScreenButton.buttonStyle(.bordered)
+            case .screenshots:
+                captureAreaButton.buttonStyle(.borderedProminent)
+                Button("Capture Window") { CaptureCoordinator.shared.captureWindow() }
+                    .buttonStyle(.bordered)
+            case .recordings:
+                recordScreenButton.buttonStyle(.borderedProminent)
+            }
+        }
+        .controlSize(.large)
+    }
+
+    /// The page's capture shortcuts as the user set them, so an empty page
+    /// teaches the keys that work from anywhere. Keys that failed to register
+    /// are left out, and with none left there's no line at all. Non-breaking
+    /// spaces keep each key with its name, so the line wraps between them.
+    private var shortcutLine: String? {
+        let actions: [(CaptureHotkeyAction, String)] = switch activeFilter {
+        case .all: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Screen"), (.screenRecording, "Record")]
+        case .screenshots: [(.area, "Area"), (.window, "Window"), (.fullscreen, "Screen")]
+        case .recordings: [(.screenRecording, "Record")]
+        }
+        let keys = actions
+            .filter { HotkeyManager.shared.registrationErrors[$0.0] == nil }
+            .map { CaptureHotkeyPreferences.shortcut(for: $0.0).displayTokens.joined() + "\u{00A0}" + $0.1 }
+        guard !keys.isEmpty else { return nil }
+        let heading = keys.count == 1 ? "Shortcut that works anywhere" : "Shortcuts that work anywhere"
+        return heading + "\n" + keys.joined(separator: "\u{00A0}· ")
+    }
+
+    private var captureAreaButton: some View {
+        Button("Capture Area") { CaptureCoordinator.shared.captureArea() }
+    }
+
+    /// The ellipsis: it opens the recording picker rather than starting at once.
+    private var recordScreenButton: some View {
+        Button("Record Screen…") { RecordingPickerPresenter.shared.show() }
+            .disabled(ScreenRecordingManager.shared.isActive)
     }
 
     private var statusBar: some View {
@@ -273,7 +350,16 @@ struct CaptureLibraryView: View {
 /// Share one adaptive color between the sidebar and the detail's corner
 /// cutouts; separate visual-effect views can resolve to different tints.
 private struct LibrarySidebarSurface: ViewModifier {
-    static var background: Color { Color(nsColor: .underPageBackgroundColor) }
+    static var background: Color { Color(nsColor: NSColor(name: nil, dynamicProvider: chrome)) }
+
+    /// A darker grey than the system's in light mode, so the white card stands
+    /// out. Dark mode keeps the system colour. Nonisolated: AppKit can resolve
+    /// colours off the main thread.
+    nonisolated private static func chrome(for appearance: NSAppearance) -> NSColor {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .underPageBackgroundColor
+            : NSColor(srgbRed: 230 / 255, green: 230 / 255, blue: 230 / 255, alpha: 1)
+    }
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -289,52 +375,48 @@ private struct LibrarySidebarSurface: ViewModifier {
     }
 }
 
-/// Round the entire detail surface, including the native toolbar's safe area.
-/// The browser keeps its normal insets so content doesn't move under controls.
+/// The detail as a raised card below the toolbar, rounded all round, with a
+/// margin to the sidebar, the inspector and the window's bottom edge so its
+/// shadow shows on every side. It goes before `.inspector`: a clip around the
+/// inspector drops the column's safe area, and the grid then lays out under
+/// the sidebar and the toolbar.
 private struct LibraryDetailCorners: ViewModifier {
-    let showsSidebar: Bool
     @Environment(\.displayScale) private var displayScale
 
-    private var cornerRadius: CGFloat { showsSidebar ? 16 : 0 }
-
-    private var surface: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: cornerRadius,
-            bottomLeadingRadius: cornerRadius,
-            style: .continuous
-        )
-    }
+    private let card = RoundedRectangle(cornerRadius: 16, style: .continuous)
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
             content
-                // Only the lower corner intersects the body. The upper corner
-                // belongs to the background extended behind the toolbar below.
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        bottomLeadingRadius: cornerRadius,
-                        style: .continuous
-                    )
-                )
+                .clipShape(card)
+                // The fill sits outside the clip, so its shadow isn't cut off.
                 .background {
-                    ZStack {
-                        LibrarySidebarSurface.background
-                        surface.fill(Color(nsColor: .controlBackgroundColor))
-                    }
-                    .ignoresSafeArea(.container, edges: .top)
+                    card
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
                 }
                 .overlay {
-                    if showsSidebar {
-                        surface
-                            .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1 / displayScale)
-                            .mask(alignment: .leading) {
-                                Rectangle().frame(width: cornerRadius)
-                            }
-                            .ignoresSafeArea(.container, edges: .top)
-                            .allowsHitTesting(false)
-                    }
+                    card
+                        .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1 / displayScale)
+                        .allowsHitTesting(false)
                 }
+                .padding([.horizontal, .bottom], 12)
+        } else {
+            content
+        }
+    }
+}
+
+/// The sidebar's grey behind the detail column and the toolbar, so the
+/// toolbar reads as one strip. Backgrounds around `.inspector` keep the safe
+/// area; clips don't.
+private struct LibraryWindowSurface: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27.0, *) {
+            content
+                .background { LibrarySidebarSurface.background.ignoresSafeArea() }
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         } else {
             content

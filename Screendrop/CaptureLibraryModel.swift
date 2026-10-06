@@ -126,6 +126,8 @@ final class CaptureLibraryModel {
     private(set) var contentRevision = 0
     private(set) var screenshotCount = 0
     private(set) var isLoading = false
+    /// The first scan has finished; later refreshes show only the status bar's spinner.
+    private(set) var hasLoaded = false
     var operationTitle: String?
     var errorMessage: String?
     /// The capture whose name is being edited in place, and where.
@@ -203,6 +205,7 @@ final class CaptureLibraryModel {
             if let tagFilter, tagCounts[tagFilter] == nil { self.tagFilter = nil }
             updateVisibleItems()
             isLoading = false
+            hasLoaded = true
         }
     }
 
