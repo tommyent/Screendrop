@@ -13,6 +13,12 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
     static let shared = QuickLookPreviewPresenter()
     
     private var previewURL: NSURL?
+    /// Set when Quick Look itself tucked an expanded stack into its peek tab,
+    /// so closing Quick Look expands only a stack it tucked. It records that
+    /// first collapse, not later changes: if the stack is expanded and tucked
+    /// again by something else while Quick Look stays open, closing still
+    /// expands it.
+    private var collapsedPreviewStack = false
     
     static var isShown: Bool {
         QLPreviewPanel.sharedPreviewPanelExists() && QLPreviewPanel.shared()?.isVisible == true
@@ -20,19 +26,21 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
 
     static var currentURL: URL? { shared.previewURL as URL? }
     
-    static func show(url: URL) {
-        shared.show(url: url)
+    /// Pass `collapsingPreviewStack: true` when previewing from the floating
+    /// stack, so its cards don't sit on top of the Quick Look window.
+    static func show(url: URL, collapsingPreviewStack: Bool = false) {
+        shared.show(url: url, collapsingPreviewStack: collapsingPreviewStack)
     }
     
     static func dismiss() {
         shared.dismiss()
     }
     
-    private func show(url: URL) {
+    private func show(url: URL, collapsingPreviewStack: Bool) {
         previewURL = url as NSURL
         
         guard let panel = QLPreviewPanel.shared() else {
-            ScreenshotPreviewStack.shared.expand()
+            restorePreviewStack()
             return
         }
 
@@ -47,7 +55,11 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
         panel.reloadData()
         // Collapse the floating overlay into the peek tab so it doesn't sit on
         // top of the Quick Look window. Expanded again when Quick Look closes.
-        ScreenshotPreviewStack.shared.collapse()
+        let stack = ScreenshotPreviewStack.shared
+        if collapsingPreviewStack, !stack.isCollapsed {
+            stack.collapse()
+            collapsedPreviewStack = stack.isCollapsed
+        }
         if panel.isVisible {
             panel.refreshCurrentPreviewItem()
         } else {
@@ -77,13 +89,20 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
 
         panel.orderOut(nil)
         previewURL = nil
-        ScreenshotPreviewStack.shared.expand()
+        restorePreviewStack()
     }
 
     /// Fires when Quick Look closes on its own (e.g. the user clicks its close
     /// button or it loses key focus), which bypasses `dismiss()`.
     func windowWillClose(_ notification: Notification) {
         previewURL = nil
+        restorePreviewStack()
+    }
+
+    /// Expands the stack only if Quick Look tucked it (see `collapsedPreviewStack`).
+    private func restorePreviewStack() {
+        guard collapsedPreviewStack else { return }
+        collapsedPreviewStack = false
         ScreenshotPreviewStack.shared.expand()
     }
     

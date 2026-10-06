@@ -225,7 +225,7 @@ struct PreviewWindowView: View {
                     },
                     onView: {
                         previewStack.markEngaged(id: item.id)
-                        QuickLookPreviewPresenter.show(url: item.url)
+                        QuickLookPreviewPresenter.show(url: item.url, collapsingPreviewStack: true)
                     },
                     onCompress: {
                         previewStack.compress(id: item.id)
@@ -407,7 +407,7 @@ struct PreviewWindowView: View {
         
         if event.keyCode == 49, let hoveredItem = previewStack.hoveredItem {
             previewStack.markEngaged(id: hoveredItem.id)
-            QuickLookPreviewPresenter.show(url: hoveredItem.url)
+            QuickLookPreviewPresenter.show(url: hoveredItem.url, collapsingPreviewStack: true)
             return true
         }
         
