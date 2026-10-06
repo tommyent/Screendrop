@@ -178,6 +178,10 @@ struct CaptureLibraryView: View {
         .monospacedDigit()
         .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
+        // Keep the status bar out of the column's minimum width. With the card
+        // size slider counted in it, resizing the window looped in AppKit's
+        // constraint pass until it crashed.
+        .frame(minWidth: 0, maxWidth: .infinity)
         .frame(height: 30)
     }
 
