@@ -58,7 +58,7 @@ struct MenuBarView: View {
             } label: {
                 Label("Record Screen", systemImage: "record.circle")
             }
-            .disabled(ScrollingCapturePresenter.shared.isRunning)
+            .disabled(ScrollingCapturePresenter.shared.isRunning || ScreenRecordingManager.shared.isActive)
 
             Divider()
 

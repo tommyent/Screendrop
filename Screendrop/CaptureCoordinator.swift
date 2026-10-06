@@ -199,13 +199,22 @@ final class CaptureCoordinator {
     }
 
     func recordArea(_ display: SCDisplay) {
+        // The picker already left to make room for the selection, so when
+        // the selection or its countdown is cancelled nothing else turns off
+        // the camera it warmed.
         RecordingAreaSelectionPresenter.shared.selectArea(on: display) { rect in
-            guard let rect else { return }
+            guard let rect else {
+                Task { await CameraRecordingManager.shared.stopPreview() }
+                return
+            }
             Task {
                 guard await CaptureCountdownPresenter.shared.runIfNeeded(
                     seconds: ScreendropPreferences.recordingStartDelaySeconds,
                     displayID: display.displayID
-                ) else { return }
+                ) else {
+                    await CameraRecordingManager.shared.stopPreview()
+                    return
+                }
                 ScreenRecordingManager.shared.startRecording(
                     source: ScreenRecordingSource(kind: .area(display: display, rect: rect))
                 )

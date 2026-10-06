@@ -69,6 +69,10 @@ final class RecordingBarPresenter {
             NSSound.beep()
             return
         }
+        // While a recording is live the bar holds its controls, the only
+        // on-screen way to stop it, and the picker couldn't start anything
+        // anyway. Leave them in place.
+        guard !ScreenRecordingManager.shared.isActive else { return }
         pickerGeneration += 1
         let panel = panel ?? makePanel()
         PreviewWindowCaptureExclusion.shared.register(window: panel)
