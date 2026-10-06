@@ -40,6 +40,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
         collection.delegate = context.coordinator
         collection.command = { [weak coordinator = context.coordinator] action in
             guard let coordinator, !coordinator.parent.isBusy else { return }
+            if action == .edit { coordinator.selectionChanged() }
             coordinator.parent.onAction(action)
         }
         collection.contextMenuProvider = { [weak coordinator = context.coordinator] event in
@@ -113,7 +114,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
             }
         }
 
-        private func selectionChanged() {
+        fileprivate func selectionChanged() {
             guard !updating, let collection else { return }
             parent.selection = Set(collection.selectionIndexPaths.compactMap {
                 parent.items.indices.contains($0.item) ? parent.items[$0.item].id : nil
@@ -169,15 +170,17 @@ final class LibraryCollectionView: NSCollectionView {
 
     /// Clicking the title of the one selected capture renames it, as in
     /// Finder. It waits out the double-click interval first, so a double
-    /// click still previews, and a click that selects a capture never does.
+    /// click still opens the editor, and a click that selects a capture never does.
     override func mouseDown(with event: NSEvent) {
         pendingRename?.cancel()
         pendingRename = nil
         let clicked = indexPathForItem(at: convert(event.locationInWindow, from: nil))
         let wasOnlySelection = clicked.map { selectionIndexPaths == [$0] } ?? false
         super.mouseDown(with: event)
-        if event.clickCount == 2, !selectionIndexPaths.isEmpty {
-            command?(.preview)
+        if event.clickCount == 2 {
+            guard let clicked else { return }
+            selectionIndexPaths = [clicked]
+            command?(.edit)
             return
         }
         guard event.clickCount == 1, wasOnlySelection, let clicked,
