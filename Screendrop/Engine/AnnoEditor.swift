@@ -97,6 +97,9 @@ struct PointerInfo {
     var shift = false
     var alt = false
     var command = false
+    /// 1 for an ordinary press. The canvas copies this from the mouse event; the
+    /// Select tool treats 2 or more on a text shape as "edit", not "drag".
+    var clickCount = 1
 }
 
 /// Where the page sits on screen.
@@ -144,6 +147,10 @@ final class AnnoEditor {
     /// The text shape currently being typed into. The canvas puts a text view over it and skips
     /// drawing it, so the two don't double up.
     var editingTextId: AnnoShapeID?
+    /// Page point of the double-click that opened the caret. The overlay consumes it once, when
+    /// the text view is built. Nil means "put the caret at the end", which is what a new text
+    /// shape does.
+    var textCaretPagePoint: Vec?
     var onEditingTextChanged: ((AnnoShapeID?) -> Void)?
 
     private(set) var interaction: AnnoInteraction = .idle

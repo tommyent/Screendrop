@@ -57,6 +57,14 @@ extension AnnoEditor {
             return
         }
 
+        // The second click of a double-click edits the text under it. Returning here skips
+        // markUndo and the translate the single click starts just below.
+        if pointer.clickCount >= 2,
+           let shape = hitShape(at: pointer.pagePoint), shape.isText {
+            startEditingText(shape.id, caretAt: pointer.pagePoint)
+            return
+        }
+
         if let shape = hitShape(at: pointer.pagePoint) {
             if pointer.shift {
                 if selectedIds.contains(shape.id) {
@@ -657,8 +665,9 @@ extension AnnoEditor {
         startEditingText(shape.id)
     }
 
-    func startEditingText(_ id: AnnoShapeID) {
+    func startEditingText(_ id: AnnoShapeID, caretAt pagePoint: Vec? = nil) {
         guard let shape = document.shape(id), shape.isText else { return }
+        textCaretPagePoint = pagePoint
         editingTextId = id
         selectedIds = [id]
         onEditingTextChanged?(id)
@@ -669,6 +678,7 @@ extension AnnoEditor {
     func stopEditingText() {
         guard let id = editingTextId else { return }
         editingTextId = nil
+        textCaretPagePoint = nil
         if let shape = document.shape(id), let props = shape.textProps,
            props.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             document.delete([id])

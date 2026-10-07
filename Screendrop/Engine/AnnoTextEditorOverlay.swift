@@ -135,7 +135,22 @@ final class AnnoTextEditorOverlay: NSTextView {
               let props = editor.document.shape(shapeId)?.textProps else { return }
         string = props.text
         sync()
-        setSelectedRange(NSRange(location: (string as NSString).length, length: 0))
+        let caret = editor.textCaretPagePoint
+        editor.textCaretPagePoint = nil
+        let index = caret.flatMap { characterIndex(atPage: $0) } ?? (string as NSString).length
+        setSelectedRange(NSRange(location: index, length: 0))
+    }
+
+    /// Where a page point falls in this view's TextKit layout. The view is already positioned
+    /// and rotated like the shape, so converting from the canvas accounts for both.
+    private func characterIndex(atPage pagePoint: Vec) -> Int? {
+        guard let editor, let superview, let layoutManager, let textContainer else { return nil }
+        layoutManager.ensureLayout(for: textContainer)
+        let screen = editor.pageToScreen(pagePoint)
+        let local = convert(NSPoint(x: screen.x, y: screen.y), from: superview)
+        let index = characterIndexForInsertion(at: local)
+        guard index >= 0, index <= (string as NSString).length else { return nil }
+        return index
     }
 
     /// Draw the caret's text the way the canvas draws committed text: plain antialiasing, no font

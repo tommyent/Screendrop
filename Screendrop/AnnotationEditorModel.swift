@@ -355,7 +355,13 @@ final class AnnotationEditorModel {
     func beginInteraction(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) {
         guard !isCropping else { return }
         updateViewport(imageFrame: imageFrame)
-        engine.pointerDown(pointer(at: location))
+        var info = pointer(at: location)
+        // SwiftUI's drag gesture does not carry a click count. The mouse event
+        // that opened it does, and a double-click is a second press with count 2.
+        if let event = NSApp.currentEvent, event.type == .leftMouseDown || event.type == .leftMouseDragged {
+            info.clickCount = event.clickCount
+        }
+        engine.pointerDown(info)
         selectedTool = engine.tool
         syncStyleFromSelection()
     }
