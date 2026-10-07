@@ -42,6 +42,11 @@ struct AnnotationStylePreset: Codable, Equatable {
     var textIsItalic = false
     var textIsUnderline = false
     var textAlignmentRawValue = NSTextAlignment.left.rawValue
+    // Optional, unlike the fields above: synthesized decoding requires every non-optional key, so
+    // a required new field would fail every preset saved before it and silently reset them all.
+    var textBoxStyleRawValue: String?
+    /// nil is the automatic black or white.
+    var boxTextSwatch: CodableSwatch?
 
     var selectedTool: AnnotationTool {
         AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle
@@ -57,6 +62,10 @@ struct AnnotationStylePreset: Codable, Equatable {
 
     var textAlignment: NSTextAlignment {
         NSTextAlignment(rawValue: textAlignmentRawValue) ?? .left
+    }
+
+    var textBoxStyle: TextBoxStyle {
+        textBoxStyleRawValue.flatMap(TextBoxStyle.init(rawValue:)) ?? .plain
     }
 }
 

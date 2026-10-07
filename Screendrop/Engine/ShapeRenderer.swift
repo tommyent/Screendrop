@@ -80,15 +80,30 @@ enum AnnoShapeRenderer {
 
     private static func textElements(_ props: TextProps) -> [RenderElement] {
         guard !props.text.isEmpty else { return [] }
-        return [RenderElement(
+        var elements: [RenderElement] = []
+        if props.hasBox {
+            let radius = TextMeasure.boxCornerRadius(props)
+            elements.append(RenderElement(
+                content: .path(CGPath(
+                    roundedRect: TextMeasure.outerRect(props),
+                    cornerWidth: radius,
+                    cornerHeight: radius,
+                    transform: nil
+                )),
+                fill: props.swatch.nsColor,
+                stroke: nil
+            ))
+        }
+        elements.append(RenderElement(
             content: .glyphs(TextMeasure.glyphPath(props)),
-            fill: props.swatch.nsColor,
+            fill: TextMeasure.ink(props).nsColor,
             stroke: nil,
             // Non-zero, not even-odd. OpenType contours are wound so that counters (the hole in an
             // "o") come out hollow under non-zero anyway, and even-odd additionally punches a hole
             // wherever two glyphs overlap - which at bold weights is most of a sentence.
             usesEvenOddFill: false
-        )]
+        ))
+        return elements
     }
 
     // MARK: - Draw

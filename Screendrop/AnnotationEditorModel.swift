@@ -73,6 +73,9 @@ final class AnnotationEditorModel {
     var textIsItalic = false
     var textIsUnderline = false
     var textAlignment: NSTextAlignment = .left
+    var textBoxStyle: TextBoxStyle = .plain
+    /// The text colour on a box; nil picks black or white for contrast.
+    var boxTextSwatch: AnnotationSwatch?
 
     /// A full snapshot of the editor's image state, captured before a crop so
     /// the operation can be undone/redone.
@@ -474,6 +477,8 @@ final class AnnotationEditorModel {
             textIsItalic = props.isItalic
             textIsUnderline = props.isUnderline
             textAlignment = props.align.nsTextAlignment
+            textBoxStyle = props.boxStyle ?? .plain
+            boxTextSwatch = props.boxTextSwatch
         }
     }
 
@@ -614,6 +619,8 @@ final class AnnotationEditorModel {
         textIsItalic = preset.textIsItalic
         textIsUnderline = preset.textIsUnderline
         textAlignment = preset.textAlignment
+        textBoxStyle = preset.textBoxStyle
+        boxTextSwatch = preset.boxTextSwatch?.annotationSwatch
 
         engine.tool = selectedTool
         engine.currentSwatch = selectedSwatch
@@ -625,6 +632,8 @@ final class AnnotationEditorModel {
         engine.currentTextIsItalic = textIsItalic
         engine.currentTextIsUnderline = textIsUnderline
         engine.currentTextAlign = TextAlign(textAlignment)
+        engine.currentTextBoxStyle = textBoxStyle
+        engine.currentBoxTextSwatch = boxTextSwatch
     }
 
     func saveAnnotationPreset() {
@@ -640,7 +649,9 @@ final class AnnotationEditorModel {
             textIsBold: textIsBold,
             textIsItalic: textIsItalic,
             textIsUnderline: textIsUnderline,
-            textAlignmentRawValue: textAlignment.rawValue
+            textAlignmentRawValue: textAlignment.rawValue,
+            textBoxStyleRawValue: textBoxStyle.rawValue,
+            boxTextSwatch: boxTextSwatch.map(CodableSwatch.init(swatch:))
         )
         AnnotationPresetStore.save(preset)
     }

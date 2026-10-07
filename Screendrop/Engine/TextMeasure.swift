@@ -201,6 +201,65 @@ enum TextMeasure {
         }
     }
 
+    // MARK: - Box
+
+    /// The box's padding around the text and its corner radius, as multiples of the font size, so
+    /// a box keeps its proportions at any size. Vertical padding is the smaller because the line
+    /// box already leaves room above and below the glyphs.
+    static let boxPaddingX = 0.3
+    static let boxPaddingY = 0.1
+    static let boxCornerRadius = 0.25
+
+    /// How far the box reaches past the text box on each side, in page units. Zero without a box.
+    static func boxInsets(_ props: TextProps) -> (x: Double, y: Double) {
+        guard props.hasBox else { return (0, 0) }
+        let size = Swift.max(1, props.fontSize)
+        return (size * boxPaddingX, size * boxPaddingY)
+    }
+
+    /// Everything the shape draws, in its local space: the text box, grown by the box's padding.
+    /// Selection, hit-testing, the editing overlay and export all size from this.
+    static func outerRect(_ props: TextProps) -> CGRect {
+        let size = measure(props)
+        let inset = boxInsets(props)
+        return CGRect(
+            x: -inset.x,
+            y: -inset.y,
+            width: Double(size.width) + inset.x * 2,
+            height: Double(size.height) + inset.y * 2
+        )
+    }
+
+    static func boxCornerRadius(_ props: TextProps) -> CGFloat {
+        let rect = outerRect(props)
+        return Swift.min(CGFloat(Swift.max(1, props.fontSize) * boxCornerRadius), rect.height / 2)
+    }
+
+    /// The glyphs' colour: the swatch for plain text; on a box, the chosen text colour or else
+    /// black or white for contrast.
+    static func ink(_ props: TextProps) -> AnnotationSwatch {
+        guard props.hasBox else { return props.swatch }
+        return props.boxTextSwatch ?? contrastingInk(on: props.swatch)
+    }
+
+    /// White unless it falls under WCAG's 3:1 contrast for large text, then black.
+    ///
+    /// Not simply the higher-contrast of the two: by that rule the palette's red and blue would get
+    /// black text, where white reads as intended and still clears 3:1. Annotation text is large
+    /// (48 px bold by default), so 3:1 is the WCAG bar that applies.
+    static func contrastingInk(on swatch: AnnotationSwatch) -> AnnotationSwatch {
+        let color = swatch.nsColor.usingColorSpace(.sRGB) ?? swatch.nsColor
+        func linear(_ c: CGFloat) -> Double {
+            let c = Double(c)
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(color.redComponent)
+            + 0.7152 * linear(color.greenComponent)
+            + 0.0722 * linear(color.blueComponent)
+        let contrastWithWhite = 1.05 / (luminance + 0.05)
+        return contrastWithWhite >= 3 ? .white : .black
+    }
+
     // MARK: - Glyph outlines
 
     /// The text's glyph outlines, origin at the top left of its box, y down.

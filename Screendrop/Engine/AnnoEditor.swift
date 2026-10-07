@@ -138,6 +138,9 @@ final class AnnoEditor {
     var currentTextIsItalic = false
     var currentTextIsUnderline = false
     var currentTextAlign: TextAlign = .start
+    var currentTextBoxStyle: TextBoxStyle = .plain
+    /// nil picks black or white for contrast with the box.
+    var currentBoxTextSwatch: AnnotationSwatch?
     var currentArrowheadStart: Arrowhead = .none
     var currentArrowheadEnd: Arrowhead = .arrow
 

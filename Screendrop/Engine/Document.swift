@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// The shape store: shapes in z-order (back to front), arrow bindings, and the derived geometry
@@ -224,10 +225,13 @@ enum AnnoShapeGeometry {
         case .arrow:
             return arrowGeometry(shape, in: document)
         case let .text(props):
-            let size = TextMeasure.measure(props)
+            // Includes a box's padding, so the box selects, hit-tests and binds arrows as a whole.
+            let rect = TextMeasure.outerRect(props)
             return Rectangle2d(
-                width: Double(size.width),
-                height: Double(size.height),
+                x: Double(rect.minX),
+                y: Double(rect.minY),
+                width: Double(rect.width),
+                height: Double(rect.height),
                 isFilled: true
             )
         case let .redaction(props):
