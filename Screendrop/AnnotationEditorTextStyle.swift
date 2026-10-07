@@ -62,20 +62,6 @@ extension AnnotationEditorModel {
         set { setTextBoxStyle(newValue) }
     }
 
-    /// The text colour on a box; nil is the automatic black or white.
-    var selectedBoxTextSwatch: AnnotationSwatch? {
-        get {
-            if let props = selectedTextShape?.textProps { return props.boxTextSwatch }
-            return boxTextSwatch
-        }
-        set { setBoxTextSwatch(newValue) }
-    }
-
-    /// What the automatic text colour resolves to on the current box colour.
-    var automaticBoxTextSwatch: AnnotationSwatch {
-        TextMeasure.contrastingInk(on: selectedSwatch)
-    }
-
     func setTextFontSize(_ pointSize: CGFloat) {
         let clamped = AnnotationTextMetrics.clampedFontSize(pointSize)
         textFontSize = clamped
@@ -130,13 +116,6 @@ extension AnnotationEditorModel {
         engine.currentTextBoxStyle = style
         saveAnnotationPreset()
         updateSelectedText { $0.boxStyle = style }
-    }
-
-    func setBoxTextSwatch(_ swatch: AnnotationSwatch?) {
-        boxTextSwatch = swatch
-        engine.currentBoxTextSwatch = swatch
-        saveAnnotationPreset()
-        updateSelectedText { $0.boxTextSwatch = swatch }
     }
 
     private func updateSelectedText(_ mutate: (inout TextProps) -> Void) {

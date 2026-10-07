@@ -48,8 +48,6 @@ struct AnnotationStylePreset: Codable, Equatable {
     // Optional, unlike the fields above: synthesized decoding requires every non-optional key, so
     // a required new field would fail every preset saved before it and silently reset them all.
     var textBoxStyleRawValue: String?
-    /// nil is the automatic black or white.
-    var boxTextSwatch: CodableSwatch?
 
     var selectedTool: AnnotationTool {
         AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle

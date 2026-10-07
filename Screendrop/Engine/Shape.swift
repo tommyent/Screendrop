@@ -139,11 +139,9 @@ struct TextProps: Codable, Equatable, Hashable {
     /// While true the box is exactly as wide as its text. Dragging a side handle turns it off,
     /// which is how text switches from growing to wrapping.
     var autoSize = true
-    /// Optional, like `boxTextSwatch`, so text and presets saved before boxes existed still decode:
-    /// synthesized decoding requires every non-optional key. Missing means plain.
+    /// Optional so text saved before boxes existed still decodes: synthesized decoding requires
+    /// every non-optional key. Missing means plain.
     var boxStyle: TextBoxStyle?
-    /// The text's colour on a box. Missing means black or white, whichever reads on the box.
-    var boxTextSwatch: AnnotationSwatch?
 
     var hasBox: Bool { boxStyle == .box }
 }

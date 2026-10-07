@@ -20,10 +20,6 @@ struct AnnotationTextStyleControls: View {
                 model.setSwatch(swatch)
             }
 
-            if model.selectedTextBoxStyle == .box {
-                boxTextColorRow
-            }
-
             HStack(spacing: 6) {
                 fontSizeStepper
 
@@ -107,33 +103,6 @@ struct AnnotationTextStyleControls: View {
     /// buttons. Sized so stepper, toggle and B/I/U fit the inspector's narrowest column (260 pt,
     /// 236 pt of content): measured at 234 pt.
     private static let segmentWidth: CGFloat = 26
-
-    /// The text colour on a box: automatic black or white first, then the same swatches and
-    /// custom well as the box colour above it. No visible label: the automatic chip's "A" already
-    /// says the row is the text's colour. VoiceOver gets the name.
-    private var boxTextColorRow: some View {
-        HStack(spacing: 6) {
-            Button {
-                model.selectedBoxTextSwatch = nil
-            } label: {
-                AutomaticInkChip(
-                    box: model.selectedSwatch,
-                    ink: model.automaticBoxTextSwatch,
-                    isSelected: model.selectedBoxTextSwatch == nil
-                )
-            }
-            .buttonStyle(.plain)
-            .help("Automatic: black or white, whichever reads on the box")
-            .accessibilityLabel("Automatic text colour")
-            .accessibilityAddTraits(model.selectedBoxTextSwatch == nil ? .isSelected : [])
-
-            AnnotationSwatchStrip(selectedSwatch: model.selectedBoxTextSwatch) { swatch in
-                model.selectedBoxTextSwatch = swatch
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Text colour")
-    }
 
     private var fontFamilyMenu: some View {
         Menu {
@@ -274,32 +243,6 @@ private struct TextBoxStyleIcon: View {
                 }
                 .compositingGroup()
         }
-    }
-}
-
-/// The automatic text colour, previewed: an "A" in the ink it resolves to, on the box colour.
-private struct AutomaticInkChip: View {
-    let box: AnnotationSwatch
-    let ink: AnnotationSwatch
-    let isSelected: Bool
-
-    var body: some View {
-        Circle()
-            .fill(box.color)
-            .frame(width: 17, height: 17)
-            .overlay {
-                Text("A")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(ink.color)
-            }
-            .overlay(Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
-            .padding(2.5)
-            .overlay {
-                if isSelected {
-                    Circle().strokeBorder(Color.accentColor, lineWidth: 2)
-                }
-            }
-            .contentShape(Circle().inset(by: -2))
     }
 }
 

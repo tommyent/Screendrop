@@ -645,7 +645,6 @@ extension AnnoEditor {
         props.isUnderline = currentTextIsUnderline
         props.align = currentTextAlign
         props.boxStyle = currentTextBoxStyle
-        props.boxTextSwatch = currentBoxTextSwatch
 
         let size = TextMeasure.measure(props)
         let x: Double

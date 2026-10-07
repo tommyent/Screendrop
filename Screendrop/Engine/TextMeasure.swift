@@ -256,19 +256,20 @@ enum TextMeasure {
         return Swift.min(CGFloat(Swift.max(1, props.fontSize) * boxCornerRadius), rect.height / 2)
     }
 
-    /// The glyphs' colour: the swatch for plain text; on a box, the chosen text colour or else
-    /// black or white for contrast.
+    /// Text on a box is white unless white's contrast with the box falls below this; then black.
+    /// Only very light boxes do: in the palette, yellow (1.46:1) and white (1.09:1). The next
+    /// lightest, turquoise (2.15:1), keeps white text.
+    static let boxBlackInkBelowContrast = 1.8
+
+    /// The glyphs' colour: the swatch for plain text; on a box, white, or black on a very light
+    /// box.
     static func ink(_ props: TextProps) -> AnnotationSwatch {
         guard props.hasBox else { return props.swatch }
-        return props.boxTextSwatch ?? contrastingInk(on: props.swatch)
+        return contrastWithWhite(props.swatch) < boxBlackInkBelowContrast ? .black : .white
     }
 
-    /// White unless it falls under WCAG's 3:1 contrast for large text, then black.
-    ///
-    /// Not simply the higher-contrast of the two: by that rule the palette's red and blue would get
-    /// black text, where white reads as intended and still clears 3:1. Annotation text is large
-    /// (48 px bold by default), so 3:1 is the WCAG bar that applies.
-    static func contrastingInk(on swatch: AnnotationSwatch) -> AnnotationSwatch {
+    /// WCAG's contrast ratio of white against the colour, from its relative luminance.
+    static func contrastWithWhite(_ swatch: AnnotationSwatch) -> Double {
         let color = swatch.nsColor.usingColorSpace(.sRGB) ?? swatch.nsColor
         func linear(_ c: CGFloat) -> Double {
             let c = Double(c)
@@ -277,8 +278,7 @@ enum TextMeasure {
         let luminance = 0.2126 * linear(color.redComponent)
             + 0.7152 * linear(color.greenComponent)
             + 0.0722 * linear(color.blueComponent)
-        let contrastWithWhite = 1.05 / (luminance + 0.05)
-        return contrastWithWhite >= 3 ? .white : .black
+        return 1.05 / (luminance + 0.05)
     }
 
     // MARK: - Glyph outlines
