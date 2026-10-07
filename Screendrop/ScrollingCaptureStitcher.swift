@@ -620,3 +620,34 @@ actor ScrollingCaptureStitcher {
         }
     }
 }
+
+// MARK: - Recovery strip
+
+extension ScrollingCaptureStitcher {
+    /// The bottom `rows` of the last accepted frame, above any fixed footer:
+    /// the end of the stitch so far, which a capture that lost track has to
+    /// scroll back to. Copies only those rows, never the whole stitch.
+    func lastAcceptedRows(_ rows: Int) -> CGImage? {
+        let bandStart = fixedEdges?.top ?? 0
+        let bandEnd = height - (fixedEdges?.bottom ?? 0)
+        let count = min(max(rows, 1), bandEnd - bandStart)
+        let bytesPerRow = width * 4
+        guard count > 0,
+              let provider = CGDataProvider(data: Data(last[((bandEnd - count) * bytesPerRow)..<(bandEnd * bytesPerRow)]) as CFData) else {
+            return nil
+        }
+        return CGImage(
+            width: width,
+            height: count,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: Self.bitmapInfo),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+}
