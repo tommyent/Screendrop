@@ -239,10 +239,6 @@ private final class ScrollingCapturePanel: NSPanel {
     override var canBecomeKey: Bool {
         true
     }
-
-    override func cancelOperation(_ sender: Any?) {
-        ScrollingCapturePresenter.shared.cancel()
-    }
 }
 
 private struct ScrollingCaptureBar: View {
