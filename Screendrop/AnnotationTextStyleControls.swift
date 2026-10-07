@@ -109,13 +109,10 @@ struct AnnotationTextStyleControls: View {
     private static let segmentWidth: CGFloat = 26
 
     /// The text colour on a box: automatic black or white first, then the same swatches and
-    /// custom well as the box colour above it.
+    /// custom well as the box colour above it. No visible label: the automatic chip's "A" already
+    /// says the row is the text's colour. VoiceOver gets the name.
     private var boxTextColorRow: some View {
         HStack(spacing: 6) {
-            Text("Text")
-                .font(.inspectorLabel)
-                .foregroundStyle(.secondary)
-
             Button {
                 model.selectedBoxTextSwatch = nil
             } label: {
@@ -134,6 +131,8 @@ struct AnnotationTextStyleControls: View {
                 model.selectedBoxTextSwatch = swatch
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Text colour")
     }
 
     private var fontFamilyMenu: some View {
