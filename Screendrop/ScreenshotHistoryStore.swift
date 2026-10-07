@@ -342,15 +342,22 @@ final class ScreenshotHistoryStore {
         return displayURL
     }
 
-    func delete(_ item: ScreenshotHistoryItem) {
+    /// Removes the capture's files, then the History row.
+    ///
+    /// Returns false, and keeps the row, when a removal fails. Sidecars go
+    /// first so a failure leaves the image the row points at. There is one row
+    /// per capture, so a partial failure does not rewrite metadata for the
+    /// files that did disappear.
+    @discardableResult
+    func delete(_ item: ScreenshotHistoryItem) -> Bool {
         let auxiliaryURLs: [URL]
         if let recordingSession = item.recordingSession {
             auxiliaryURLs = [recordingSession.directoryURL]
         } else {
             auxiliaryURLs = [
-                item.url,
+                Self.editDocumentURL(for: item.url),
                 Self.baseImageURL(for: item.url),
-                Self.editDocumentURL(for: item.url)
+                item.url
             ]
         }
 
@@ -359,6 +366,7 @@ final class ScreenshotHistoryStore {
                 try FileManager.default.removeItem(at: url)
             } catch {
                 print("Failed to delete history file: \(error)")
+                return false
             }
         }
 
@@ -371,6 +379,7 @@ final class ScreenshotHistoryStore {
             // The package is gone, so the Projects browser must stop listing it.
             RecordingProjectStore.shared.reload()
         }
+        return true
     }
 
     /// Drops the History row for a recording project. The package itself is
@@ -392,8 +401,7 @@ final class ScreenshotHistoryStore {
             return false
         }
 
-        delete(item)
-        return true
+        return delete(item)
     }
 
     func setCloudURL(for fileURL: URL, cloudURL: String) {

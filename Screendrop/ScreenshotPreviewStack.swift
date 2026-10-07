@@ -491,8 +491,12 @@ final class ScreenshotPreviewStack {
     func deleteScreenshot(id: ScreenshotPreviewItem.ID) {
         guard let item = items.first(where: { $0.id == id }) else { return }
 
-        if ScreenshotHistoryStore.shared.delete(url: item.url) {
-            // The history store owns this file and has already removed it.
+        let store = ScreenshotHistoryStore.shared
+        let standardized = item.url.standardizedFileURL
+        let owned = store.items.contains { $0.url.standardizedFileURL == standardized }
+        if owned {
+            // A failed removal keeps the row. Dismissing would orphan the file.
+            guard store.delete(url: item.url) else { return }
         } else {
             deleteFile(at: item.url)
         }
