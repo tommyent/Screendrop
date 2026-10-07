@@ -12,7 +12,8 @@ import SwiftUI
 /// dropdown-plus-popover color menu so the Style section reads like the rest
 /// of the inspector.
 struct AnnotationSwatchStrip: View {
-    let selectedSwatch: AnnotationSwatch
+    /// nil when the choice lives outside the strip, such as the automatic text colour on a box.
+    let selectedSwatch: AnnotationSwatch?
     let onSelect: (AnnotationSwatch) -> Void
 
     private static let swatchDiameter: CGFloat = 17
@@ -54,9 +55,11 @@ struct AnnotationSwatchStrip: View {
             }
             .mask(edgeFadeMask)
             .onAppear {
-                scrollProxy.scrollTo(
-                    isCustomSelected ? Self.customWellID : selectedSwatch.id
-                )
+                if isCustomSelected {
+                    scrollProxy.scrollTo(Self.customWellID)
+                } else if let selectedSwatch {
+                    scrollProxy.scrollTo(selectedSwatch.id)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,14 +115,14 @@ struct AnnotationSwatchStrip: View {
     private var customWell: some View {
         Button {
             AnnotationColorPanelBridge.shared.present(
-                current: selectedSwatch.nsColor
+                current: selectedSwatch?.nsColor ?? .white
             ) { color in
                 onSelect(.custom(from: color))
             }
         } label: {
             swatchCircle(
                 fill: isCustomSelected
-                    ? AnyShapeStyle(selectedSwatch.color)
+                    ? AnyShapeStyle(selectedSwatch?.color ?? .clear)
                     : AnyShapeStyle(AngularGradient(
                         colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red],
                         center: .center
@@ -148,7 +151,8 @@ struct AnnotationSwatchStrip: View {
     }
 
     private var isCustomSelected: Bool {
-        !AnnotationSwatch.allCases.contains(selectedSwatch)
+        guard let selectedSwatch else { return false }
+        return !AnnotationSwatch.allCases.contains(selectedSwatch)
     }
 }
 
