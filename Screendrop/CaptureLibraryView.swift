@@ -257,7 +257,7 @@ struct CaptureLibraryView: View {
     /// The ellipsis: it opens the recording picker rather than starting at once.
     private var recordScreenButton: some View {
         Button("Record Screen…") { RecordingPickerPresenter.shared.show() }
-            .disabled(ScreenRecordingManager.shared.isActive)
+            .disabled(ScreenRecordingManager.shared.isActive || ScrollingCapturePresenter.shared.isRunning)
     }
 
     private var statusBar: some View {
@@ -305,7 +305,7 @@ struct CaptureLibraryView: View {
                 Button("Capture Area", systemImage: "rectangle.dashed") { CaptureCoordinator.shared.captureArea() }
                 Divider()
                 Button("Record Screen", systemImage: "record.circle") { RecordingPickerPresenter.shared.show() }
-                    .disabled(ScreenRecordingManager.shared.isActive)
+                    .disabled(ScreenRecordingManager.shared.isActive || ScrollingCapturePresenter.shared.isRunning)
             } label: { Label("New Capture", systemImage: "plus") }
             .help("New capture")
         }

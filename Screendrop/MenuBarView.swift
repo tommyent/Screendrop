@@ -49,12 +49,16 @@ struct MenuBarView: View {
                     systemImage: "rectangle.expand.vertical"
                 )
             }
+            // A recording and a scrolling capture both use the region
+            // highlight, so neither starts while the other runs.
+            .disabled(ScreenRecordingManager.shared.isActive)
 
             Button {
                 RecordingPickerPresenter.shared.show()
             } label: {
                 Label("Record Screen", systemImage: "record.circle")
             }
+            .disabled(ScrollingCapturePresenter.shared.isRunning)
 
             Divider()
 
