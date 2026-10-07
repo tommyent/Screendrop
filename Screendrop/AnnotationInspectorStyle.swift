@@ -213,7 +213,9 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
                     HStack(spacing: 6) {
                         Text(title)
                             .font(.inspectorSectionHeader)
-                            .foregroundStyle(isExpanded || isHeaderHovering ? Color.primary.opacity(0.85) : Color.secondary)
+                            // Stay the lighter grey when expanded. Hover is the
+                            // clickable cue, so it still darkens.
+                            .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : Color.secondary)
                             .fixedSize()
 
                         if let summary, !isExpanded {
