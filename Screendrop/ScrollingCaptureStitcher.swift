@@ -15,8 +15,10 @@ import Foundation
 /// frames - a sticky header or footer - are found on the first scroll and left
 /// out of the matching, so a sticky footer isn't repeated after every scroll.
 ///
-/// Works on exact pixel matches. Content that re-renders while it scrolls
-/// (animations, video) costs matching rows, but the 70% bar tolerates some.
+/// Works on exact pixel matches. If the frames don't line up, strip columns
+/// without a consistent offset (animations, video) are left out of a retry.
+/// The remaining columns must agree on an unambiguous offset. A zero retry
+/// uses the columns proven to move with the last accepted scroll.
 actor ScrollingCaptureStitcher {
     enum Update: Sendable {
         /// Lined up, but nothing new: the content hasn't moved, or moved back
@@ -70,6 +72,9 @@ actor ScrollingCaptureStitcher {
     private var appended: [UInt8] = []
     /// Unmoving rows at the top and bottom, fixed on the first scroll.
     private var fixedEdges: (top: Int, bottom: Int)?
+    /// Columns which together proved the last accepted scroll. They can
+    /// establish idle page content while the video keeps changing.
+    private var pageColumns: [[Range<Int>]] = []
 
     /// Height of the stitched image so far, in pixels.
     private(set) var stitchedHeight: Int
@@ -154,14 +159,16 @@ actor ScrollingCaptureStitcher {
         }
         let edges: (top: Int, bottom: Int)
         let shift: Int
+        let matchedColumns: [[Range<Int>]]
         switch match {
         case .identical:
             return .unchanged
         case .unmatched:
             return .noMatch
-        case .shifted(let lineUpEdges, let lineUpShift):
+        case .shifted(let lineUpEdges, let lineUpShift, let lineUpColumns):
             edges = lineUpEdges
             shift = lineUpShift
+            matchedColumns = lineUpColumns
         }
         let band = edges.top..<(height - edges.bottom)
         // Still in place (a caret blinked), or scrolled back up but still
@@ -178,6 +185,7 @@ actor ScrollingCaptureStitcher {
         guard start >= band.lowerBound else { return .noMatch }
         let bytesPerRow = width * 4
         fixedEdges = edges
+        pageColumns = matchedColumns
         appended.append(contentsOf: pixels[(start * bytesPerRow)..<(cut * bytesPerRow)])
         last = pixels
         lastColumns = columns
@@ -221,7 +229,7 @@ actor ScrollingCaptureStitcher {
     private enum LineUp {
         /// The matched columns are the same in both frames.
         case identical
-        case shifted(edges: (top: Int, bottom: Int), by: Int)
+        case shifted(edges: (top: Int, bottom: Int), by: Int, columns: [[Range<Int>]])
         case unmatched
     }
 
@@ -232,11 +240,50 @@ actor ScrollingCaptureStitcher {
         guard rows != lastRows else { return .identical }
         let edges = fixedEdges ?? unmovedEdges(from: lastRows, to: rows)
         let band = edges.top..<(height - edges.bottom)
-        guard band.count > Self.minimumMatchedRows,
-              let shift = bestShift(from: lastRows, to: rows, in: band) else {
-            return .unmatched
+        guard band.count > Self.minimumMatchedRows else { return .unmatched }
+        if let shift = bestShift(from: lastRows, to: rows, in: band).shift {
+            let moving = shift > 0 ? strips.indices.filter { column in
+                columnShift(from: lastRows, to: rows, column: column, in: band).supports(shift)
+            }.map { strips[$0] } : []
+            let proven = !moving.isEmpty && bestShift(
+                from: Self.rows(of: last, width: width, height: height, strips: moving),
+                to: Self.rows(of: pixels, width: width, height: height, strips: moving), in: band
+            ).shift == shift
+            return .shifted(edges: edges, by: shift, columns: proven ? moving : [])
         }
-        return .shifted(edges: edges, by: shift)
+        // Only the entire previously proven page mask may establish zero.
+        // Do not choose a fresh subset: it could contain just a pinned sidebar.
+        if stripsPerRow == Self.fineStripsPerRow, !pageColumns.isEmpty {
+            let oldPage = Self.rows(of: last, width: width, height: height, strips: pageColumns)
+            let newPage = Self.rows(of: pixels, width: width, height: height, strips: pageColumns)
+            let unchanged = oldPage == newPage
+            let pageXs = Set(pageColumns.joined().flatMap { $0 })
+            let outside = strips.indices.filter { column in
+                strips[column].contains(where: { !pageXs.isSuperset(of: $0) })
+            }
+            let hasConflict = unchanged && (hasMatchingChanges(from: lastRows, to: rows, columns: outside)
+                || outside.contains { column in
+                    switch columnShift(from: lastRows, to: rows, column: column, in: band) {
+                    case .ambiguous: return true
+                    case .matched(let shift): return shift != 0
+                    case .unmatched: return false
+                    }
+                })
+            if unchanged && !hasConflict {
+                return .shifted(edges: edges, by: 0, columns: [])
+            }
+        }
+        if let retry = shiftWithoutAnimations(from: lastRows, to: rows, strips: strips, in: band) {
+            // The entire proven page mask remains contrary zero evidence,
+            // even if repartitioning makes its individual strips unmatched.
+            if !pageColumns.isEmpty,
+               Self.rows(of: last, width: width, height: height, strips: pageColumns)
+                == Self.rows(of: pixels, width: width, height: height, strips: pageColumns) {
+                return .unmatched
+            }
+            return .shifted(edges: edges, by: retry.shift, columns: retry.columns)
+        }
+        return .unmatched
     }
 
     private struct Strip: Hashable {
@@ -269,6 +316,76 @@ actor ScrollingCaptureStitcher {
         return (top, bottom)
     }
 
+    /// Retry using columns whose strips independently line up unambiguously.
+    /// A playing video often can't support any consistent offset. Drop those
+    /// columns as a whole, not individual changed rows: fresh rows still count
+    /// as contradictions, and repeats don't gain extra distinct evidence from
+    /// the video beside them. Ambiguous columns aren't animation evidence:
+    /// don't drop them and let a moving video decide the page's offset.
+    /// Zero from a fresh subset could be a pinned sidebar, not idle page content.
+    private func shiftWithoutAnimations(from old: [Row], to new: [Row], strips: [[Range<Int>]], in band: Range<Int>) -> (shift: Int, columns: [[Range<Int>]])? {
+        var columns: [Int] = []
+        var shifts = Set<Int>()
+        for column in new[band.lowerBound].strips.indices {
+            switch columnShift(from: old, to: new, column: column, in: band) {
+            case .matched(let shift):
+                columns.append(column)
+                shifts.insert(shift)
+            case .ambiguous:
+                return nil
+            case .unmatched:
+                break
+            }
+        }
+        guard shifts.count == 1, columns.count < new[band.lowerBound].strips.count else { return nil }
+        let stableOld = old.map { row in Row(strips: columns.map { row.strips[$0] }) }
+        let stableNew = new.map { row in Row(strips: columns.map { row.strips[$0] }) }
+        guard let shift = bestShift(from: stableOld, to: stableNew, in: band).shift,
+              shift != 0 else { return nil }
+        return (shift, columns.map { strips[$0] })
+    }
+
+    /// Matching changed strips veto idle even below the append threshold.
+    /// Their original row and column positions are retained; this cannot append.
+    private func hasMatchingChanges(from old: [Row], to new: [Row], columns: [Int]) -> Bool {
+        var changedHashes = Set<Int>()
+        for (a, b) in zip(old, new) {
+            for column in columns where a.strips[column] != b.strips[column] && !a.strips[column].isBlank {
+                changedHashes.insert(a.strips[column].hash)
+            }
+        }
+        return zip(old, new).contains { a, b in
+            columns.contains { column in
+                a.strips[column] != b.strips[column] && !b.strips[column].isBlank
+                    && changedHashes.contains(b.strips[column].hash)
+            }
+        }
+    }
+
+    private func columnShift(from old: [Row], to new: [Row], column: Int, in band: Range<Int>) -> ShiftMatch {
+        bestShift(from: old.map { Row(strips: [$0.strips[column]]) },
+                  to: new.map { Row(strips: [$0.strips[column]]) }, in: band)
+    }
+
+    private enum ShiftMatch {
+        case unmatched
+        case ambiguous([Int])
+        case matched(Int)
+
+        var shift: Int? {
+            guard case .matched(let shift) = self else { return nil }
+            return shift
+        }
+
+        func supports(_ shift: Int) -> Bool {
+            switch self {
+            case .unmatched: false
+            case .ambiguous(let shifts): shifts.contains(shift)
+            case .matched(let matched): matched == shift
+            }
+        }
+    }
+
     /// How far the content moved up - zero when it didn't move, negative when
     /// it moved down - from votes: every strip of the new frame votes for
     /// each offset at which the old frame has the same strip in the same
@@ -287,7 +404,7 @@ actor ScrollingCaptureStitcher {
     /// ponytail: a repeat with fewer than `minimumMatchedRows` rows of
     /// overlap left (a period nearly the region's height) is too little to
     /// tell from coincidence, and isn't caught.
-    private func bestShift(from old: [Row], to new: [Row], in band: Range<Int>) -> Int? {
+    private func bestShift(from old: [Row], to new: [Row], in band: Range<Int>) -> ShiftMatch {
         var oldPositions: [Int: [Int]] = [:]
         for y in band {
             for strip in old[y].strips where !strip.isBlank {
@@ -358,12 +475,12 @@ actor ScrollingCaptureStitcher {
         func score(_ offset: (shift: Int, votes: Int, misses: Int)) -> Int {
             offset.votes - 4 * offset.misses
         }
-        guard let best = plausible.max(by: { score($0) < score($1) }) else { return nil }
+        guard let best = plausible.max(by: { score($0) < score($1) }) else { return .unmatched }
 
         let isAmbiguous = plausible.contains { other in
             other.shift != best.shift && other.misses < best.misses + Self.minimumMatchedRows
         }
-        return isAmbiguous ? nil : best.shift
+        return isAmbiguous ? .ambiguous(plausible.map(\.shift)) : .matched(best.shift)
     }
 
     // MARK: - Pixels
