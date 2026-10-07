@@ -355,11 +355,12 @@ struct CaptureLibraryInspector: View {
             .foregroundStyle(.secondary)
     }
 
+    /// Label primary, value secondary, as Preview's Info inspector reads.
     private func detailRow(_ title: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title).foregroundStyle(.secondary).fixedSize(horizontal: true, vertical: false)
+            Text(title).fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
-            Text(value).multilineTextAlignment(.trailing).textSelection(.enabled)
+            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing).textSelection(.enabled)
         }
         .font(.system(size: 12))
     }
