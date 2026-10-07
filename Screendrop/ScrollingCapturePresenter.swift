@@ -260,26 +260,43 @@ private struct ScrollingCaptureBar: View {
         : nil
 
     var body: some View {
+        // Drawn with the bar's own button style and AppKit colors, like the
+        // recording bar: the panel isn't key while the scrolled app has the
+        // keyboard, and the system button styles then draw for an inactive
+        // window, so Done lost its accent color and looked like Cancel.
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.hasLostTrack ? .orange : .primary)
+                    .foregroundStyle(presenter.hasLostTrack ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
             Spacer(minLength: 8)
-            Button("Cancel") {
+            Button {
                 presenter.cancel()
+            } label: {
+                Text("Cancel")
+                    .foregroundStyle(BarMetrics.activeTint)
+                    .padding(.horizontal, 12)
+                    .frame(height: 24)
+                    .background(Color(nsColor: .labelColor).opacity(0.1), in: .capsule)
             }
-            Button("Done") {
+            .buttonStyle(BarButtonStyle())
+            Button {
                 presenter.finish()
+            } label: {
+                Text("Done")
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(height: 24)
+                    .background(Color(nsColor: .controlAccentColor), in: .capsule)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(BarButtonStyle())
         }
         .padding(.leading, 18)
         .padding(.trailing, 10)
