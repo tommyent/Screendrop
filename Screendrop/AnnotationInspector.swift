@@ -40,7 +40,6 @@ struct AnnotationEditorInspector: View {
     let focusedField: FocusState<AnnotationEditorFocusedField?>.Binding
     let onEditorAction: () -> Void
     let onPickWallpaper: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var expandedAdvancedSections: Set<AnnotationInspectorAdvancedSection> = AnnotationInspectorSectionState.loadExpandedSections()
 
@@ -233,9 +232,7 @@ struct AnnotationEditorInspector: View {
         )
     }
 
-    private var sidebarBackground: Color {
-        colorScheme == .dark ? Color(nsColor: .windowBackgroundColor) : .white
-    }
+    private var sidebarBackground: Color { WorkspaceChrome.background }
 
     private var sectionAnimation: Animation? {
         accessibilityReduceMotion ? nil : .snappy(duration: 0.18)

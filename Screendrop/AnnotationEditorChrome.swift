@@ -3,6 +3,7 @@
 //  Screendrop
 //
 
+import AppKit
 import SwiftUI
 
 struct AnnotationZoomControl: View {
@@ -103,6 +104,17 @@ struct LowResolutionPreviewNotice: View {
         }
         .buttonStyle(.plain)
         .help("Why is this preview low resolution?")
+    }
+}
+
+/// The one flat colour of the windows' chrome, shared by the editor and the Library: the toolbar,
+/// the left sidebar and the right inspector. White in light mode, the window background in dark.
+enum WorkspaceChrome {
+    static var background: Color { Color(nsColor: NSColor(name: nil, dynamicProvider: color)) }
+
+    /// Nonisolated: AppKit can resolve colours off the main thread.
+    nonisolated private static func color(for appearance: NSAppearance) -> NSColor {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .windowBackgroundColor : .white
     }
 }
 
