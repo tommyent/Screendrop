@@ -76,15 +76,20 @@ private final class RecordingAreaHighlightView: NSView {
         nil
     }
 
+    // The same dim as the area selection, so the region looks the same while
+    // capturing as while drawing it. A light tint in dark mode was invisible
+    // over light content. The square border sits entirely outside the region,
+    // so it stays out of the capture even when app windows are included.
     override func draw(_ dirtyRect: NSRect) {
-        let isDarkMode = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        let overlayColor = isDarkMode
-            ? NSColor.white.withAlphaComponent(0.16)
-            : NSColor.black.withAlphaComponent(0.28)
-        overlayColor.setFill()
+        NSColor.black.withAlphaComponent(0.28).setFill()
         bounds.fill()
 
         NSColor.clear.setFill()
         highlightRect.fill(using: .clear)
+
+        NSColor.white.withAlphaComponent(0.96).setStroke()
+        let border = NSBezierPath(rect: highlightRect.insetBy(dx: -1, dy: -1))
+        border.lineWidth = 2
+        border.stroke()
     }
 }
