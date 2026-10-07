@@ -94,6 +94,10 @@ struct CaptureLibraryView: View {
                 Divider()
                 statusBar
             }
+            .modifier(LibraryColumnSeparators(
+                leading: columnVisibility != .detailOnly,
+                trailing: inspectorVisible
+            ))
             // Inside the detail column the inspector sits under the toolbar,
             // so the toolbar runs unbroken across it.
             .inspector(isPresented: $inspectorVisible) {
@@ -384,6 +388,34 @@ private struct LibraryBrowserSurface: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Straight hairlines between the browser and the sidebar and inspector. The
+/// columns share one chrome colour, so in the list nothing else divides them.
+/// They stay below the toolbar, which runs unbroken across the window.
+private struct LibraryColumnSeparators: ViewModifier {
+    let leading: Bool
+    let trailing: Bool
+    @Environment(\.displayScale) private var displayScale
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27.0, *) {
+            content
+                .overlay(alignment: .leading) { if leading { line } }
+                .overlay(alignment: .trailing) { if trailing { line } }
+        } else {
+            content
+        }
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1 / displayScale)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
