@@ -200,7 +200,13 @@ final class ScrollingCapturePresenter {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let hostingView = NSHostingView(rootView: ScrollingCaptureBar())
+        // Sized like the recording bar's panel: the panel sets the size and
+        // the hosting view follows it, so the two never negotiate sizes
+        // through constraints. That negotiation is what AppKit's constraint
+        // watchdog once killed the app over in the recording bar.
         hostingView.sizingOptions = []
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        hostingView.autoresizingMask = [.width, .height]
         hostingView.frame = CGRect(origin: .zero, size: size)
         panel.contentView = hostingView
         panel.orderFrontRegardless()
