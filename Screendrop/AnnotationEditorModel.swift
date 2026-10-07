@@ -68,6 +68,8 @@ final class AnnotationEditorModel {
 
     // Text style defaults (applied to new text, updated when selecting existing text)
     var textFontFamily: AnnoFontFamily = .pro
+    /// A face outside the SF families, by PostScript name; nil is the family.
+    var textFontFace: String?
     var textFontSize: CGFloat = 48
     var textIsBold = true
     var textIsItalic = false
@@ -472,6 +474,7 @@ final class AnnotationEditorModel {
         }
         if let props = shape.textProps {
             textFontFamily = props.fontFamily
+            textFontFace = props.fontFace
             textFontSize = CGFloat(props.fontSize)
             textIsBold = props.isBold
             textIsItalic = props.isItalic
@@ -613,6 +616,7 @@ final class AnnotationEditorModel {
         strokeWidth = CGFloat(preset.strokeWidth)
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
+        textFontFace = preset.textFontFace
         // Clamped here too, so a preset saved out of range by an older build heals on open.
         textFontSize = AnnotationTextMetrics.clampedFontSize(CGFloat(preset.textFontSize))
         textIsBold = preset.textIsBold
@@ -627,6 +631,7 @@ final class AnnotationEditorModel {
         engine.currentStrokeWidth = Double(strokeWidth)
         engine.currentRedactionDensity = Double(redactionDensity)
         engine.currentFontFamily = textFontFamily
+        engine.currentFontFace = textFontFace
         engine.currentTextFontSize = Double(textFontSize)
         engine.currentTextIsBold = textIsBold
         engine.currentTextIsItalic = textIsItalic
@@ -645,6 +650,7 @@ final class AnnotationEditorModel {
             strokeWidth: Double(strokeWidth),
             redactionDensity: Double(redactionDensity),
             textFontName: textFontFamily.rawValue,
+            textFontFace: textFontFace,
             textFontSize: Double(textFontSize),
             textIsBold: textIsBold,
             textIsItalic: textIsItalic,

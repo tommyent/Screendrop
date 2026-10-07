@@ -37,6 +37,9 @@ struct AnnotationStylePreset: Codable, Equatable {
     var strokeWidth: Double = 4
     var redactionDensity: Double = 0.55
     var textFontName = AnnotationTextMetrics.defaultFontName
+    /// Optional for the same reason as the box fields below. `textFontName` stays an SF family, so
+    /// older builds read a face as SF Pro.
+    var textFontFace: String?
     var textFontSize: Double = 48
     var textIsBold = true
     var textIsItalic = false

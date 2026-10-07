@@ -28,8 +28,13 @@ extension AnnotationEditorModel {
     }
 
     var selectedTextFontFamily: AnnoFontFamily {
-        get { selectedTextShape?.textProps?.fontFamily ?? textFontFamily }
-        set { setTextFontFamily(newValue) }
+        selectedTextShape?.textProps?.fontFamily ?? textFontFamily
+    }
+
+    /// A face outside the SF families, by PostScript name; nil is the family.
+    var selectedTextFontFace: String? {
+        if let props = selectedTextShape?.textProps { return props.fontFace }
+        return textFontFace
     }
 
     var selectedTextIsBold: Bool {
@@ -79,11 +84,17 @@ extension AnnotationEditorModel {
         updateSelectedText { $0.fontSize = Double(clamped) }
     }
 
-    func setTextFontFamily(_ family: AnnoFontFamily) {
+    /// An SF family, or a face (`AnnoFontFace`) with the family to fall back on.
+    func setTextFont(_ family: AnnoFontFamily, face: String? = nil) {
         textFontFamily = family
+        textFontFace = face
         engine.currentFontFamily = family
+        engine.currentFontFace = face
         saveAnnotationPreset()
-        updateSelectedText { $0.fontFamily = family }
+        updateSelectedText {
+            $0.fontFamily = family
+            $0.fontFace = face
+        }
     }
 
     func setTextBold(_ bold: Bool) {

@@ -639,6 +639,7 @@ extension AnnoEditor {
         props.swatch = currentSwatch
         props.fontSize = currentTextFontSize
         props.fontFamily = currentFontFamily
+        props.fontFace = currentFontFace
         props.isBold = currentTextIsBold
         props.isItalic = currentTextIsItalic
         props.isUnderline = currentTextIsUnderline

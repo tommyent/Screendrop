@@ -20,6 +20,24 @@ enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
         case .rounded: "SF Rounded"
         }
     }
+
+    /// An unknown family, from a newer build, reads as SF Pro. The synthesized decode would throw
+    /// and take the whole sidecar with it.
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .pro
+    }
+}
+
+/// Faces offered beyond the SF families. A shape stores one by PostScript name in
+/// `TextProps.fontFace` and keeps `fontFamily` at SF Pro, so builds that predate the face still
+/// open the sidecar, and draw SF Pro.
+enum AnnoFontFace {
+    /// The Wide cut: the family name alone resolves to Thin.
+    static let markerFelt = "MarkerFelt-Wide"
+
+    static func title(_ name: String) -> String {
+        name == markerFelt ? "Marker Felt" : name
+    }
 }
 
 /// Lays a text shape out and turns it into glyph outlines.
@@ -52,6 +70,9 @@ enum TextMeasure {
 
     static func font(_ props: TextProps, opticalSize: Double? = nil) -> NSFont {
         let size = Swift.max(1, CGFloat(props.fontSize))
+        // A named face is used as it is: bold and italic are SF traits and would be synthesized
+        // here, and the optical size and weight below are SF's. Not installed: the family below.
+        if let name = props.fontFace, let face = NSFont(name: name, size: size) { return face }
         let weight: NSFont.Weight = props.isBold ? .bold : .regular
         let base = NSFont.systemFont(ofSize: size, weight: weight)
 

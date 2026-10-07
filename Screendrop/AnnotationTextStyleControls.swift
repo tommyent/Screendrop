@@ -59,9 +59,14 @@ struct AnnotationTextStyleControls: View {
                             }
                         },
                         label: { segment in
+                            // A named face has no bold or italic of its own, and none is
+                            // synthesized; the setting is kept for when the font changes back.
+                            let isInert = model.selectedTextFontFace != nil && segment != .underline
                             Text(segment.title)
                                 .font(segment.font)
                                 .underline(segment == .underline)
+                                .opacity(isInert ? 0.35 : 1)
+                                .help(isInert ? "Not available in this font" : "")
                         }
                     )
                     .frame(width: Self.segmentWidth * 3 + InspectorMetrics.controlInset * 2)
@@ -134,19 +139,22 @@ struct AnnotationTextStyleControls: View {
     private var fontFamilyMenu: some View {
         Menu {
             ForEach(AnnoFontFamily.allCases) { family in
-                Button {
-                    model.selectedTextFontFamily = family
-                } label: {
-                    if model.selectedTextFontFamily == family {
-                        Label(family.title, systemImage: "checkmark")
-                    } else {
-                        Text(family.title)
-                    }
+                fontMenuItem(
+                    family.title,
+                    isSelected: model.selectedTextFontFace == nil && model.selectedTextFontFamily == family
+                ) {
+                    model.setTextFont(family)
                 }
+            }
+            fontMenuItem(
+                AnnoFontFace.title(AnnoFontFace.markerFelt),
+                isSelected: model.selectedTextFontFace == AnnoFontFace.markerFelt
+            ) {
+                model.setTextFont(.pro, face: AnnoFontFace.markerFelt)
             }
         } label: {
             HStack(spacing: 6) {
-                Text(model.selectedTextFontFamily.title)
+                Text(model.selectedTextFontFace.map { AnnoFontFace.title($0) } ?? model.selectedTextFontFamily.title)
                     .font(.inspectorValue)
                     .foregroundStyle(.primary.opacity(0.85))
                     .lineLimit(1)
@@ -163,6 +171,16 @@ struct AnnotationTextStyleControls: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .help("Font family")
+    }
+
+    private func fontMenuItem(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if isSelected {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
     }
 
     private var fontSizeStepper: some View {

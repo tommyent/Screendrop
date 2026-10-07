@@ -127,6 +127,9 @@ struct TextProps: Codable, Equatable, Hashable {
     /// Point size in page (image pixel) units.
     var fontSize: Double = 48
     var fontFamily: AnnoFontFamily = .pro
+    /// A face outside the SF families, by PostScript name (`AnnoFontFace`). Drawn instead of
+    /// `fontFamily` where installed; missing means the family.
+    var fontFace: String?
     var isBold = true
     var isItalic = false
     var isUnderline = false
