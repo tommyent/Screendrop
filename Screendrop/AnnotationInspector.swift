@@ -47,7 +47,7 @@ struct AnnotationEditorInspector: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
-                InspectorSection("Tools") {
+                InspectorSection(accessibilityLabel: "Tools") {
                     AnnotationInspectorToolGrid(selectedTool: model.selectedTool) { tool in
                         onEditorAction()
                         model.selectTool(tool)
@@ -60,7 +60,7 @@ struct AnnotationEditorInspector: View {
 
                 // Always present so selecting or deselecting annotations never
                 // shifts the sections below.
-                InspectorSection("Style") {
+                InspectorSection(accessibilityLabel: "Style") {
                     styleControls
                 }
 

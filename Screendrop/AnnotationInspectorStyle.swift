@@ -134,24 +134,29 @@ extension View {
 
 // MARK: - Section
 
-/// A titled section with consistent padding. An optional trailing accessory
-/// (reset, add, info) sits opposite the title, the way Sketch decorates its
-/// inspector groups.
+/// A section with consistent padding. The title is optional: Tools and Style
+/// have none, so they don't spend a line on a label. A trailing accessory
+/// (reset, add, info) sits opposite a title.
 struct InspectorSection<Content: View, Accessory: View>: View {
-    let title: String
+    let title: String?
+    /// Spoken name for a section that draws no title. Titled sections already
+    /// expose their title, so this is ignored when `title` is set.
+    var accessibilityLabel: String? = nil
     @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.inspectorSectionHeader)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: title == nil ? 0 : InspectorMetrics.headerSpacing) {
+            if let title {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.inspectorSectionHeader)
+                        .foregroundStyle(.secondary)
 
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
 
-                accessory()
+                    accessory()
+                }
             }
 
             content()
@@ -159,12 +164,30 @@ struct InspectorSection<Content: View, Accessory: View>: View {
         .padding(.horizontal, InspectorMetrics.horizontalPadding)
         .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .inspectorUntitledLabel(title == nil ? accessibilityLabel : nil)
     }
 }
 
 extension InspectorSection where Accessory == EmptyView {
     init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
         self.init(title: title, accessory: { EmptyView() }, content: content)
+    }
+
+    init(accessibilityLabel: String, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title: nil, accessibilityLabel: accessibilityLabel, accessory: { EmptyView() }, content: content)
+    }
+}
+
+private extension View {
+    /// Names a heading-less section without hiding the controls inside it.
+    @ViewBuilder
+    func inspectorUntitledLabel(_ label: String?) -> some View {
+        if let label {
+            accessibilityElement(children: .contain)
+                .accessibilityLabel(label)
+        } else {
+            self
+        }
     }
 }
 
