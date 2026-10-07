@@ -210,24 +210,28 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Button(action: toggleExpansion) {
-                    HStack(spacing: 6) {
-                        Text(title)
-                            .font(.inspectorSectionHeader)
-                            // Stay the lighter grey when expanded. Hover is the
-                            // clickable cue, so it still darkens.
-                            .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : Color.secondary)
-                            .fixedSize()
+                    HStack(spacing: 0) {
+                        disclosureChevron
 
-                        if let summary, !isExpanded {
-                            Text(summary)
-                                .font(.inspectorLabel)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .transition(.opacity)
+                        HStack(spacing: 6) {
+                            Text(title)
+                                .font(.inspectorSectionHeader)
+                                // Stay the lighter grey when expanded. Hover is the
+                                // clickable cue, so it still darkens.
+                                .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : Color.secondary)
+                                .fixedSize()
+
+                            if let summary, !isExpanded {
+                                Text(summary)
+                                    .font(.inspectorLabel)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .transition(.opacity)
+                            }
+
+                            Spacer(minLength: 0)
                         }
-
-                        Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -238,20 +242,8 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
                 .accessibilityHint(isExpanded ? "Collapse section" : "Expand section")
 
                 accessory()
-
-                Button(action: toggleExpansion) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .focusable(false)
-                .accessibilityHidden(true)
             }
-            .padding(.horizontal, InspectorMetrics.horizontalPadding)
+            .padding(.trailing, InspectorMetrics.horizontalPadding)
             .frame(height: 36)
             .onHover { isHeaderHovering = $0 }
 
@@ -272,6 +264,17 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
             .clipped()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// A 7 pt glyph centred in the margin, with a 4 pt gap before the title.
+    private var disclosureChevron: some View {
+        Image(systemName: "chevron.down")
+            .font(.system(size: 7, weight: .bold))
+            .foregroundStyle(.secondary)
+            .rotationEffect(.degrees(isExpanded ? 0 : -90))
+            .frame(width: InspectorMetrics.horizontalPadding - 4)
+            .padding(.trailing, 4)
+            .accessibilityHidden(true)
     }
 
     private var accessibilityValue: String {
