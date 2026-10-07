@@ -399,7 +399,7 @@ func updateHomebrewCask(homeDir, version, dmgPath string) error {
 	}
 
 	commitMsg := fmt.Sprintf("screendrop %s", version)
-	if out, err := runCmd("git", "-C", tapDir, "commit", "-m", commitMsg); err != nil {
+	if out, err := runCmd("git", "-C", tapDir, "commit", "--only", caskRelPath, "-m", commitMsg); err != nil {
 		if strings.Contains(out, "nothing to commit") {
 			return nil
 		}
@@ -715,7 +715,7 @@ func runBuildPhase(repoDir, homeDir, appPath string) {
 		if _, err := runCmd("git", "-C", repoDir, "add", filepath.Join(projectName, "project.pbxproj")); err != nil {
 			fail("git add (version bump) failed: " + err.Error())
 		}
-		if out, err := runCmd("git", "-C", repoDir, "commit", "-m", commitMsg); err != nil {
+		if out, err := runCmd("git", "-C", repoDir, "commit", "--only", filepath.Join(projectName, "project.pbxproj"), "-m", commitMsg); err != nil {
 			if !strings.Contains(out, "nothing to commit") {
 				fail("git commit (version bump) failed:\n" + out)
 			}
