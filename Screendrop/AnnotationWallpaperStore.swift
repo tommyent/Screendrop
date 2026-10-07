@@ -216,10 +216,13 @@ final class AnnotationWallpaperStore {
         }
 
         try fileManager.createDirectory(at: wallpapersDirectory, withIntermediateDirectories: true)
+        // Replace in place. Deleting the old pack first would leave nothing if the
+        // move failed, because the deferred cleanup also removes the extracted copy.
         if fileManager.fileExists(atPath: targetURL.path) {
-            try fileManager.removeItem(at: targetURL)
+            _ = try fileManager.replaceItemAt(targetURL, withItemAt: extractedURL)
+        } else {
+            try fileManager.moveItem(at: extractedURL, to: targetURL)
         }
-        try fileManager.moveItem(at: extractedURL, to: targetURL)
     }
 
     nonisolated private static func extractZip(at archiveURL: URL, to destinationURL: URL) throws {
