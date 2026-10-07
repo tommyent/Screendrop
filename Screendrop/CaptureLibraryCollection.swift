@@ -349,6 +349,8 @@ struct LibraryCellContent: View {
                     Color.primary.opacity(selected ? 0.075 : isHovering ? 0.035 : 0.012),
                     in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
+                // A solid backing in the chrome colour, so titles never sit on the grid's dots.
+                .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(

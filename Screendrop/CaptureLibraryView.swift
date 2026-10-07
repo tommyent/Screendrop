@@ -88,10 +88,12 @@ struct CaptureLibraryView: View {
             VStack(spacing: 0) {
                 // Empty pages are only as tall as their message; fill the column anyway.
                 browser.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .modifier(LibraryBrowserSurface(
+                        showsDots: layout == .grid || !model.hasLoaded || model.visibleItems.isEmpty
+                    ))
                 Divider()
                 statusBar
             }
-            .modifier(LibraryDetailCorners())
             // Inside the detail column the inspector sits under the toolbar,
             // so the toolbar runs unbroken across it.
             .inspector(isPresented: $inspectorVisible) {
@@ -351,27 +353,16 @@ struct CaptureLibraryView: View {
     }
 }
 
-/// Share one adaptive color between the sidebar and the detail's corner
-/// cutouts; separate visual-effect views can resolve to different tints.
+/// The editor's chrome colour behind a sidebar or inspector column, so the
+/// columns and the toolbar read as one flat surface.
 private struct LibrarySidebarSurface: ViewModifier {
-    static var background: Color { Color(nsColor: NSColor(name: nil, dynamicProvider: chrome)) }
-
-    /// A darker grey than the system's in light mode, so the white card stands
-    /// out. Dark mode keeps the system colour. Nonisolated: AppKit can resolve
-    /// colours off the main thread.
-    nonisolated private static func chrome(for appearance: NSAppearance) -> NSColor {
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? .underPageBackgroundColor
-            : NSColor(srgbRed: 230 / 255, green: 230 / 255, blue: 230 / 255, alpha: 1)
-    }
-
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
             content
                 .scrollContentBackground(.hidden)
                 .background {
-                    Self.background.ignoresSafeArea(.container)
+                    WorkspaceChrome.background.ignoresSafeArea(.container)
                 }
         } else {
             content
@@ -379,40 +370,24 @@ private struct LibrarySidebarSurface: ViewModifier {
     }
 }
 
-/// The detail as a raised card below the toolbar, rounded all round, with a
-/// margin to the sidebar, the inspector and the window's bottom edge so its
-/// shadow shows on every side. It goes before `.inspector`: a clip around the
-/// inspector drops the column's safe area, and the grid then lays out under
-/// the sidebar and the toolbar.
-private struct LibraryDetailCorners: ViewModifier {
-    @Environment(\.displayScale) private var displayScale
-
-    private let card = RoundedRectangle(cornerRadius: 16, style: .continuous)
+/// The browser's ground: the editor's dotted workspace behind the grid and
+/// the empty pages; the list keeps the chrome colour, because dots between
+/// its full-width rows read as noise. Decorative only: the dots never take
+/// clicks.
+private struct LibraryBrowserSurface: ViewModifier {
+    let showsDots: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27.0, *) {
-            content
-                .clipShape(card)
-                // The fill sits outside the clip, so its shadow isn't cut off.
-                .background {
-                    card
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                        .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
-                }
-                .overlay {
-                    card
-                        .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1 / displayScale)
-                        .allowsHitTesting(false)
-                }
-                .padding([.horizontal, .bottom], 12)
+        if #available(macOS 27.0, *), showsDots {
+            content.background { AnnotationEditorWorkspaceBackground().allowsHitTesting(false) }
         } else {
             content
         }
     }
 }
 
-/// The sidebar's grey behind the detail column and the toolbar, so the
+/// The chrome colour behind the detail column and the toolbar, so the
 /// toolbar reads as one strip. Backgrounds around `.inspector` keep the safe
 /// area; clips don't.
 private struct LibraryWindowSurface: ViewModifier {
@@ -420,7 +395,7 @@ private struct LibraryWindowSurface: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
             content
-                .background { LibrarySidebarSurface.background.ignoresSafeArea() }
+                .background { WorkspaceChrome.background.ignoresSafeArea() }
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         } else {
             content
