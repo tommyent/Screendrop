@@ -499,7 +499,10 @@ private struct CloudUploadCard: View {
                     HStack(spacing: 4) {
                         if upload.hasPassword == true {
                             Image(systemName: "lock.fill")
+                                .foregroundStyle(.yellow)
                                 .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                                // The pill is always dark, so its glyph takes the dark-appearance colour.
+                                .environment(\.colorScheme, .dark)
                                 .help("Password protected")
                         }
                         if let expiresAt = upload.expiresAt {
@@ -526,13 +529,15 @@ private struct CloudUploadCard: View {
 
     @ViewBuilder private var socialPills: some View {
         if let count = upload.commentCount, count > 0 {
-            Label(count.formatted(), systemImage: "bubble.left.fill")
+            Label { Text(count.formatted()) } icon: { Image(systemName: "bubble.left.fill").foregroundStyle(.blue) }
                 .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                .environment(\.colorScheme, .dark)
                 .help(CloudUploadText.comments(count) ?? "")
         }
         if let count = upload.likeCount, count > 0 {
-            Label(count.formatted(), systemImage: "heart.fill")
+            Label { Text(count.formatted()) } icon: { Image(systemName: "heart.fill").foregroundStyle(.red) }
                 .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                .environment(\.colorScheme, .dark)
                 .help(CloudUploadText.likes(count) ?? "")
         }
     }
