@@ -25,12 +25,16 @@ final class CloudLibraryModel {
     /// Quick Look's download, while it runs.
     private(set) var previewFetch: PreviewFetch?
     private var previewTask: Task<Void, Never>?
+    /// Esc stops the download while it runs.
+    private var escapeMonitor: Any?
 
     struct PreviewFetch {
         let id = UUID()
-        let count: Int
+        /// The uploads being fetched, in the order Quick Look will show them.
+        let uploadIDs: [String]
         var index = 0
         var fraction = 0.0
+        var count: Int { uploadIDs.count }
         var title: String { count == 1 ? "Downloading for Quick Look…" : "Downloading \(index + 1) of \(count) for Quick Look…" }
         var total: Double { (Double(index) + fraction) / Double(count) }
     }
@@ -153,18 +157,19 @@ final class CloudLibraryModel {
         if toggling, QuickLookPreviewPresenter.isShown { QuickLookPreviewPresenter.dismiss(); return }
         let targets = selectedUploads
         guard !targets.isEmpty else { return }
-        previewTask?.cancel()
-        let fetch = PreviewFetch(count: targets.count)
+        cancelPreview()
+        let fetch = PreviewFetch(uploadIDs: targets.map(\.id))
         let fetchID = fetch.id
         previewFetch = fetch
-        let kept = Set(targets.map(\.id))
+        let window = NSApp.keyWindow
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
+            guard event.keyCode == 53, event.window === window else { return event }
+            self?.cancelPreview()
+            return nil
+        }
+        let kept = Set(fetch.uploadIDs)
         previewTask = Task {
-            defer {
-                if previewFetch?.id == fetchID {
-                    previewFetch = nil
-                    previewTask = nil
-                }
-            }
+            defer { if previewFetch?.id == fetchID { cancelPreview() } }
             var files: [URL] = []
             var failures: [String] = []
             for (index, upload) in targets.enumerated() {
@@ -190,6 +195,8 @@ final class CloudLibraryModel {
         previewTask?.cancel()
         previewTask = nil
         previewFetch = nil
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        escapeMonitor = nil
     }
 
     private func updatePreview(_ id: UUID, index: Int, fraction: Double) {
@@ -427,6 +434,7 @@ private struct CloudUploadCard: View {
 
     private var thumbnail: some View {
         CloudUploadThumbnail(upload: upload, local: local)
+            .overlay { CloudFetchOverlay(uploadID: upload.id) }
             .clipShape(.rect(cornerRadius: 10))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -442,6 +450,45 @@ private struct CloudUploadCard: View {
                         .padding(7)
                 }
             }
+    }
+}
+
+/// Over a thumbnail while Quick Look downloads that upload: a ring with the
+/// percentage, or a spinner until the size is known, and "Waiting" for the
+/// selection's later uploads. It watches the model itself, so the
+/// collection doesn't reload for every step.
+private struct CloudFetchOverlay: View {
+    let uploadID: String
+
+    var body: some View {
+        if let fetch = CloudLibraryModel.shared.previewFetch,
+           let position = fetch.uploadIDs.firstIndex(of: uploadID), position >= fetch.index {
+            ZStack {
+                Color.black.opacity(0.3)
+                // The duration pill's dark style, so it reads on light and dark thumbnails alike.
+                VStack(spacing: 7) {
+                    if position > fetch.index {
+                        Text("Waiting")
+                    } else if fetch.fraction > 0 {
+                        ProgressView(value: fetch.fraction).progressViewStyle(.circular)
+                        Text(fetch.fraction, format: .percent.precision(.fractionLength(0)))
+                    } else {
+                        ProgressView()
+                        Text("Downloading")
+                    }
+                }
+                .font(.callout.weight(.semibold).monospacedDigit())
+                .foregroundStyle(.white)
+                .tint(.white)
+                .environment(\.colorScheme, .dark)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(position > fetch.index ? "Waiting to download" : "Downloading for Quick Look")
+            .help("Downloading for Quick Look. Press Esc to stop.")
+        }
     }
 }
 
@@ -540,6 +587,7 @@ struct CloudUploadInspector: View {
                     VStack(alignment: .leading, spacing: 14) {
                         Button { cloud.quickLook(toggling: false) } label: {
                             CloudUploadThumbnail(upload: upload, local: local)
+                                .overlay { CloudFetchOverlay(uploadID: upload.id) }
                                 .aspectRatio(1.45, contentMode: .fit)
                                 .clipShape(.rect(cornerRadius: 11))
                                 .overlay {
