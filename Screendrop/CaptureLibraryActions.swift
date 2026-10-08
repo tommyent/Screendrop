@@ -163,7 +163,8 @@ extension CaptureLibraryModel {
                 $0.recordingSessionPath == item.session?.directoryURL.standardizedFileURL.path
             }?.id ?? UUID()
             let result = try await CloudUploader.shared.upload(itemID: id, fileURL: item.fileURL,
-                title: options.trimmedTitleOrNil, socialEnabled: options.socialEnabled)
+                title: options.trimmedTitleOrNil, socialEnabled: options.socialEnabled,
+                expiresAt: options.expiry.date(), allowAnonymousComments: options.allowAnonymousComments)
             ScreenshotHistoryStore.shared.setLibraryCloudURL(id: id, cloudURL: result.url)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(result.url, forType: .string)

@@ -2329,7 +2329,9 @@ final class RecordingStudioModel {
                     itemID: itemID,
                     fileURL: uploadURL,
                     title: options.trimmedTitleOrNil,
-                    socialEnabled: options.socialEnabled
+                    socialEnabled: options.socialEnabled,
+                    expiresAt: options.expiry.date(),
+                    allowAnonymousComments: options.allowAnonymousComments
                 )
 
                 NSPasteboard.general.clearContents()

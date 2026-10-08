@@ -22,6 +22,8 @@ final class CloudLibraryModel {
     private(set) var isLoading = false
     private(set) var loadError: String?
     private(set) var deletingIDs: Set<String> = []
+    /// Uploads whose share settings are being changed.
+    private(set) var savingIDs: Set<String> = []
     /// Quick Look's download, while it runs.
     private(set) var previewFetch: PreviewFetch?
     private var previewTask: Task<Void, Never>?
@@ -216,6 +218,27 @@ final class CloudLibraryModel {
         library.selection = [item.id]
     }
 
+    /// Changes an upload's expiry (counted from now; `.never` clears it) or
+    /// anonymous comments on the Worker, then shows what it answered.
+    func updateSettings(_ upload: CloudUpload, expiry: CloudExpiry? = nil, allowAnonymousComments: Bool? = nil) {
+        guard savingIDs.insert(upload.id).inserted else { return }
+        Task {
+            defer { savingIDs.remove(upload.id) }
+            do {
+                let updated = try await CloudUploader.shared.updateUpload(
+                    id: upload.id, expiresAt: expiry.map { $0.date() }, allowAnonymousComments: allowAnonymousComments
+                )
+                if let updated, let index = uploads.firstIndex(where: { $0.id == upload.id }) {
+                    uploads[index] = updated
+                } else {
+                    refresh()
+                }
+            } catch {
+                CaptureLibraryModel.shared.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     /// Deletes the confirmed uploads one at a time with the inspector's
     /// Delete from Cloud call, and like it, clears each link from the
     /// capture's History entries.
@@ -380,7 +403,8 @@ private struct CloudUploadCard: View {
                     thumbnail.frame(width: 88, height: 58)
                     labels
                     Spacer(minLength: 8)
-                    Text(local == nil ? "Cloud only" : "In Library")
+                    Text([CloudUploadText.expiry(upload.expiresAt), local == nil ? "Cloud only" : "In Library"]
+                        .compactMap(\.self).joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.trailing, 8)
@@ -406,6 +430,7 @@ private struct CloudUploadCard: View {
         .onChange(of: upload.id) { _, _ in isHovering = false }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(upload.name), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
+            + (CloudUploadText.expiry(upload.expiresAt).map { ", \($0)" } ?? "")
             + (local == nil ? ", cloud only" : ", in Library"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityAction(named: "Quick Look") { act { $0.quickLook(toggling: false) } }
@@ -440,6 +465,19 @@ private struct CloudUploadCard: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
+            .overlay(alignment: .topLeading) {
+                // The list says it in words beside the thumbnail instead.
+                // The duration pill's style, so it reads on any thumbnail; red once expired.
+                if layout == .grid, let expiresAt = upload.expiresAt {
+                    Label(CloudUploadText.expiryShort(expiresAt), systemImage: "hourglass")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .foregroundStyle(.white)
+                        .background(expiresAt <= .now ? .red.opacity(0.85) : .black.opacity(0.65), in: Capsule())
+                        .padding(7)
+                        .help(CloudUploadText.expiryDate(expiresAt))
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if upload.isVideo, let duration = upload.duration {
@@ -499,6 +537,23 @@ nonisolated enum CloudUploadText {
         if upload.isVideo, let seconds = upload.duration { return "\(date) · \(duration(seconds))" }
         if let size = upload.size { return "\(date) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))" }
         return date
+    }
+
+    /// "Expires in 3 days" or "Expired"; nil for a link that never expires.
+    static func expiry(_ date: Date?, now: Date = .now) -> String? {
+        guard let date else { return nil }
+        return date <= now ? "Expired" : "Expires " + date.formatted(.relative(presentation: .numeric, unitsStyle: .wide))
+    }
+
+    /// "in 3 days", "Expired" or "Never".
+    static func expiryShort(_ date: Date?, now: Date = .now) -> String {
+        guard let date else { return "Never" }
+        return date <= now ? "Expired" : date.formatted(.relative(presentation: .numeric, unitsStyle: .wide))
+    }
+
+    /// "Expires Oct 11, 2026 at 4:40 PM", or "Expired …" once it has passed.
+    static func expiryDate(_ date: Date, now: Date = .now) -> String {
+        (date <= now ? "Expired " : "Expires ") + date.formatted(date: .abbreviated, time: .shortened)
     }
 
     static func duration(_ seconds: Double) -> String {
@@ -632,6 +687,8 @@ struct CloudUploadInspector: View {
                         }
                     }
                     Divider()
+                    sharing(upload)
+                    Divider()
                     VStack(alignment: .leading, spacing: 10) {
                         sectionTitle("On This Mac")
                         if let local {
@@ -674,6 +731,52 @@ struct CloudUploadInspector: View {
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// The link's expiry and anonymous comments, changed on the Worker.
+    private func sharing(_ upload: CloudUpload) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Sharing")
+            if upload.supportsShareSettings {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Expires")
+                    Spacer(minLength: 0)
+                    Menu(CloudUploadText.expiryShort(upload.expiresAt)) {
+                        ForEach(CloudExpiry.allCases) { expiry in
+                            Button(expiry == .never ? "Never" : "In \(expiry.title)") {
+                                cloud.updateSettings(upload, expiry: expiry)
+                            }
+                        }
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.borderless)
+                    .fixedSize()
+                    .help(upload.expiresAt.map { CloudUploadText.expiryDate($0) } ?? "The link never expires")
+                }
+                HStack(spacing: 12) {
+                    Text("Anonymous comments")
+                    Spacer(minLength: 0)
+                    Toggle("Anonymous comments", isOn: Binding(
+                        get: { upload.allowAnonymousComments ?? true },
+                        set: { cloud.updateSettings(upload, allowAnonymousComments: $0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                }
+                .disabled(upload.socialEnabled == false)
+                .help("Visitors can comment without signing in")
+                if upload.socialEnabled == false {
+                    Text("Comments are off for this upload.").foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Update your Worker to set an expiry and allow anonymous comments here.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(size: 12))
+        .disabled(cloud.savingIDs.contains(upload.id))
     }
 
     private func multiple(_ uploads: [CloudUpload]) -> some View {

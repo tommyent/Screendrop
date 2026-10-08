@@ -23,6 +23,8 @@ struct CloudUploadResult: Sendable {
     let url: String
     let filename: String
     let size: Int
+    /// An expiry was asked for, but the Worker predates expiry.
+    var expiryIgnored = false
 }
 
 @MainActor
@@ -58,8 +60,11 @@ final class CloudUploader: NSObject {
         itemID: UUID,
         fileURL: URL,
         title: String? = nil,
-        socialEnabled: Bool = true
+        socialEnabled: Bool = true,
+        expiresAt: Date? = nil,
+        allowAnonymousComments: Bool? = nil
     ) async throws -> CloudUploadResult {
+        let allowAnonymousComments = allowAnonymousComments ?? CloudUploadPreferences.lastAnonymousComments
         try Task.checkCancellation()
         guard isConfigured else {
             throw CloudUploadError.notConfigured
@@ -118,6 +123,8 @@ final class CloudUploader: NSObject {
                 duration: duration,
                 title: title,
                 socialEnabled: socialEnabled,
+                expiresAt: expiresAt,
+                allowAnonymousComments: allowAnonymousComments,
                 creds: creds,
                 progress: { [weak self] fraction in
                     Task { @MainActor [weak self] in
@@ -160,6 +167,7 @@ final class CloudUploader: NSObject {
                 throw CancellationError()
             }
             uploadedURLs[itemID] = result.url
+            if result.expiryIgnored { showExpiryIgnoredNotice() }
             if mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
                 scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, creds: creds)
             }
@@ -224,6 +232,47 @@ final class CloudUploader: NSObject {
             throw CloudUploadError.notConfigured
         }
         try await Self.performDelete(uploadID: uploadID, creds: creds)
+    }
+
+    /// The link is up and works, but an older Worker dropped its expiry.
+    /// Shown after the call site has copied the link, not in its way.
+    private func showExpiryIgnoredNotice() {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Update your Worker to use link expiry"
+            alert.informativeText = "The upload worked, but this Worker doesn’t support expiry yet, so the link won’t expire. After updating the Worker, set the expiry in the Library’s Cloud page."
+            alert.runModal()
+        }
+    }
+
+    // MARK: - Share settings
+
+    /// Changes an upload's expiry or anonymous comments through Bearer
+    /// PATCH /api/upload/:id. `expiresAt: .some(nil)` makes the link last
+    /// for good. Returns the upload as the Worker now has it, or nil when
+    /// its answer doesn't read as one.
+    func updateUpload(id: String, expiresAt: Date?? = nil, allowAnonymousComments: Bool? = nil) async throws -> CloudUpload? {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else {
+            throw CloudUploadError.notConfigured
+        }
+        guard let request = CloudUploadList.patchRequest(
+            workerBase: Self.normalizeWorkerURL(creds.workerURL),
+            token: creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines),
+            id: id, expiresAt: expiresAt, allowAnonymousComments: allowAnonymousComments
+        ) else {
+            throw CloudUploadError.invalidURL
+        }
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw CloudUploadError.invalidResponse
+        }
+        if http.statusCode == 404 || http.statusCode == 405 { throw CloudUploadError.shareSettingsUnavailable }
+        guard http.statusCode == 200 else {
+            let body = String(data: responseData, encoding: .utf8) ?? ""
+            throw CloudUploadError.serverError(http.statusCode, body)
+        }
+        return try? CloudUploadList.decodeUpload(responseData)
     }
 
     // MARK: - List
@@ -300,6 +349,8 @@ final class CloudUploader: NSObject {
         duration: Double?,
         title: String?,
         socialEnabled: Bool,
+        expiresAt: Date?,
+        allowAnonymousComments: Bool,
         creds: CloudCredentials,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> CloudUploadResult {
@@ -326,6 +377,7 @@ final class CloudUploader: NSObject {
             request.setValue(encoded, forHTTPHeaderField: "X-Title")
         }
         request.setValue(socialEnabled ? "true" : "false", forHTTPHeaderField: "X-Social-Enabled")
+        CloudUploadList.applyShareSettings(to: &request, expiresAt: expiresAt, allowAnonymousComments: allowAnonymousComments)
 
         let progressDelegate = UploadProgressDelegate { sent, expected in
             guard expected > 0 else { return }
@@ -357,7 +409,8 @@ final class CloudUploader: NSObject {
         }
 
         progress?(1)
-        return CloudUploadResult(id: id, url: shareURL, filename: name, size: fileSize)
+        return CloudUploadResult(id: id, url: shareURL, filename: name, size: fileSize,
+                                 expiryIgnored: CloudUploadList.expiryIgnored(requested: expiresAt, response: json))
     }
 
     // MARK: - Helpers
@@ -451,6 +504,7 @@ enum CloudUploadError: LocalizedError {
     case serverError(Int, String)
     case invalidResponse
     case listUnavailable
+    case shareSettingsUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -466,6 +520,8 @@ enum CloudUploadError: LocalizedError {
             "Invalid response from server."
         case .listUnavailable:
             "This Worker can't list uploads yet. Update it to manage every upload from the Library."
+        case .shareSettingsUnavailable:
+            "The Worker couldn’t change this upload. Update the Worker if it predates link expiry; otherwise the upload is no longer there."
         }
     }
 }

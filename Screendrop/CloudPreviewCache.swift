@@ -128,6 +128,7 @@ nonisolated enum CloudPreviewError: LocalizedError {
         switch self {
         case .badLink: "Its link doesn’t point to a Worker."
         case .status(404): "It’s no longer in the cloud."
+        case .status(410): "Its link has expired."
         case .status(let code): "The Worker answered with HTTP \(code)."
         }
     }
