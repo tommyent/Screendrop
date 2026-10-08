@@ -431,39 +431,31 @@ private struct LibraryColumnSeparators: ViewModifier {
     }
 }
 
-/// One straight hairline under the toolbar, across every column, as in the
-/// editor. The system draws one only over a hard scroll edge, and the
-/// browser's AppKit scroll view can't ask for that, so on 27.0.1 and 27.2
-/// the system's line showed over the sidebar alone.
+/// The system's line under the toolbar, the one the editor shows. With the
+/// toolbar background visible it runs over the browser and inspector; a hard
+/// top scroll edge turns it on over the sidebar too.
 private struct LibraryToolbarSeparator: ViewModifier {
-    @Environment(\.displayScale) private var displayScale
-
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
-            content.overlay(alignment: .top) {
-                Rectangle()
-                    .fill(Color(nsColor: .separatorColor))
-                    .frame(height: 1 / displayScale)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+            content.scrollEdgeEffectStyle(.hard, for: .top)
         } else {
             content
         }
     }
 }
 
-/// The chrome colour behind the detail column and the toolbar, so the
-/// toolbar reads as one strip. Backgrounds around `.inspector` keep the safe
-/// area; clips don't.
+/// The chrome colour behind the detail column. The toolbar keeps its own
+/// background, as in the editor, so the system draws its line and keeps the
+/// inspector's divider out of it. Backgrounds around `.inspector` keep the
+/// safe area; clips don't.
 private struct LibraryWindowSurface: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
             content
                 .background { WorkspaceChrome.background.ignoresSafeArea() }
-                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         } else {
             content
         }
