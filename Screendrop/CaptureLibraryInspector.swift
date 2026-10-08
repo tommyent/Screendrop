@@ -7,7 +7,6 @@ struct CaptureLibraryInspector: View {
     @State private var pendingCloudDelete: CaptureLibraryItem?
     @State private var pendingCloudUpload: CaptureLibraryItem?
     @State private var tooltip = BarTooltipModel()
-    @State private var newTag = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var items: [CaptureLibraryItem] { model.selectedItems }
 
@@ -321,30 +320,12 @@ struct CaptureLibraryInspector: View {
                 }
                 .font(.system(size: 12))
             }
-            HStack(spacing: 6) {
-                TextField(items.count == 1 ? "Add tag" : "Tag \(items.count) captures", text: $newTag)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                    .onSubmit {
-                        model.setTag(newTag, applied: true)
-                        newTag = ""
-                    }
-                if !suggestions.isEmpty {
-                    Menu {
-                        ForEach(suggestions, id: \.self) { tag in
-                            Button { model.setTag(tag, applied: true) } label: {
-                                Label(tag, systemImage: CaptureTagStyles.shared.symbol(for: tag))
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "tag")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                    .help("Add an existing tag")
-                    .accessibilityLabel("Add an existing tag")
-                }
+            CaptureTagField(available: suggestions,
+                            placeholder: items.count == 1 ? "Add tag" : "Tag \(items.count) captures") { name in
+                model.setTag(name, applied: true)
             }
+            // A new selection starts with an empty field.
+            .id(items.map(\.id))
             .disabled(model.isBusy)
         }
     }
