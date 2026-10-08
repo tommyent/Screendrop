@@ -171,6 +171,7 @@ final class CloudLibraryModel {
             return nil
         }
         let kept = Set(fetch.uploadIDs)
+        let owner = CloudUploader.shared.ownerAccess
         previewTask = Task {
             defer { if previewFetch?.id == fetchID { cancelPreview() } }
             var files: [URL] = []
@@ -178,7 +179,7 @@ final class CloudLibraryModel {
             for (index, upload) in targets.enumerated() {
                 updatePreview(fetchID, index: index, fraction: 0)
                 do {
-                    files.append(try await CloudPreviewCache.shared.file(for: upload, keeping: kept) { fraction in
+                    files.append(try await CloudPreviewCache.shared.file(for: upload, keeping: kept, owner: owner) { fraction in
                         Task { @MainActor in self.updatePreview(fetchID, index: index, fraction: fraction) }
                     })
                 } catch {
@@ -218,15 +219,18 @@ final class CloudLibraryModel {
         library.selection = [item.id]
     }
 
-    /// Changes an upload's expiry (counted from now; `.never` clears it) or
-    /// anonymous comments on the Worker, then shows what it answered.
-    func updateSettings(_ upload: CloudUpload, expiry: CloudExpiry? = nil, allowAnonymousComments: Bool? = nil) {
+    /// Changes an upload's expiry (counted from now; `.never` clears it),
+    /// anonymous comments or password (`.some(nil)` removes it) on the
+    /// Worker, then shows what it answered.
+    func updateSettings(_ upload: CloudUpload, expiry: CloudExpiry? = nil, allowAnonymousComments: Bool? = nil,
+                        password: String?? = nil) {
         guard savingIDs.insert(upload.id).inserted else { return }
         Task {
             defer { savingIDs.remove(upload.id) }
             do {
                 let updated = try await CloudUploader.shared.updateUpload(
-                    id: upload.id, expiresAt: expiry.map { $0.date() }, allowAnonymousComments: allowAnonymousComments
+                    id: upload.id, expiresAt: expiry.map { $0.date() }, allowAnonymousComments: allowAnonymousComments,
+                    password: password
                 )
                 if let updated, let index = uploads.firstIndex(where: { $0.id == upload.id }) {
                     uploads[index] = updated
@@ -403,7 +407,8 @@ private struct CloudUploadCard: View {
                     thumbnail.frame(width: 88, height: 58)
                     labels
                     Spacer(minLength: 8)
-                    Text([CloudUploadText.expiry(upload.expiresAt), local == nil ? "Cloud only" : "In Library"]
+                    Text([upload.hasPassword == true ? "Password" : nil, CloudUploadText.expiry(upload.expiresAt),
+                          local == nil ? "Cloud only" : "In Library"]
                         .compactMap(\.self).joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -430,6 +435,7 @@ private struct CloudUploadCard: View {
         .onChange(of: upload.id) { _, _ in isHovering = false }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(upload.name), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
+            + (upload.hasPassword == true ? ", password protected" : "")
             + (CloudUploadText.expiry(upload.expiresAt).map { ", \($0)" } ?? "")
             + (local == nil ? ", cloud only" : ", in Library"))
         .accessibilityAddTraits(selected ? [.isSelected] : [])
@@ -467,16 +473,22 @@ private struct CloudUploadCard: View {
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
             .overlay(alignment: .topLeading) {
-                // The list says it in words beside the thumbnail instead.
-                // The duration pill's style, so it reads on any thumbnail; red once expired.
-                if layout == .grid, let expiresAt = upload.expiresAt {
-                    Label(CloudUploadText.expiryShort(expiresAt), systemImage: "hourglass")
-                        .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .foregroundStyle(.white)
-                        .background(expiresAt <= .now ? .red.opacity(0.85) : .black.opacity(0.65), in: Capsule())
-                        .padding(7)
-                        .help(CloudUploadText.expiryDate(expiresAt))
+                // The list says these in words beside the thumbnail instead.
+                // The duration pill's style, so they read on any thumbnail.
+                if layout == .grid, upload.hasPassword == true || upload.expiresAt != nil {
+                    HStack(spacing: 4) {
+                        if upload.hasPassword == true {
+                            Image(systemName: "lock.fill")
+                                .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                                .help("Password protected")
+                        }
+                        if let expiresAt = upload.expiresAt {
+                            Label(CloudUploadText.expiryShort(expiresAt), systemImage: "hourglass")
+                                .modifier(CloudCardPill(background: expiresAt <= .now ? .red.opacity(0.85) : .black.opacity(0.65)))
+                                .help(CloudUploadText.expiryDate(expiresAt))
+                        }
+                    }
+                    .padding(7)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -528,6 +540,56 @@ private struct CloudFetchOverlay: View {
             .accessibilityLabel(position > fetch.index ? "Waiting to download" : "Downloading for Quick Look")
             .help("Downloading for Quick Look. Press Esc to stop.")
         }
+    }
+}
+
+/// Sets or changes an upload's password. The field never shows the current
+/// one: the Worker keeps only a hash.
+private struct CloudPasswordPopover: View {
+    let isChange: Bool
+    let onSave: (String) -> Void
+    @State private var password = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(isChange ? "Change Password" : "Set Password").font(.headline)
+            SecureField("Password", text: $password, prompt: Text("New password"))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+            Text(isChange
+                ? "Visitors who unlocked the link need the new password."
+                : "Visitors need it to open the link. Share it separately.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    onSave(password)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!CloudUploadList.isValidPassword(password))
+            }
+        }
+        .padding(16)
+        .frame(width: 260)
+    }
+}
+
+/// A small white-on-dark label over a card's thumbnail, like the duration's.
+private struct CloudCardPill: ViewModifier {
+    let background: Color
+
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .foregroundStyle(.white)
+            .background(background, in: Capsule())
     }
 }
 
@@ -592,7 +654,8 @@ private struct CloudUploadThumbnail: View {
             .task(id: upload.thumbnailUrl) {
                 image = nil
                 guard let link = upload.thumbnailUrl, let url = URL(string: link) else { return }
-                let result = await CloudThumbnails.image(at: url)
+                // Locked uploads' posters and images need the owner's token.
+                let result = await CloudThumbnails.image(at: url, owner: upload.hasPassword == true ? CloudUploader.shared.ownerAccess : nil)
                 guard !Task.isCancelled else { return }
                 image = result
             }
@@ -601,7 +664,7 @@ private struct CloudUploadThumbnail: View {
     }
 }
 
-/// Posters and screenshots from the Worker's public routes, downsampled like
+/// Posters and screenshots from the Worker's media routes, downsampled like
 /// the Library's own thumbnails.
 private enum CloudThumbnails {
     // ponytail: screenshots download in full; a Worker thumbnail route if
@@ -612,9 +675,10 @@ private enum CloudThumbnails {
         return cache
     }()
 
-    static func image(at url: URL) async -> CGImage? {
+    static func image(at url: URL, owner: (workerBase: String, token: String)?) async -> CGImage? {
         if let image = cache.object(forKey: url as NSURL) { return image }
-        guard let (data, response) = try? await URLSession.shared.data(from: url),
+        let request = CloudUploadList.mediaRequest(url, workerBase: owner?.workerBase, token: owner?.token)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         let image = await Task.detached(priority: .utility) { () -> CGImage? in
             guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
@@ -631,6 +695,9 @@ private enum CloudThumbnails {
 
 struct CloudUploadInspector: View {
     let cloud: CloudLibraryModel
+    /// The upload whose password is being set or changed.
+    @State private var passwordTarget: CloudUpload?
+    @State private var pendingPasswordRemoval: CloudUpload?
 
     var body: some View {
         let selected = cloud.selectedUploads
@@ -769,6 +836,22 @@ struct CloudUploadInspector: View {
                 if upload.socialEnabled == false {
                     Text("Comments are off for this upload.").foregroundStyle(.secondary)
                 }
+                HStack(spacing: 12) {
+                    Text("Password")
+                    Spacer(minLength: 0)
+                    if upload.hasPassword == true {
+                        Button("Change…") { passwordTarget = upload }
+                        Button("Remove") { pendingPasswordRemoval = upload }
+                    } else {
+                        Button("Set…") { passwordTarget = upload }
+                    }
+                }
+                .buttonStyle(.borderless)
+                .popover(item: $passwordTarget, arrowEdge: .leading) { target in
+                    CloudPasswordPopover(isChange: target.hasPassword == true) { password in
+                        cloud.updateSettings(target, password: .some(password))
+                    }
+                }
             } else {
                 Text("Update your Worker to set an expiry and allow anonymous comments here.")
                     .foregroundStyle(.secondary)
@@ -777,6 +860,17 @@ struct CloudUploadInspector: View {
         }
         .font(.system(size: 12))
         .disabled(cloud.savingIDs.contains(upload.id))
+        .alert("Remove the password?", isPresented: Binding(
+            get: { pendingPasswordRemoval != nil }, set: { if !$0 { pendingPasswordRemoval = nil } }
+        ), presenting: pendingPasswordRemoval) { target in
+            Button("Remove", role: .destructive) {
+                cloud.updateSettings(target, password: .some(nil))
+                pendingPasswordRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { pendingPasswordRemoval = nil }
+        } message: { _ in
+            Text("Anyone with the link will be able to open it.")
+        }
     }
 
     private func multiple(_ uploads: [CloudUpload]) -> some View {

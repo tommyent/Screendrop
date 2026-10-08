@@ -386,7 +386,8 @@ struct AnnotationEditorWindow: View {
                     title: options.trimmedTitleOrNil,
                     socialEnabled: options.socialEnabled,
                     expiresAt: options.expiry.date(),
-                    allowAnonymousComments: options.allowAnonymousComments
+                    allowAnonymousComments: options.allowAnonymousComments,
+                    password: options.password
                 )
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(result.url, forType: .string)

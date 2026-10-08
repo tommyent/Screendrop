@@ -2331,7 +2331,8 @@ final class RecordingStudioModel {
                     title: options.trimmedTitleOrNil,
                     socialEnabled: options.socialEnabled,
                     expiresAt: options.expiry.date(),
-                    allowAnonymousComments: options.allowAnonymousComments
+                    allowAnonymousComments: options.allowAnonymousComments,
+                    password: options.password
                 )
 
                 NSPasteboard.general.clearContents()

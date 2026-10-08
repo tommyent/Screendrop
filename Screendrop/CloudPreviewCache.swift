@@ -1,9 +1,10 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// Full uploads fetched for Quick Look from the Worker's public media routes,
-/// one folder per upload in Caches, capped in size with the least recently
-/// viewed going first. Public GETs only: no token is sent.
+/// Full uploads fetched for Quick Look from the Worker's media routes, one
+/// folder per upload in Caches, capped in size with the least recently
+/// viewed going first. Only password-protected uploads send the owner's
+/// token, and only to the Worker's own origin (`CloudUploadList.mediaRequest`).
 nonisolated struct CloudPreviewCache: Sendable {
     let folder: URL
     let limit: Int64
@@ -53,6 +54,7 @@ nonisolated struct CloudPreviewCache: Sendable {
     /// the fraction downloaded about ten times a second. Trimming afterwards
     /// spares `kept`, the uploads being previewed together.
     func file(for upload: CloudUpload, keeping kept: Set<String> = [],
+              owner: (workerBase: String, token: String)? = nil,
               progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
         guard let source = Self.mediaURL(for: upload) else { throw CloudPreviewError.badLink }
         let manager = FileManager.default
@@ -72,7 +74,9 @@ nonisolated struct CloudPreviewCache: Sendable {
             }
         }
         defer { poll.cancel() }
-        let (download, response) = try await Self.session.download(for: URLRequest(url: source), delegate: relay)
+        let request = CloudUploadList.mediaRequest(source, workerBase: owner?.workerBase,
+                                                   token: upload.hasPassword == true ? owner?.token : nil)
+        let (download, response) = try await Self.session.download(for: request, delegate: relay)
         defer { try? manager.removeItem(at: download) }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {

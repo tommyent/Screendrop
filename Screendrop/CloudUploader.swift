@@ -62,7 +62,8 @@ final class CloudUploader: NSObject {
         title: String? = nil,
         socialEnabled: Bool = true,
         expiresAt: Date? = nil,
-        allowAnonymousComments: Bool? = nil
+        allowAnonymousComments: Bool? = nil,
+        password: String? = nil
     ) async throws -> CloudUploadResult {
         let allowAnonymousComments = allowAnonymousComments ?? CloudUploadPreferences.lastAnonymousComments
         try Task.checkCancellation()
@@ -125,6 +126,7 @@ final class CloudUploader: NSObject {
                 socialEnabled: socialEnabled,
                 expiresAt: expiresAt,
                 allowAnonymousComments: allowAnonymousComments,
+                password: password,
                 creds: creds,
                 progress: { [weak self] fraction in
                     Task { @MainActor [weak self] in
@@ -245,13 +247,22 @@ final class CloudUploader: NSObject {
         }
     }
 
+    /// The configured Worker and token, for the owner's reads of
+    /// password-protected thumbnails and media.
+    var ownerAccess: (workerBase: String, token: String)? {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else { return nil }
+        return (Self.normalizeWorkerURL(creds.workerURL), creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     // MARK: - Share settings
 
     /// Changes an upload's expiry or anonymous comments through Bearer
     /// PATCH /api/upload/:id. `expiresAt: .some(nil)` makes the link last
     /// for good. Returns the upload as the Worker now has it, or nil when
     /// its answer doesn't read as one.
-    func updateUpload(id: String, expiresAt: Date?? = nil, allowAnonymousComments: Bool? = nil) async throws -> CloudUpload? {
+    func updateUpload(id: String, expiresAt: Date?? = nil, allowAnonymousComments: Bool? = nil,
+                      password: String?? = nil) async throws -> CloudUpload? {
         let creds = CloudCredentialStore.shared.snapshot()
         guard creds.isConfigured else {
             throw CloudUploadError.notConfigured
@@ -259,7 +270,7 @@ final class CloudUploader: NSObject {
         guard let request = CloudUploadList.patchRequest(
             workerBase: Self.normalizeWorkerURL(creds.workerURL),
             token: creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines),
-            id: id, expiresAt: expiresAt, allowAnonymousComments: allowAnonymousComments
+            id: id, expiresAt: expiresAt, allowAnonymousComments: allowAnonymousComments, password: password
         ) else {
             throw CloudUploadError.invalidURL
         }
@@ -351,6 +362,7 @@ final class CloudUploader: NSObject {
         socialEnabled: Bool,
         expiresAt: Date?,
         allowAnonymousComments: Bool,
+        password: String?,
         creds: CloudCredentials,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> CloudUploadResult {
@@ -377,7 +389,9 @@ final class CloudUploader: NSObject {
             request.setValue(encoded, forHTTPHeaderField: "X-Title")
         }
         request.setValue(socialEnabled ? "true" : "false", forHTTPHeaderField: "X-Social-Enabled")
-        CloudUploadList.applyShareSettings(to: &request, expiresAt: expiresAt, allowAnonymousComments: allowAnonymousComments)
+        if let password, !CloudUploadList.isValidPassword(password) { throw CloudUploadError.invalidPassword }
+        CloudUploadList.applyShareSettings(to: &request, expiresAt: expiresAt, allowAnonymousComments: allowAnonymousComments,
+                                           password: password)
 
         let progressDelegate = UploadProgressDelegate { sent, expected in
             guard expected > 0 else { return }
@@ -406,6 +420,13 @@ final class CloudUploader: NSObject {
               let name = json?["filename"] as? String,
               let fileSize = json?["size"] as? Int else {
             throw CloudUploadError.invalidResponse
+        }
+
+        // A Worker from before passwords ignores the header and publishes
+        // the upload unprotected. Take it down rather than leave it open.
+        if CloudUploadList.passwordIgnored(requested: password, response: json) {
+            try? await performDelete(uploadID: id, creds: creds)
+            throw CloudUploadError.passwordUnsupported
         }
 
         progress?(1)
@@ -505,6 +526,8 @@ enum CloudUploadError: LocalizedError {
     case invalidResponse
     case listUnavailable
     case shareSettingsUnavailable
+    case passwordUnsupported
+    case invalidPassword
 
     var errorDescription: String? {
         switch self {
@@ -520,6 +543,10 @@ enum CloudUploadError: LocalizedError {
             "Invalid response from server."
         case .listUnavailable:
             "This Worker can't list uploads yet. Update it to manage every upload from the Library."
+        case .passwordUnsupported:
+            "This Worker doesn’t support passwords yet, so the upload was removed instead of being shared without one. Update the Worker, or share without a password."
+        case .invalidPassword:
+            "Passwords can be 1 to 128 characters."
         case .shareSettingsUnavailable:
             "The Worker couldn’t change this upload. Update the Worker if it predates link expiry; otherwise the upload is no longer there."
         }

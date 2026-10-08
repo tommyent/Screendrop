@@ -14,6 +14,8 @@ struct CloudUploadOptions: Sendable {
     var socialEnabled: Bool
     var expiry = CloudExpiry.never
     var allowAnonymousComments = true
+    /// Nil: anyone with the link can open it.
+    var password: String? = nil
 
     /// `nil` title means "let the worker fall back to the filename (or,
     /// for recordings, the auto-generated 'Screen Recording - …' title)".
@@ -64,7 +66,8 @@ enum CloudUploadPreferences {
 
 /// Small popover form shown from an upload/share button: a title field
 /// (prefilled with a suggested default, editable), when the link expires,
-/// and whether comments + likes are on and open to anonymous visitors.
+/// an optional password, and whether comments + likes are on and open to
+/// anonymous visitors.
 /// Confirming remembers the comment toggles as the defaults for next
 /// time; the expiry starts at Never every time.
 struct CloudUploadOptionsPopover: View {
@@ -75,6 +78,8 @@ struct CloudUploadOptionsPopover: View {
     @State private var socialEnabled = CloudUploadPreferences.lastSocialEnabled
     @State private var expiry = CloudExpiry.never
     @State private var allowAnonymousComments = CloudUploadPreferences.lastAnonymousComments
+    /// Never remembered: each protected link gets its own.
+    @State private var password = ""
     @Environment(\.dismiss) private var dismiss
 
     init(suggestedTitle: String = "", onConfirm: @escaping (CloudUploadOptions) -> Void) {
@@ -110,6 +115,16 @@ struct CloudUploadOptionsPopover: View {
             }
 
             HStack {
+                Text("Password")
+                Spacer()
+                SecureField("Password", text: $password, prompt: Text("Optional"))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 130)
+            }
+            .help("Visitors need it to open the link. Up to 128 characters.")
+
+            HStack {
                 Text("Allow comments & likes")
                 Spacer()
                 Toggle("Allow comments & likes", isOn: $socialEnabled)
@@ -141,11 +156,13 @@ struct CloudUploadOptionsPopover: View {
                     CloudUploadPreferences.lastSocialEnabled = socialEnabled
                     CloudUploadPreferences.lastAnonymousComments = allowAnonymousComments
                     let options = CloudUploadOptions(title: title, socialEnabled: socialEnabled, expiry: expiry,
-                                                     allowAnonymousComments: allowAnonymousComments)
+                                                     allowAnonymousComments: allowAnonymousComments,
+                                                     password: password.isEmpty ? nil : password)
                     dismiss()
                     onConfirm(options)
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(!password.isEmpty && !CloudUploadList.isValidPassword(password))
             }
         }
         .padding(16)
