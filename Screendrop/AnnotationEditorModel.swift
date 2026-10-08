@@ -69,7 +69,19 @@ final class AnnotationEditorModel {
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
     var redactionDensity: CGFloat = 0.55
-    var backgroundSettings = AnnotationBackgroundSettings()
+    var backgroundSettings = AnnotationBackgroundSettings() {
+        willSet {
+            if !isRestoringHistory, !isInspectorEditing, !isPointerDown,
+               newValue != backgroundSettings { commitTextEditing() }
+        }
+        didSet {
+            // Wallpaper pickers set the remembered asset before selecting its style.
+            var previous = oldValue
+            previous.customWallpaper = backgroundSettings.customWallpaper
+            guard previous != backgroundSettings else { return }
+            if !isInspectorEditing, !isPointerDown { recordHistoryChange(force: true) }
+        }
+    }
     var appliedBackgroundPresetID: AnnotationBackgroundPreset.ID?
     var errorMessage: String?
     var isSmartRedacting = false
@@ -103,18 +115,12 @@ final class AnnotationEditorModel {
     var textAlignment: NSTextAlignment = .left
     var textBoxStyle: TextBoxStyle = .plain
 
-    /// A full snapshot of the editor's image state, captured before a crop so
-    /// the operation can be undone/redone.
-    private struct CropSnapshot {
-        var baseImageURL: URL?
-        var imageSize: CGSize
-        var shapes: [AnnoShape]
-        var bindings: [ArrowBinding]
-    }
-
-    private var cropUndoStack: [CropSnapshot] = []
-    private var cropRedoStack: [CropSnapshot] = []
-    @ObservationIgnored private var cropRedoBaseline: AnnoDocument.Snapshot?
+    private var history: [EditSnapshot] = []
+    private var historyIndex = 0
+    private var isRestoringHistory = false
+    private var inspectorEditingDepth = 0
+    private var isInspectorEditing: Bool { inspectorEditingDepth > 0 }
+    private var croppedInSession = false
     private var ownedCropURLs: Set<URL> = []
 
     /// Smallest crop dimension, in normalized units, derived from a pixel floor.
@@ -129,12 +135,7 @@ final class AnnotationEditorModel {
     init() {
         engine.onChange = { [weak self] in
             guard let self else { return }
-            // ponytail: O(n) while redo is pending; use a document revision if large drawings make it costly.
-            if !cropRedoStack.isEmpty, let baseline = cropRedoBaseline,
-               baseline.shapes != engine.shapes || baseline.bindings != engine.document.bindings {
-                cropRedoStack.removeAll()
-                cropRedoBaseline = nil
-            }
+            recordHistoryChange()
             revision &+= 1
             updateCanvasExpansion()
         }
@@ -222,6 +223,13 @@ final class AnnotationEditorModel {
             return
         }
 
+        isRestoringHistory = true
+        defer { isRestoringHistory = false }
+        history.removeAll()
+        historyIndex = 0
+        inspectorEditingDepth = 0
+        croppedInSession = false
+
         wallpaperCacheLease = AnnotationBackgroundRenderer.beginWallpaperUse()
         removeOwnedCropFiles()
         applyAnnotationPreset()
@@ -270,9 +278,6 @@ final class AnnotationEditorModel {
         isCropping = false
         cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
         cropAspect = .freeform
-        cropUndoStack = []
-        cropRedoStack = []
-        cropRedoBaseline = nil
         RedactionImageProcessor.removeAllCachedPreviewImages()
         errorMessage = nil
         smartRedactionMessage = nil
@@ -295,6 +300,8 @@ final class AnnotationEditorModel {
     }
 
     func releaseEditorResources() {
+        isRestoringHistory = true
+        defer { isRestoringHistory = false }
         cancelSmartRedaction()
         wallpaperCacheLease = nil
         // A closed SwiftUI scene can outlive its window. Release decoded
@@ -307,9 +314,10 @@ final class AnnotationEditorModel {
         imageSize = .zero
         isPreviewDownscaled = false
         isCropping = false
-        cropUndoStack.removeAll()
-        cropRedoStack.removeAll()
-        cropRedoBaseline = nil
+        history.removeAll()
+        historyIndex = 0
+        inspectorEditingDepth = 0
+        croppedInSession = false
         engine.replaceDocument(shapes: [])
         removeOwnedCropFiles()
         RedactionImageProcessor.removeAllCachedPreviewImages()
@@ -331,6 +339,9 @@ final class AnnotationEditorModel {
         guard let sourceURL = self.sourceURL else { return nil }
         isCommitting = true
         defer { isCommitting = false }
+        commitTextEditing()
+        inspectorEditingDepth = 0
+        recordHistoryChange(force: true)
         var committedSnapshot = currentSnapshot()
 
         let baseURL = self.baseImageURL ?? sourceURL
@@ -347,6 +358,11 @@ final class AnnotationEditorModel {
             self.markSaved()
             return nil
         }
+
+        guard preserveHistoryImage() else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let historyBaseURL = self.baseImageURL
 
         let resultURL: URL
         if hasContent {
@@ -377,6 +393,7 @@ final class AnnotationEditorModel {
             self.baseImageURL = resultURL
         }
 
+        rebaseHistoryImage(from: historyBaseURL, to: self.baseImageURL)
         committedSnapshot.baseImageURL = self.baseImageURL
         savedSnapshot = committedSnapshot
         return resultURL
@@ -389,6 +406,8 @@ final class AnnotationEditorModel {
     /// rather than adding anything to the document.
     private struct EditSnapshot: Equatable {
         var baseImageURL: URL?
+        var imageSize: CGSize
+        var isCropped: Bool
         var shapes: [AnnoShape]
         var bindings: [ArrowBinding]
         var background: StoredBackground
@@ -399,6 +418,8 @@ final class AnnotationEditorModel {
     private func currentSnapshot() -> EditSnapshot {
         EditSnapshot(
             baseImageURL: baseImageURL,
+            imageSize: imageSize,
+            isCropped: croppedInSession,
             shapes: shapes,
             bindings: bindings,
             background: StoredBackground(backgroundSettings)
@@ -419,6 +440,35 @@ final class AnnotationEditorModel {
     /// Re-baselines after a successful commit, and at the end of a load.
     func markSaved() {
         savedSnapshot = currentSnapshot()
+        if history.isEmpty {
+            history = [currentSnapshot()]
+            historyIndex = 0
+        }
+    }
+
+    /// A continuous inspector drag is one document edit.
+    func setInspectorEditing(_ editing: Bool) {
+        if editing {
+            recordHistoryChange(force: true)
+            inspectorEditingDepth += 1
+        } else if inspectorEditingDepth > 0 {
+            inspectorEditingDepth -= 1
+            if !isInspectorEditing { recordHistoryChange(force: true) }
+        }
+    }
+
+    private func recordHistoryChange(force: Bool = false) {
+        guard !isRestoringHistory, !history.isEmpty else { return }
+        if !force {
+            guard !isInspectorEditing, !isPointerDown, editingTextID == nil,
+                  case .idle = engine.interaction else { return }
+        }
+        let snapshot = currentSnapshot()
+        guard snapshot != history[historyIndex] else { return }
+        history.removeSubrange((historyIndex + 1)..<history.count)
+        history.append(snapshot)
+        if history.count > 201 { history.removeFirst() }
+        historyIndex = history.count - 1
     }
 
     // MARK: - Pointer
@@ -595,20 +645,30 @@ final class AnnotationEditorModel {
 
     func undo() {
         guard !isCropping else { return }
-        if engine.canUndo {
-            engine.undo()
+        commitTextEditing()
+        inspectorEditingDepth = 0
+        recordHistoryChange(force: true)
+        guard historyIndex > 0 else { return }
+        guard history[historyIndex - 1].baseImageURL == baseImageURL || preserveHistoryImage() else {
+            errorMessage = "Unable to preserve the image for redo."
             return
         }
-        undoCrop()
+        historyIndex -= 1
+        restore(history[historyIndex])
     }
 
     func redo() {
         guard !isCropping else { return }
-        if engine.canRedo {
-            engine.redo()
+        commitTextEditing()
+        inspectorEditingDepth = 0
+        recordHistoryChange(force: true)
+        guard historyIndex + 1 < history.count else { return }
+        guard history[historyIndex + 1].baseImageURL == baseImageURL || preserveHistoryImage() else {
+            errorMessage = "Unable to preserve the image for undo."
             return
         }
-        redoCrop()
+        historyIndex += 1
+        restore(history[historyIndex])
     }
 
     // MARK: - Smart redaction
@@ -755,7 +815,7 @@ final class AnnotationEditorModel {
 
 extension AnnotationEditorModel {
     /// Whether the image has been cropped in this editing session (and can be undone).
-    var isCropped: Bool { !cropUndoStack.isEmpty }
+    var isCropped: Bool { croppedInSession }
 
     /// Pixel dimensions of the current crop selection.
     var cropPixelSize: CGSize {
@@ -849,7 +909,7 @@ extension AnnotationEditorModel {
             return
         }
 
-        guard let snapshot = currentCropSnapshot() else {
+        guard preserveHistoryImage() else {
             try? FileManager.default.removeItem(at: result.url)
             errorMessage = "Unable to preserve the image for crop undo."
             return
@@ -883,6 +943,7 @@ extension AnnotationEditorModel {
             cropped.pageBounds(shape.id)?.collides(image) == false ? shape.id : nil
         }))
 
+        croppedInSession = true
         baseImageURL = result.url
         ownedCropURLs.insert(result.url)
         imageSize = newImageSize
@@ -891,9 +952,7 @@ extension AnnotationEditorModel {
         engine.viewport = AnnoViewport(imageFrame: engine.viewport.imageFrame, imageSize: imageSize)
         engine.replaceDocument(shapes: cropped.shapes, bindings: cropped.bindings)
 
-        cropUndoStack.append(snapshot)
-        cropRedoStack.removeAll()
-        cropRedoBaseline = nil
+        recordHistoryChange()
 
         resetZoom()
         errorMessage = nil
@@ -934,46 +993,22 @@ extension AnnotationEditorModel {
         }
     }
 
-    private func undoCrop() {
-        guard let previous = cropUndoStack.last else { return }
-        guard let current = currentCropSnapshot() else {
-            errorMessage = "Unable to preserve the image for crop redo."
-            return
-        }
-        cropUndoStack.removeLast()
-        cropRedoStack.append(current)
-        restore(previous)
+    private func preserveHistoryImage() -> Bool {
+        guard let baseImageURL else { return true }
+        guard let stableURL = stableCropSnapshotURL(for: baseImageURL) else { return false }
+        rebaseHistoryImage(from: baseImageURL, to: stableURL)
+        self.baseImageURL = stableURL
+        return true
     }
 
-    private func redoCrop() {
-        guard let next = cropRedoStack.last else { return }
-        guard let current = currentCropSnapshot() else {
-            errorMessage = "Unable to preserve the image for crop undo."
-            return
+    private func rebaseHistoryImage(from oldURL: URL?, to newURL: URL?) {
+        for index in history.indices where history[index].baseImageURL == oldURL {
+            history[index].baseImageURL = newURL
         }
-        cropRedoStack.removeLast()
-        cropUndoStack.append(current)
-        restore(next)
+        if savedSnapshot?.baseImageURL == oldURL { savedSnapshot?.baseImageURL = newURL }
     }
 
-    private func currentCropSnapshot() -> CropSnapshot? {
-        let stableBaseURL: URL?
-        if let baseImageURL {
-            guard let snapshotURL = stableCropSnapshotURL(for: baseImageURL) else { return nil }
-            stableBaseURL = snapshotURL
-        } else {
-            stableBaseURL = nil
-        }
-
-        return CropSnapshot(
-            baseImageURL: stableBaseURL,
-            imageSize: imageSize,
-            shapes: engine.shapes,
-            bindings: engine.document.bindings
-        )
-    }
-
-    /// Crop history must never point at a History display URL, because annotation commits can
+    /// History must never retain a mutable image URL, because annotation commits can
     /// replace that file while this editor stays open.
     private func stableCropSnapshotURL(for url: URL) -> URL? {
         if ownedCropURLs.contains(url) { return url }
@@ -993,16 +1028,23 @@ extension AnnotationEditorModel {
         }
     }
 
-    private func restore(_ snapshot: CropSnapshot) {
-        baseImageURL = snapshot.baseImageURL
-        imageSize = snapshot.imageSize
-        previewImage = snapshot.baseImageURL.flatMap(makePreviewImage(from:))
-        previewCGImage = previewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        engine.viewport = AnnoViewport(imageFrame: engine.viewport.imageFrame, imageSize: imageSize)
-        cropRedoBaseline = cropRedoStack.isEmpty ? nil
-            : AnnoDocument.Snapshot(shapes: snapshot.shapes, bindings: snapshot.bindings)
+    private func restore(_ snapshot: EditSnapshot) {
+        isRestoringHistory = true
+        defer { isRestoringHistory = false }
+        let imageChanged = baseImageURL != snapshot.baseImageURL || imageSize != snapshot.imageSize
+        if imageChanged {
+            baseImageURL = snapshot.baseImageURL
+            imageSize = snapshot.imageSize
+            previewImage = snapshot.baseImageURL.flatMap(makePreviewImage(from:))
+            previewCGImage = previewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            engine.viewport = AnnoViewport(imageFrame: engine.viewport.imageFrame, imageSize: imageSize)
+            resetZoom()
+        }
+        croppedInSession = snapshot.isCropped
+        backgroundSettings = snapshot.background.settings
+        let selection = engine.selectedIds
         engine.replaceDocument(shapes: snapshot.shapes, bindings: snapshot.bindings)
-        resetZoom()
+        engine.selectedIds = selection.filter { engine.document.shape($0) != nil }
     }
 
     private func removeOwnedCropFiles() {

@@ -6,6 +6,10 @@
 import AppKit
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var annotationEditorHistory: AnnotationEditorModel? = nil
+}
+
 /// Display and editing rules for an inspector value. The bound value always
 /// stays in model units; `multiplier` only transforms what the user sees and
 /// types (for example, 0.45 is displayed as 45%).
@@ -157,6 +161,7 @@ struct InspectorSlider: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.annotationEditorHistory) private var history
     @FocusState private var focusedPart: FocusedPart?
     @State private var draftText = ""
     @State private var editingBaselineText = ""
@@ -199,6 +204,10 @@ struct InspectorSlider: View {
         .onHover { isHovering = $0 }
         .onAppear(perform: syncDraftText)
         .onDisappear {
+            if dragStartValue != nil {
+                dragStartValue = nil
+                history?.setInspectorEditing(false)
+            }
             if focusedPart == .value {
                 commitDraftText()
             }
@@ -233,11 +242,14 @@ struct InspectorSlider: View {
                             }
                             focusedPart = .scrubber
                             dragStartValue = value
+                            history?.setInspectorEditing(true)
                         }
                         scrub(by: drag.translation.width)
                     }
                     .onEnded { _ in
+                        guard dragStartValue != nil else { return }
                         dragStartValue = nil
+                        history?.setInspectorEditing(false)
                     }
             )
             .allowsHitTesting(isEnabled)

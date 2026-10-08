@@ -206,6 +206,7 @@ struct AnnotationEditorInspector: View {
             // hidden behind the floating preview peek pill.
             .padding(.bottom, PreviewPeekTab.pillHeight * 1.1)
         }
+        .environment(\.annotationEditorHistory, model)
         .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 0) {
                 AnnotationBackgroundPresetBar(
