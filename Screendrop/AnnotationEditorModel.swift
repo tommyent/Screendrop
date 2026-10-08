@@ -372,6 +372,7 @@ final class AnnotationEditorModel {
                 bindings: bindings,
                 backgroundSettings: backgroundSettings
             )
+            defer { try? FileManager.default.removeItem(at: annotatedURL) }
             let document = AnnotationDocument(
                 shapes: shapes,
                 bindings: bindings,
@@ -396,6 +397,7 @@ final class AnnotationEditorModel {
         rebaseHistoryImage(from: historyBaseURL, to: self.baseImageURL)
         committedSnapshot.baseImageURL = self.baseImageURL
         savedSnapshot = committedSnapshot
+        removeOwnedCropFiles(keepingHistory: true)
         return resultURL
     }
 
@@ -469,6 +471,7 @@ final class AnnotationEditorModel {
         history.append(snapshot)
         if history.count > 201 { history.removeFirst() }
         historyIndex = history.count - 1
+        removeOwnedCropFiles(keepingHistory: true)
     }
 
     // MARK: - Pointer
@@ -1047,11 +1050,21 @@ extension AnnotationEditorModel {
         engine.selectedIds = selection.filter { engine.document.shape($0) != nil }
     }
 
-    private func removeOwnedCropFiles() {
-        for url in ownedCropURLs {
-            try? FileManager.default.removeItem(at: url)
+    private func removeOwnedCropFiles(keepingHistory: Bool = false) {
+        var retainedURLs: Set<URL> = []
+        if keepingHistory {
+            retainedURLs = Set(history.compactMap(\.baseImageURL))
+            if let baseImageURL { retainedURLs.insert(baseImageURL) }
+            if let savedURL = savedSnapshot?.baseImageURL { retainedURLs.insert(savedURL) }
         }
-        ownedCropURLs.removeAll()
+        for url in ownedCropURLs.subtracting(retainedURLs) {
+            do {
+                try FileManager.default.removeItem(at: url)
+                ownedCropURLs.remove(url)
+            } catch {
+                // Keep failed deletions owned so close can retry.
+            }
+        }
     }
 
     private var minimumCropWidth: CGFloat {
