@@ -112,6 +112,7 @@ struct CaptureLibraryView: View {
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
+        .modifier(LibraryToolbarSeparator())
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search captures")
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
@@ -416,6 +417,20 @@ private struct LibraryColumnSeparators: ViewModifier {
             .frame(width: 1 / displayScale)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+/// The system's line under the toolbar, the one the editor shows. A hard top
+/// scroll edge turns it on over the sidebar too, so it runs across every
+/// column; drawing our own would double it where the system already does.
+private struct LibraryToolbarSeparator: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 27.0, *) {
+            content.scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            content
+        }
     }
 }
 
