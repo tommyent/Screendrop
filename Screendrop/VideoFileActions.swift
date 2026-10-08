@@ -86,10 +86,31 @@ enum VideoFileActions {
     static var exportContentType: UTType { VideoExportContainer.default.contentType }
 
     static func copyToClipboard(from url: URL) throws {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.writeObjects([url as NSURL]) else {
-            throw CocoaError(.fileWriteUnknown)
+        try copyFilesToClipboard(from: [url])
+    }
+
+    static func copyFilesToClipboard(from urls: [URL]) throws {
+        guard !urls.isEmpty else { return }
+        let files = FileManager.default
+        let directory = files.temporaryDirectory
+            .appendingPathComponent("Screendrop/Clipboard", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        do {
+            var snapshots: [NSURL] = []
+            for (index, url) in urls.enumerated() {
+                let folder = directory.appendingPathComponent(String(index), isDirectory: true)
+                try files.createDirectory(at: folder, withIntermediateDirectories: true)
+                let snapshot = folder.appendingPathComponent(url.lastPathComponent)
+                try files.copyItem(at: url, to: snapshot)
+                snapshots.append(snapshot as NSURL)
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.writeObjects(snapshots) else { throw CocoaError(.fileWriteUnknown) }
+            // ponytail: published files live until OS temp cleanup; add an expiry policy if storage grows.
+        } catch {
+            try? files.removeItem(at: directory)
+            throw error
         }
     }
 

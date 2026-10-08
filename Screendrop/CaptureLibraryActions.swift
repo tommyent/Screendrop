@@ -33,13 +33,12 @@ extension CaptureLibraryModel {
                 if selected.count == 1, let item = selected.first, !item.isVideo {
                     try ScreenshotFileActions.copyImageToClipboard(from: item.fileURL)
                 } else {
-                    var urls: [NSURL] = []
+                    var urls: [URL] = []
                     for item in selected {
                         let url = item.isVideo ? try await RecordingDeliverable.resolve(for: item.fileURL) : item.fileURL
-                        urls.append(url as NSURL)
+                        urls.append(url)
                     }
-                    NSPasteboard.general.clearContents()
-                    guard NSPasteboard.general.writeObjects(urls) else { throw CocoaError(.fileWriteUnknown) }
+                    try VideoFileActions.copyFilesToClipboard(from: urls)
                 }
             }
         case .export:
