@@ -400,6 +400,8 @@ private struct LibraryBrowserSurface: ViewModifier {
 /// Straight hairlines between the browser and the sidebar and inspector. The
 /// columns share one chrome colour, so in the list nothing else divides them.
 /// They stay below the toolbar, which runs unbroken across the window.
+/// From 27.2 the split view draws its own dividers there (on 27.0.1 they're
+/// clear), so these step aside rather than double them.
 private struct LibraryColumnSeparators: ViewModifier {
     let leading: Bool
     let trailing: Bool
@@ -407,7 +409,11 @@ private struct LibraryColumnSeparators: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27.0, *) {
+        // ponytail: 27.1 unchecked (only 27.0.1 and 27.2 seen); move the
+        // cut-off if 27.1 shows doubled or missing lines.
+        if #available(macOS 27.2, *) {
+            content
+        } else if #available(macOS 27.0, *) {
             content
                 .overlay(alignment: .leading) { if leading { line } }
                 .overlay(alignment: .trailing) { if trailing { line } }
@@ -425,14 +431,23 @@ private struct LibraryColumnSeparators: ViewModifier {
     }
 }
 
-/// The system's line under the toolbar, the one the editor shows. A hard top
-/// scroll edge turns it on over the sidebar too, so it runs across every
-/// column; drawing our own would double it where the system already does.
+/// One straight hairline under the toolbar, across every column, as in the
+/// editor. The system draws one only over a hard scroll edge, and the
+/// browser's AppKit scroll view can't ask for that, so on 27.0.1 and 27.2
+/// the system's line showed over the sidebar alone.
 private struct LibraryToolbarSeparator: ViewModifier {
+    @Environment(\.displayScale) private var displayScale
+
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(macOS 27.0, *) {
-            content.scrollEdgeEffectStyle(.hard, for: .top)
+            content.overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Color(nsColor: .separatorColor))
+                    .frame(height: 1 / displayScale)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         } else {
             content
         }
