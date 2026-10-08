@@ -114,6 +114,7 @@ final class AnnotationEditorModel {
 
     private var cropUndoStack: [CropSnapshot] = []
     private var cropRedoStack: [CropSnapshot] = []
+    @ObservationIgnored private var cropRedoBaseline: AnnoDocument.Snapshot?
     private var ownedCropURLs: Set<URL> = []
 
     /// Smallest crop dimension, in normalized units, derived from a pixel floor.
@@ -127,8 +128,15 @@ final class AnnotationEditorModel {
 
     init() {
         engine.onChange = { [weak self] in
-            self?.revision &+= 1
-            self?.updateCanvasExpansion()
+            guard let self else { return }
+            // ponytail: O(n) while redo is pending; use a document revision if large drawings make it costly.
+            if !cropRedoStack.isEmpty, let baseline = cropRedoBaseline,
+               baseline.shapes != engine.shapes || baseline.bindings != engine.document.bindings {
+                cropRedoStack.removeAll()
+                cropRedoBaseline = nil
+            }
+            revision &+= 1
+            updateCanvasExpansion()
         }
     }
 
@@ -257,6 +265,7 @@ final class AnnotationEditorModel {
         cropAspect = .freeform
         cropUndoStack = []
         cropRedoStack = []
+        cropRedoBaseline = nil
         RedactionImageProcessor.removeAllCachedPreviewImages()
         errorMessage = nil
         smartRedactionMessage = nil
@@ -293,6 +302,7 @@ final class AnnotationEditorModel {
         isCropping = false
         cropUndoStack.removeAll()
         cropRedoStack.removeAll()
+        cropRedoBaseline = nil
         engine.replaceDocument(shapes: [])
         removeOwnedCropFiles()
         RedactionImageProcessor.removeAllCachedPreviewImages()
@@ -875,6 +885,7 @@ extension AnnotationEditorModel {
 
         cropUndoStack.append(snapshot)
         cropRedoStack.removeAll()
+        cropRedoBaseline = nil
 
         resetZoom()
         errorMessage = nil
@@ -980,6 +991,8 @@ extension AnnotationEditorModel {
         previewImage = snapshot.baseImageURL.flatMap(makePreviewImage(from:))
         previewCGImage = previewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
         engine.viewport = AnnoViewport(imageFrame: engine.viewport.imageFrame, imageSize: imageSize)
+        cropRedoBaseline = cropRedoStack.isEmpty ? nil
+            : AnnoDocument.Snapshot(shapes: snapshot.shapes, bindings: snapshot.bindings)
         engine.replaceDocument(shapes: snapshot.shapes, bindings: snapshot.bindings)
         resetZoom()
     }
