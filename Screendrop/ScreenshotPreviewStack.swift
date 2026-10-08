@@ -139,11 +139,12 @@ final class ScreenshotPreviewStack {
         Task {
             do {
                 // Automatic, unattended upload - no popover, just the
-                // remembered comments/likes default.
+                // remembered comments/likes and expiry defaults.
                 let result = try await CloudUploader.shared.upload(
                     itemID: itemID,
                     fileURL: url,
-                    socialEnabled: CloudUploadPreferences.lastSocialEnabled
+                    socialEnabled: CloudUploadPreferences.lastSocialEnabled,
+                    expiresAt: CloudUploadPreferences.defaultExpiry.date()
                 )
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(result.url, forType: .string)

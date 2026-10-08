@@ -206,7 +206,8 @@ struct PreviewWindowView: View {
                                 let result = try await CloudUploader.shared.upload(
                                     itemID: item.id,
                                     fileURL: item.url,
-                                    socialEnabled: CloudUploadPreferences.lastSocialEnabled
+                                    socialEnabled: CloudUploadPreferences.lastSocialEnabled,
+                                    expiresAt: CloudUploadPreferences.defaultExpiry.date()
                                 )
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(result.url, forType: .string)

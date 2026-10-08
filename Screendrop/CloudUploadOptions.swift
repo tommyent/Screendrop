@@ -4,7 +4,8 @@
 //
 //  The title, link expiry and comment choices offered right before a
 //  manual cloud upload. Auto-upload (after-capture, no user interaction)
-//  skips this entirely: no expiry, and the remembered comment toggles.
+//  skips this entirely: the default expiry from Settings › Cloud, and the
+//  remembered comment toggles.
 //
 
 import SwiftUI
@@ -57,6 +58,14 @@ enum CloudUploadPreferences {
 
     private static let anonymousCommentsKey = "cloudUploadDefaultAnonymousComments"
 
+    static let defaultExpiryKey = "cloudUploadDefaultExpiry"
+
+    /// Settings › Cloud › Default link expiry. Share Options starts with it,
+    /// and uploads that skip Share Options use it.
+    static var defaultExpiry: CloudExpiry {
+        CloudExpiry(rawValue: UserDefaults.standard.integer(forKey: defaultExpiryKey)) ?? .never
+    }
+
     /// On unless turned off, as the Worker's own default.
     static var lastAnonymousComments: Bool {
         get { UserDefaults.standard.object(forKey: anonymousCommentsKey) as? Bool ?? true }
@@ -69,14 +78,15 @@ enum CloudUploadPreferences {
 /// an optional password, and whether comments + likes are on and open to
 /// anonymous visitors.
 /// Confirming remembers the comment toggles as the defaults for next
-/// time; the expiry starts at Never every time.
+/// time; the expiry starts at the Settings default every time, and a
+/// change here applies to this share only.
 struct CloudUploadOptionsPopover: View {
     let suggestedTitle: String
     let onConfirm: (CloudUploadOptions) -> Void
 
     @State private var title: String
     @State private var socialEnabled = CloudUploadPreferences.lastSocialEnabled
-    @State private var expiry = CloudExpiry.never
+    @State private var expiry = CloudUploadPreferences.defaultExpiry
     @State private var allowAnonymousComments = CloudUploadPreferences.lastAnonymousComments
     /// Never remembered: each protected link gets its own.
     @State private var password = ""
@@ -167,6 +177,24 @@ struct CloudUploadOptionsPopover: View {
         }
         .padding(16)
         .frame(width: 280)
+    }
+}
+
+/// Settings › Cloud: how long new share links last unless Share Options
+/// says otherwise.
+struct CloudShareDefaultsSection: View {
+    @AppStorage(CloudUploadPreferences.defaultExpiryKey) private var expiry = CloudExpiry.never
+
+    var body: some View {
+        Section {
+            Picker("Default link expiry", selection: $expiry) {
+                ForEach(CloudExpiry.allCases) { Text($0.title).tag($0) }
+            }
+        } header: {
+            Text("Sharing")
+        } footer: {
+            Text("New links expire after this, including quick and automatic uploads. Share Options starts with it, and a change there applies to that share only.")
+        }
     }
 }
 
