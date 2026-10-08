@@ -232,7 +232,9 @@ final class CloudLibraryModel {
                     id: upload.id, expiresAt: expiry.map { $0.date() }, allowAnonymousComments: allowAnonymousComments,
                     password: password
                 )
-                if let updated, let index = uploads.firstIndex(where: { $0.id == upload.id }) {
+                if var updated, let index = uploads.firstIndex(where: { $0.id == upload.id }) {
+                    // Only the list counts comments; keep the count PATCH leaves out.
+                    updated.commentCount = updated.commentCount ?? uploads[index].commentCount
                     uploads[index] = updated
                 } else {
                     refresh()
@@ -407,8 +409,8 @@ private struct CloudUploadCard: View {
                     thumbnail.frame(width: 88, height: 58)
                     labels
                     Spacer(minLength: 8)
-                    Text([upload.hasPassword == true ? "Password" : nil, CloudUploadText.expiry(upload.expiresAt),
-                          local == nil ? "Cloud only" : "In Library"]
+                    Text([CloudUploadText.comments(upload.commentCount), upload.hasPassword == true ? "Password" : nil,
+                          CloudUploadText.expiry(upload.expiresAt), local == nil ? "Cloud only" : "In Library"]
                         .compactMap(\.self).joined(separator: " · "))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -435,6 +437,7 @@ private struct CloudUploadCard: View {
         .onChange(of: upload.id) { _, _ in isHovering = false }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(upload.name), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
+            + (CloudUploadText.comments(upload.commentCount).map { ", \($0)" } ?? "")
             + (upload.hasPassword == true ? ", password protected" : "")
             + (CloudUploadText.expiry(upload.expiresAt).map { ", \($0)" } ?? "")
             + (local == nil ? ", cloud only" : ", in Library"))
@@ -471,6 +474,15 @@ private struct CloudUploadCard: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+            }
+            // Bottom left: free on every card, so it never meets the pills above or the duration.
+            .overlay(alignment: .bottomLeading) {
+                if layout == .grid, let count = upload.commentCount, count > 0 {
+                    Label(count.formatted(), systemImage: "bubble.left.fill")
+                        .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                        .padding(7)
+                        .help(CloudUploadText.comments(count) ?? "")
+                }
             }
             .overlay(alignment: .topLeading) {
                 // The list says these in words beside the thumbnail instead.
@@ -605,6 +617,12 @@ nonisolated enum CloudUploadText {
     static func expiry(_ date: Date?, now: Date = .now) -> String? {
         guard let date else { return nil }
         return date <= now ? "Expired" : "Expires " + date.formatted(.relative(presentation: .numeric, unitsStyle: .wide))
+    }
+
+    /// "1 comment", "3 comments"; nil when there are none or the Worker doesn't count them.
+    static func comments(_ count: Int?) -> String? {
+        guard let count, count > 0 else { return nil }
+        return count == 1 ? "1 comment" : "\(count.formatted()) comments"
     }
 
     /// "in 3 days", "Expired" or "Never".
@@ -751,6 +769,7 @@ struct CloudUploadInspector: View {
                                 detailRow("Size", value: ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
                             }
                             if let views = upload.views { detailRow("Views", value: views.formatted()) }
+                            if let comments = upload.commentCount { detailRow("Comments", value: comments.formatted()) }
                         }
                     }
                     Divider()
