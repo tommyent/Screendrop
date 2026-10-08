@@ -111,6 +111,8 @@ private struct RecordingStudioContent: View {
                     .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
                 }
             }
+            // Bare icons, as in the Library and the editor: no glass capsule.
+            .sharedBackgroundVisibility(.hidden)
         }
         .navigationTitle(windowTitle)
         .navigationSubtitle(windowSubtitle)
