@@ -202,9 +202,9 @@ final class ScreenRecordingManager {
                     includesMicrophone: options.microphoneDeviceID != nil
                 )
 
-                capture.onVideoFrame = { [writer, pointerActivityRecorder] sampleBuffer in
+                capture.onVideoFrame = { [writer, pointerActivityRecorder] sampleBuffer, clock in
                     pointerActivityRecorder.recordFrameGeometry(sampleBuffer)
-                    writer.writeVideoSample(sampleBuffer)
+                    writer.writeVideoSample(sampleBuffer, clock: clock)
                 }
                 let teleprompterEngine = TeleprompterController.shared.activeEngine
                 capture.onAudioSample = { [writer] sampleBuffer, kind in
@@ -353,6 +353,7 @@ final class ScreenRecordingManager {
     private func stopCaptureAndFinish() {
         guard !isStopping else { return }
 
+        writer.requestStop()
         isStopping = true
         state = .finishing
         timer?.invalidate()
@@ -855,7 +856,7 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
     private let videoQueue = DispatchQueue(label: "com.screendrop.screen-recording.video", qos: .userInteractive)
     private let audioQueue = DispatchQueue(label: "com.screendrop.screen-recording.audio", qos: .userInteractive)
 
-    var onVideoFrame: ((CMSampleBuffer) -> Void)?
+    var onVideoFrame: ((CMSampleBuffer, CMClock?) -> Void)?
     var onAudioSample: ((CMSampleBuffer, ScreenRecordingAudioKind) -> Void)?
     var onError: ((Error) -> Void)?
 
@@ -955,7 +956,7 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
                status == .blank || status == .suspended || status == .stopped {
                 return
             }
-            onVideoFrame?(sampleBuffer)
+            onVideoFrame?(sampleBuffer, stream.synchronizationClock)
         case .audio:
             onAudioSample?(sampleBuffer, .system)
         case .microphone:
@@ -985,16 +986,17 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
 nonisolated struct ScreenRecordingWriterResult: Sendable {
     let url: URL?
     let error: Error?
-    /// Host-clock seconds of the first written video frame.
+    /// First-frame host seconds, falling back to raw PTS if conversion is unavailable.
     let sessionStartUptime: TimeInterval?
     /// Duration of the written movie in seconds (pause time excluded).
     let duration: TimeInterval
+    let hasVideoFrame: Bool
 
     /// Whether there is a playable file worth keeping. Thanks to movie
     /// fragments, a writer that failed mid-recording still leaves usable
-    /// footage as long as at least one frame was written.
+    /// footage as long as a real frame was written and duration exceeds 0.1 seconds.
     var fileIsUsable: Bool {
-        url != nil && sessionStartUptime != nil && duration > 0.1
+        url != nil && hasVideoFrame && duration > 0.1
     }
 }
 
@@ -1015,6 +1017,14 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     private var needsPauseDurationUpdate = false
     private var failureError: Error?
     private var didReportFailure = false
+    private var synchronizationClock: CMClockOrTimebase?
+    private var sessionStartUptime: TimeInterval?
+    private var heldPixelBuffer: CVPixelBuffer?
+    private var lastRealFrameTime: CMTime?
+    private var lastResumeHostTime: CMTime?
+    private var minimumStartTime: CMTime?
+    private var stopTime: CMTime?
+    private var heartbeatTimer: DispatchSourceTimer?
 
     var onFailure: ((Error) -> Void)?
 
@@ -1046,6 +1056,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
 
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = true
+        input.mediaTimeScale = 600
         writer.add(input)
 
         var systemAudioInput: AVAssetWriterInput?
@@ -1078,21 +1089,67 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
         }
 
         writingQueue.sync {
+            cleanup()
             assetWriter = writer
             videoInput = input
             self.systemAudioInput = systemAudioInput
             self.microphoneInput = microphoneInput
             pixelBufferAdaptor = adaptor
             self.outputURL = outputURL
-            isSessionStarted = false
-            sessionStartTime = nil
-            isPaused = false
-            pauseStartTime = nil
-            totalPauseDuration = .zero
-            latestAdjustedTime = .zero
-            needsPauseDurationUpdate = false
-            failureError = nil
-            didReportFailure = false
+            let timer = DispatchSource.makeTimerSource(queue: writingQueue)
+            timer.schedule(deadline: .now() + 1, repeating: .milliseconds(250), leeway: .milliseconds(50))
+            timer.setEventHandler { [weak self] in self?.heartbeat() }
+            heartbeatTimer = timer
+            timer.resume()
+        }
+    }
+
+    private func setSynchronizationClock(_ clock: CMClockOrTimebase) {
+        synchronizationClock = clock
+        if minimumStartTime == nil, let lastResumeHostTime {
+            minimumStartTime = mediaTime(lastResumeHostTime)
+        }
+        if heldPixelBuffer != nil { sessionStartUptime = hostOrigin() ?? sessionStartTime?.seconds }
+    }
+
+    private func mediaTime(_ hostTime: CMTime = CMClockGetTime(CMClockGetHostTimeClock())) -> CMTime? {
+        guard let synchronizationClock else { return nil }
+        let time = CMSyncConvertTime(hostTime, from: CMClockGetHostTimeClock(), to: synchronizationClock)
+        return time.isNumeric ? time : nil
+    }
+
+    private func hostOrigin() -> TimeInterval? {
+        guard let synchronizationClock, let sessionStartTime else { return nil }
+        let time = CMSyncConvertTime(sessionStartTime, from: synchronizationClock, to: CMClockGetHostTimeClock())
+        return time.isNumeric ? time.seconds : nil
+    }
+
+    private func heartbeat() {
+        guard stopTime == nil, !isPaused, let time = mediaTime(),
+              handlePauseState(sampleTime: time), adjustedTime(time) - latestAdjustedTime >= CMTime(value: 1, timescale: 1) else { return }
+        appendHeldFrame(at: time)
+    }
+
+    private func appendHeldFrame(at time: CMTime) {
+        guard let heldPixelBuffer, let videoInput, videoInput.isReadyForMoreMediaData,
+              checkWriterHealth() else { return }
+        let pts = adjustedTime(time)
+        guard pts > latestAdjustedTime else { return }
+        if pixelBufferAdaptor?.append(heldPixelBuffer, withPresentationTime: pts) == true {
+            latestAdjustedTime = pts
+        } else {
+            _ = checkWriterHealth()
+        }
+    }
+
+    // Freeze the user's endpoint before asynchronous capture shutdown.
+    func requestStop() {
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+        writingQueue.sync {
+            guard stopTime == nil else { return }
+            stopTime = (isPaused ? pauseStartTime : mediaTime(hostTime)) ?? .invalid
+            heartbeatTimer?.cancel()
+            heartbeatTimer = nil
         }
     }
 
@@ -1106,24 +1163,29 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     }
 
     func pause() {
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         writingQueue.async { [weak self] in
             guard let self, !isPaused else { return }
 
             isPaused = true
-            pauseStartTime = nil
+            pauseStartTime = mediaTime(hostTime)
         }
     }
 
     func resume() {
+        let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
         writingQueue.async { [weak self] in
             guard let self, isPaused else { return }
 
             isPaused = false
             needsPauseDurationUpdate = true
+            lastResumeHostTime = hostTime
+            minimumStartTime = mediaTime(hostTime)
+            if let time = minimumStartTime { _ = handlePauseState(sampleTime: time) }
         }
     }
 
-    func writeVideoSample(_ sampleBuffer: CMSampleBuffer) {
+    func writeVideoSample(_ sampleBuffer: CMSampleBuffer, clock: CMClockOrTimebase? = nil) {
         let sendableSampleBuffer = SendableSampleBuffer(sampleBuffer)
         // Apply backpressure at the ScreenCaptureKit callback boundary. An
         // unbounded async hop retains full-resolution IOSurfaces when the
@@ -1138,24 +1200,38 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                     return
                 }
 
+                if let clock, self.synchronizationClock == nil { self.setSynchronizationClock(clock) }
                 let sampleBuffer = sendableSampleBuffer.sampleBuffer
                 guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
                 let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                guard time.isNumeric else { return }
+                if let stopTime = self.stopTime, !stopTime.isNumeric || time > stopTime { return }
+                if let lastRealFrameTime = self.lastRealFrameTime, time <= lastRealFrameTime { return }
 
+                // A delayed capture from Pause cannot establish the initial timeline.
+                if !self.isSessionStarted, let minimumStartTime = self.minimumStartTime,
+                   time < minimumStartTime { return }
+                guard self.handlePauseState(sampleTime: time) else { return }
                 if !self.isSessionStarted {
                     self.sessionStartTime = time
+                    self.totalPauseDuration = .zero
                     self.assetWriter?.startSession(atSourceTime: .zero)
                     self.isSessionStarted = true
                 }
 
-                guard self.handlePauseState(sampleTime: time) else { return }
-
-                let adjustedPTS = self.adjustedTime(time)
+                var adjustedPTS = self.adjustedTime(time)
                 guard adjustedPTS >= .zero, self.checkWriterHealth() else { return }
+                if self.heldPixelBuffer != nil, adjustedPTS <= self.latestAdjustedTime {
+                    adjustedPTS = CMTimeConvertScale(self.latestAdjustedTime, timescale: 600, method: .roundAwayFromZero) + CMTime(value: 1, timescale: 600)
+                }
+                if let stopTime = self.stopTime, adjustedPTS >= self.adjustedTime(stopTime) { return }
                 guard videoInput.isReadyForMoreMediaData else { return }
 
                 if pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: adjustedPTS) {
                     self.latestAdjustedTime = adjustedPTS
+                    self.heldPixelBuffer = pixelBuffer
+                    self.lastRealFrameTime = time
+                    self.sessionStartUptime = self.sessionStartUptime ?? self.hostOrigin() ?? self.sessionStartTime?.seconds
                 } else {
                     _ = self.checkWriterHealth()
                 }
@@ -1181,6 +1257,7 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
 
                 let sampleBuffer = sendableSampleBuffer.sampleBuffer
                 let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                if let stopTime = self.stopTime, !stopTime.isNumeric || time > stopTime { return }
                 let adjustedPTS = self.adjustedTime(time)
                 guard adjustedPTS >= .zero,
                       self.checkWriterHealth(),
@@ -1213,21 +1290,32 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     }
 
     func finishWriting() async -> ScreenRecordingWriterResult {
-        await withCheckedContinuation { continuation in
+        requestStop()
+        return await withCheckedContinuation { continuation in
             writingQueue.async { [weak self] in
                 guard let self, let assetWriter else {
                     continuation.resume(returning: ScreenRecordingWriterResult(
                         url: self?.outputURL,
                         error: nil,
                         sessionStartUptime: nil,
-                        duration: 0
+                        duration: 0,
+                        hasVideoFrame: false
                     ))
                     return
                 }
 
                 let url = self.outputURL
-                let sessionStartUptime = self.sessionStartTime?.seconds
-                let duration = self.latestAdjustedTime.seconds
+                let sessionStartUptime = self.sessionStartUptime
+                let hasVideoFrame = self.heldPixelBuffer != nil
+                let endpoint = self.stopTime.flatMap { $0.isNumeric ? self.adjustedTime($0) : nil }
+                if assetWriter.status == .writing, hasVideoFrame, let endpoint, endpoint >= .zero,
+                   let stopTime = self.stopTime {
+                    self.appendHeldFrame(at: stopTime)
+                    if assetWriter.status == .writing { assetWriter.endSession(atSourceTime: endpoint) }
+                }
+                let lastWrittenTime = self.latestAdjustedTime.seconds
+                let duration = hasVideoFrame
+                    ? max(.zero, assetWriter.status == .writing ? endpoint ?? self.latestAdjustedTime : self.latestAdjustedTime).seconds : 0
                 let priorError = self.failureError
 
                 guard assetWriter.status == .writing else {
@@ -1238,7 +1326,8 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                         url: url,
                         error: priorError ?? assetWriter.error,
                         sessionStartUptime: sessionStartUptime,
-                        duration: duration
+                        duration: duration,
+                        hasVideoFrame: hasVideoFrame
                     ))
                     return
                 }
@@ -1247,14 +1336,17 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
                 self.systemAudioInput?.markAsFinished()
                 self.microphoneInput?.markAsFinished()
                 assetWriter.finishWriting {
-                    let error = priorError ?? (assetWriter.status == .completed ? nil : assetWriter.error)
-                    self.cleanup()
-                    continuation.resume(returning: ScreenRecordingWriterResult(
-                        url: url,
-                        error: error,
-                        sessionStartUptime: sessionStartUptime,
-                        duration: duration
-                    ))
+                    self.writingQueue.async {
+                        let error = priorError ?? (assetWriter.status == .completed ? nil : assetWriter.error)
+                        self.cleanup()
+                        continuation.resume(returning: ScreenRecordingWriterResult(
+                            url: url,
+                            error: error,
+                            sessionStartUptime: sessionStartUptime,
+                            duration: assetWriter.status == .completed ? duration : lastWrittenTime,
+                            hasVideoFrame: hasVideoFrame
+                        ))
+                    }
                 }
             }
         }
@@ -1329,6 +1421,15 @@ nonisolated private final class ScreenRecordingWriter: @unchecked Sendable {
     }
 
     private func cleanup() {
+        heartbeatTimer?.cancel()
+        heartbeatTimer = nil
+        synchronizationClock = nil
+        sessionStartUptime = nil
+        heldPixelBuffer = nil
+        lastRealFrameTime = nil
+        lastResumeHostTime = nil
+        minimumStartTime = nil
+        stopTime = nil
         assetWriter = nil
         videoInput = nil
         systemAudioInput = nil
