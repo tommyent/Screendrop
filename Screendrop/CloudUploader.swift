@@ -320,6 +320,72 @@ final class CloudUploader: NSObject {
         return uploads
     }
 
+    // MARK: - Comments
+
+    /// Every comment on this Worker's share pages, newest first. Throws
+    /// `.commentsUnavailable` when the Worker predates GET /api/comments.
+    func listComments() async throws -> [CloudComment] {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else {
+            throw CloudUploadError.notConfigured
+        }
+        let workerBase = Self.normalizeWorkerURL(creds.workerURL)
+        let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        var comments: [CloudComment] = []
+        var offset: Int? = 0
+        while let current = offset {
+            guard let request = CloudCommentList.request(workerBase: workerBase, token: token, offset: current) else {
+                throw CloudUploadError.invalidURL
+            }
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw CloudUploadError.invalidResponse
+            }
+            if http.statusCode == 404 { throw CloudUploadError.commentsUnavailable }
+            guard http.statusCode == 200 else {
+                let body = String(data: responseData, encoding: .utf8) ?? ""
+                throw CloudUploadError.serverError(http.statusCode, body)
+            }
+            let page = try CloudCommentList.decode(responseData)
+            comments += page.comments
+            // Only forward, so a confused Worker can't loop the app.
+            offset = page.next.flatMap { $0 > current ? $0 : nil }
+        }
+        // Offsets aren't a snapshot: a comment posted between pages repeats.
+        var seen: Set<String> = []
+        return comments.filter { seen.insert($0.id).inserted }
+    }
+
+    /// Removes one comment from its share page, with the owner's route.
+    /// One that's already gone counts as removed.
+    func deleteComment(uploadID: String, commentID: String) async throws {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else {
+            throw CloudUploadError.notConfigured
+        }
+        guard let request = CloudCommentList.deleteRequest(
+            workerBase: Self.normalizeWorkerURL(creds.workerURL),
+            token: creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines),
+            uploadID: uploadID, commentID: commentID
+        ) else {
+            throw CloudUploadError.invalidURL
+        }
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw CloudUploadError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) || http.statusCode == 404 else {
+            let body = String(data: responseData, encoding: .utf8) ?? ""
+            throw CloudUploadError.serverError(http.statusCode, body)
+        }
+    }
+
+    /// The configured Worker's address, for keeping read state per Worker.
+    var workerBase: String? {
+        let creds = CloudCredentialStore.shared.snapshot()
+        return creds.isConfigured ? Self.normalizeWorkerURL(creds.workerURL) : nil
+    }
+
     nonisolated private static func performDelete(uploadID: String, creds: CloudCredentials) async throws {
         let workerBase = normalizeWorkerURL(creds.workerURL)
         let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -527,6 +593,7 @@ enum CloudUploadError: LocalizedError {
     case listUnavailable
     case shareSettingsUnavailable
     case passwordUnsupported
+    case commentsUnavailable
     case invalidPassword
 
     var errorDescription: String? {
@@ -543,6 +610,8 @@ enum CloudUploadError: LocalizedError {
             "Invalid response from server."
         case .listUnavailable:
             "This Worker can't list uploads yet. Update it to manage every upload from the Library."
+        case .commentsUnavailable:
+            "This Worker can’t list comments yet. Update it to read your share pages’ comments in the Library."
         case .passwordUnsupported:
             "This Worker doesn’t support passwords yet, so the upload was removed instead of being shared without one. Update the Worker, or share without a password."
         case .invalidPassword:

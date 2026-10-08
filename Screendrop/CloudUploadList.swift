@@ -101,7 +101,7 @@ nonisolated enum CloudUploadList {
 
     /// ISO 8601 dates, with or without fractional seconds: JavaScript's
     /// `toISOString()` writes milliseconds.
-    private static var decoder: JSONDecoder {
+    static var decoder: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let text = try decoder.singleValueContainer().decode(String.self)
