@@ -17,8 +17,13 @@ import SwiftUI
 @MainActor
 @Observable
 final class AnnotationEditorModel {
-    /// The shape engine. Not observable itself, so `revision` stands in for it.
-    @ObservationIgnored let engine = AnnoEditor()
+    @ObservationIgnored private let annotationEngine = AnnoEditor()
+    /// Engine-backed getters must observe the revision even when their view
+    /// never reads it directly (for example, the inspector's style controls).
+    var engine: AnnoEditor {
+        _ = revision
+        return annotationEngine
+    }
     /// Bumped on every engine change. Views read this to pick up edits the engine made.
     private(set) var revision = 0
 
