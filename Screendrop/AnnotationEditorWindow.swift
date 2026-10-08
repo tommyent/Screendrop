@@ -41,6 +41,8 @@ struct AnnotationEditorWindow: View {
                         editingActions.disabled(isBusy)
                     }
                 }
+                // Bare icons, as in the Library and the Studio: no glass capsule.
+                .sharedBackgroundVisibility(.hidden)
             }
             .task(id: url) {
                 clearInspectorFocus()

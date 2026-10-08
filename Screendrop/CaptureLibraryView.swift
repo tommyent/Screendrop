@@ -309,6 +309,7 @@ struct CaptureLibraryView: View {
             } label: { Label("New Capture", systemImage: "plus") }
             .help("New capture")
         }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             Picker("View", selection: $layout) {
                 Label("Grid View", systemImage: "square.grid.2x2").tag(CaptureLibraryLayout.grid).help("Grid view")
@@ -318,6 +319,7 @@ struct CaptureLibraryView: View {
             .pickerStyle(.segmented)
             .help("Switch between grid and list")
         }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Picker("Sort By", selection: $model.sortOrder) {
@@ -329,6 +331,7 @@ struct CaptureLibraryView: View {
             } label: { Label("Sort", systemImage: "arrow.up.arrow.down") }
             .help("Sort captures")
         }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .primaryAction) {
             Button { model.perform(.preview) } label: { Label("Quick Look", systemImage: "eye") }
                 .disabled(model.selection.count != 1 || model.isBusy)
@@ -348,6 +351,7 @@ struct CaptureLibraryView: View {
             .disabled(model.selection.isEmpty || model.isBusy)
             .help("Capture actions")
         }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             Button { inspectorVisible.toggle() } label: {
                 Label(inspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
@@ -355,6 +359,7 @@ struct CaptureLibraryView: View {
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help(inspectorVisible ? "Hide Inspector" : "Show Inspector")
         }
+        .sharedBackgroundVisibility(.hidden)
     }
 }
 
