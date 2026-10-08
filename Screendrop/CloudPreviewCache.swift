@@ -75,7 +75,10 @@ nonisolated struct CloudPreviewCache: Sendable {
         let (download, response) = try await Self.session.download(for: URLRequest(url: source), delegate: relay)
         defer { try? manager.removeItem(at: download) }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw CloudPreviewError.status(status) }
+        guard status == 200 else {
+            // An expired upload's media answers 404 until the daily clean-up deletes it.
+            throw CloudPreviewError.status(upload.expiresAt.map { $0 <= .now } == true ? 410 : status)
+        }
         let named = (upload.filename as NSString).pathExtension.filter { $0.isLetter || $0.isNumber }
         let ext = response.mimeType.flatMap { UTType(mimeType: $0)?.preferredFilenameExtension }
             ?? (named.isEmpty ? (upload.isVideo ? "mp4" : "png") : named)
