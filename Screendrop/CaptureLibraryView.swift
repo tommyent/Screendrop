@@ -302,9 +302,17 @@ struct CaptureLibraryView: View {
             if let title = model.operationTitle {
                 ProgressView().controlSize(.mini)
                 Text(title)
+            } else if cloud.isShown, let fetch = cloud.previewFetch {
+                ProgressView(value: fetch.total).controlSize(.mini).frame(width: 60)
+                Text(fetch.title)
+                Button("Stop Downloading", systemImage: "xmark.circle.fill") { cloud.cancelPreview() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .help("Stop downloading")
             } else if cloud.isShown {
                 let count = cloud.visibleUploads.count
                 Text("\(count) \(count == 1 ? "upload" : "uploads")")
+                if !cloud.selection.isEmpty { Text("· \(cloud.selection.count) selected") }
                 if !cloud.deletingIDs.isEmpty { Text("· Deleting…") }
             } else {
                 Text("\(model.visibleItems.count) \(model.visibleItems.count == 1 ? "capture" : "captures")")
@@ -376,23 +384,7 @@ struct CaptureLibraryView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .primaryAction) {
-            Button { model.perform(.preview) } label: { Label("Quick Look", systemImage: "eye") }
-                .disabled(model.selection.count != 1 || model.isBusy)
-                .help("Quick Look (Space)")
-            Button { model.perform(.edit) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-                .disabled(model.selection.count != 1 || model.isBusy)
-                .help("Open in the screenshot or recording editor")
-            Menu {
-                Button("Copy", systemImage: "doc.on.doc") { model.perform(.copy) }
-                Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
-                Button("Rename", systemImage: "pencil") { model.perform(.rename) }
-                    .disabled(model.selection.count != 1)
-                Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
-                Divider()
-                Button("Move to Trash…", systemImage: "trash", role: .destructive) { model.perform(.trash) }
-            } label: { Label("Actions", systemImage: "ellipsis.circle") }
-            .disabled(model.selection.isEmpty || model.isBusy)
-            .help("Capture actions")
+            if cloud.isShown { cloudActions } else { captureActions }
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
@@ -403,6 +395,41 @@ struct CaptureLibraryView: View {
             .help(inspectorVisible ? "Hide Inspector" : "Show Inspector")
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+
+    /// Uploads are final, so the Cloud page has no Edit.
+    @ViewBuilder private var cloudActions: some View {
+        Button { cloud.quickLook() } label: { Label("Quick Look", systemImage: "eye") }
+            .disabled(cloud.selection.isEmpty)
+            .help("Quick Look (Space)")
+        Menu {
+            ForEach(Array(cloud.menuItems().enumerated()), id: \.offset) { _, item in
+                if item.startsGroup { Divider() }
+                Button(item.title, action: item.perform).disabled(!item.isEnabled)
+            }
+        } label: { Label("Actions", systemImage: "ellipsis.circle") }
+        .disabled(cloud.selection.isEmpty)
+        .help("Upload actions")
+    }
+
+    @ViewBuilder private var captureActions: some View {
+        Button { model.perform(.preview) } label: { Label("Quick Look", systemImage: "eye") }
+            .disabled(model.selection.count != 1 || model.isBusy)
+            .help("Quick Look (Space)")
+        Button { model.perform(.edit) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+            .disabled(model.selection.count != 1 || model.isBusy)
+            .help("Open in the screenshot or recording editor")
+        Menu {
+            Button("Copy", systemImage: "doc.on.doc") { model.perform(.copy) }
+            Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
+            Button("Rename", systemImage: "pencil") { model.perform(.rename) }
+                .disabled(model.selection.count != 1)
+            Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
+            Divider()
+            Button("Move to Trash…", systemImage: "trash", role: .destructive) { model.perform(.trash) }
+        } label: { Label("Actions", systemImage: "ellipsis.circle") }
+        .disabled(model.selection.isEmpty || model.isBusy)
+        .help("Capture actions")
     }
 }
 

@@ -12,8 +12,9 @@ final class CloudLibraryModel {
     static let shared = CloudLibraryModel()
     /// The Cloud page shows in place of the captures.
     var isShown = false
-    var selection: CloudUpload.ID?
-    var pendingDelete: CloudUpload?
+    var selection: Set<String> = []
+    /// Waiting for the Delete from Cloud confirmation.
+    var pendingDelete: [CloudUpload] = []
     private(set) var uploads: [CloudUpload] = []
     /// Listed from History because the Worker can't list uploads.
     private(set) var isHistoryFallback = false
@@ -21,10 +22,24 @@ final class CloudLibraryModel {
     private(set) var isLoading = false
     private(set) var loadError: String?
     private(set) var deletingIDs: Set<String> = []
+    /// Quick Look's download, while it runs.
+    private(set) var previewFetch: PreviewFetch?
+    private var previewTask: Task<Void, Never>?
+
+    struct PreviewFetch {
+        let id = UUID()
+        let count: Int
+        var index = 0
+        var fraction = 0.0
+        var title: String { count == 1 ? "Downloading for Quick Look…" : "Downloading \(index + 1) of \(count) for Quick Look…" }
+        var total: Double { (Double(index) + fraction) / Double(count) }
+    }
 
     private init() {}
 
-    var selectedUpload: CloudUpload? { uploads.first { $0.id == selection } }
+    /// The selection in display order.
+    var selectedUploads: [CloudUpload] { visibleUploads.filter { selection.contains($0.id) } }
+    var isBusy: Bool { !deletingIDs.isEmpty }
 
     /// Uploads matching the Library's search, in its sort order.
     var visibleUploads: [CloudUpload] {
@@ -71,7 +86,7 @@ final class CloudLibraryModel {
             } catch {
                 loadError = error.localizedDescription
             }
-            if let selection, !uploads.contains(where: { $0.id == selection }) { self.selection = nil }
+            selection.formIntersection(uploads.map(\.id))
         }
     }
 
@@ -94,9 +109,93 @@ final class CloudLibraryModel {
         if let url = URL(string: upload.url) { NSWorkspace.shared.open(url) }
     }
 
-    func copyLink(_ upload: CloudUpload) {
+    func copyLinks(_ uploads: [CloudUpload]) {
+        guard !uploads.isEmpty else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(upload.url, forType: .string)
+        NSPasteboard.general.setString(uploads.map(\.url).joined(separator: "\n"), forType: .string)
+    }
+
+    /// The collection's keys and clicks. A double click (`.edit`) previews:
+    /// uploads are final, so they have no editor.
+    func perform(_ action: CaptureLibraryAction) {
+        switch action {
+        case .preview: quickLook()
+        case .edit: quickLook(toggling: false)
+        case .copy: copyLinks(selectedUploads)
+        case .trash: pendingDelete = selectedUploads
+        case .rename, .export, .reveal: break
+        }
+    }
+
+    /// The selection's context menu, also the toolbar's Actions menu.
+    func menuItems() -> [LibraryMenuItem] {
+        let selected = selectedUploads
+        let single = selected.count == 1 ? selected.first : nil
+        let local = single.flatMap { localItems[$0.id] }
+        return [
+            LibraryMenuItem(title: "Quick Look", isEnabled: !selected.isEmpty) { self.quickLook(toggling: false) },
+            LibraryMenuItem(title: "Open Link", isEnabled: single != nil) { if let single { self.open(single) } },
+            LibraryMenuItem(title: selected.count > 1 ? "Copy Links" : "Copy Link", isEnabled: !selected.isEmpty) {
+                self.copyLinks(selected)
+            },
+            LibraryMenuItem(title: "Show in Library", isEnabled: local != nil) { if let local { self.showInLibrary(local) } },
+            LibraryMenuItem(title: "Delete from Cloud…", isEnabled: !selected.isEmpty && !isBusy, startsGroup: true) {
+                self.pendingDelete = selected
+            },
+        ]
+    }
+
+    /// Downloads the selected uploads' full files from the Worker's public
+    /// routes, then opens Quick Look on them in display order. Asked again
+    /// while it downloads or shows, it stops, like Space in Finder.
+    func quickLook(toggling: Bool = true) {
+        if toggling, previewTask != nil { cancelPreview(); return }
+        if toggling, QuickLookPreviewPresenter.isShown { QuickLookPreviewPresenter.dismiss(); return }
+        let targets = selectedUploads
+        guard !targets.isEmpty else { return }
+        previewTask?.cancel()
+        let fetch = PreviewFetch(count: targets.count)
+        let fetchID = fetch.id
+        previewFetch = fetch
+        let kept = Set(targets.map(\.id))
+        previewTask = Task {
+            defer {
+                if previewFetch?.id == fetchID {
+                    previewFetch = nil
+                    previewTask = nil
+                }
+            }
+            var files: [URL] = []
+            var failures: [String] = []
+            for (index, upload) in targets.enumerated() {
+                updatePreview(fetchID, index: index, fraction: 0)
+                do {
+                    files.append(try await CloudPreviewCache.shared.file(for: upload, keeping: kept) { fraction in
+                        Task { @MainActor in self.updatePreview(fetchID, index: index, fraction: fraction) }
+                    })
+                } catch {
+                    if Task.isCancelled { return }
+                    failures.append("\(upload.name): \(error.localizedDescription)")
+                }
+            }
+            if Task.isCancelled { return }
+            QuickLookPreviewPresenter.show(urls: files)
+            if !failures.isEmpty {
+                CaptureLibraryModel.shared.errorMessage = "Couldn’t download for Quick Look:\n" + failures.joined(separator: "\n")
+            }
+        }
+    }
+
+    func cancelPreview() {
+        previewTask?.cancel()
+        previewTask = nil
+        previewFetch = nil
+    }
+
+    private func updatePreview(_ id: UUID, index: Int, fraction: Double) {
+        guard let fetch = previewFetch, fetch.id == id, index >= fetch.index else { return }
+        previewFetch?.index = index
+        previewFetch?.fraction = fraction
     }
 
     /// Selects the upload's capture in All Captures.
@@ -109,23 +208,33 @@ final class CloudLibraryModel {
         library.selection = [item.id]
     }
 
-    /// The same call as the inspector's Delete from Cloud, and like it,
-    /// clears the link from the capture's History entries.
-    func delete(_ upload: CloudUpload) {
-        guard deletingIDs.insert(upload.id).inserted else { return }
+    /// Deletes the confirmed uploads one at a time with the inspector's
+    /// Delete from Cloud call, and like it, clears each link from the
+    /// capture's History entries.
+    func deletePending() {
+        let targets = pendingDelete.filter { !deletingIDs.contains($0.id) }
+        pendingDelete = []
+        guard !targets.isEmpty else { return }
+        QuickLookPreviewPresenter.dismiss()
+        deletingIDs.formUnion(targets.map(\.id))
         Task {
-            defer { deletingIDs.remove(upload.id) }
-            do {
-                try await CloudUploader.shared.deleteFromCloud(uploadID: upload.id)
-                let history = ScreenshotHistoryStore.shared
-                for item in history.items where CloudUploadList.uploadID(of: item.cloudURL) == upload.id {
-                    history.setLibraryCloudURL(id: item.id, cloudURL: nil)
+            var failures: [String] = []
+            for upload in targets {
+                do {
+                    try await CloudUploader.shared.deleteFromCloud(uploadID: upload.id)
+                    let history = ScreenshotHistoryStore.shared
+                    for item in history.items where CloudUploadList.uploadID(of: item.cloudURL) == upload.id {
+                        history.setLibraryCloudURL(id: item.id, cloudURL: nil)
+                    }
+                    uploads.removeAll { $0.id == upload.id }
+                    selection.remove(upload.id)
+                    CloudPreviewCache.shared.remove(upload.id)
+                } catch {
+                    failures.append("\(upload.name): \(error.localizedDescription)")
                 }
-                uploads.removeAll { $0.id == upload.id }
-                if selection == upload.id { selection = nil }
-            } catch {
-                CaptureLibraryModel.shared.errorMessage = error.localizedDescription
+                deletingIDs.remove(upload.id)
             }
+            if !failures.isEmpty { CaptureLibraryModel.shared.errorMessage = failures.joined(separator: "\n") }
         }
     }
 }
@@ -134,7 +243,6 @@ struct CloudLibraryPage: View {
     let cloud: CloudLibraryModel
     let layout: CaptureLibraryLayout
     let cardWidth: CGFloat
-    @State private var width: CGFloat = 800
 
     var body: some View {
         let uploads = cloud.visibleUploads
@@ -176,10 +284,19 @@ struct CloudLibraryPage: View {
                         : "Check the spelling or try a new search.")
                 }
             } else {
-                ScrollView {
-                    if layout == .grid { grid(uploads, local: local) } else { list(uploads, local: local) }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+                // The Library's own collection, so uploads select, open and
+                // delete as captures do.
+                CaptureLibraryCollection(
+                    items: uploads, revision: revision(uploads, local: local), layout: layout, cardWidth: cardWidth,
+                    selection: Binding { cloud.selection } set: { cloud.selection = $0 },
+                    isBusy: cloud.isBusy, accessibilityLabel: "Uploads",
+                    cell: { [layout, deleting = cloud.deletingIDs] upload, selected, _ in
+                        AnyView(CloudUploadCard(upload: upload, local: local[upload.id], layout: layout,
+                                                selected: selected, deleting: deleting.contains(upload.id)))
+                    },
+                    menu: { _ in cloud.menuItems() },
+                    onAction: cloud.perform
+                )
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -195,65 +312,40 @@ struct CloudLibraryPage: View {
             }
         }
         .onAppear { cloud.refresh() }
-        .alert("Delete from cloud?", isPresented: Binding(
-            get: { cloud.pendingDelete != nil }, set: { if !$0 { cloud.pendingDelete = nil } }
-        ), presenting: cloud.pendingDelete) { upload in
-            Button("Delete", role: .destructive) {
-                cloud.delete(upload)
-                cloud.pendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) { cloud.pendingDelete = nil }
-        } message: { upload in
-            Text("This permanently removes the cloud copy and breaks its share link."
-                + (local[upload.id] == nil ? "" : " Your local capture stays in the Library."))
+        .alert(deleteTitle, isPresented: Binding(
+            get: { !cloud.pendingDelete.isEmpty }, set: { if !$0 { cloud.pendingDelete = [] } }
+        )) {
+            Button("Delete", role: .destructive) { cloud.deletePending() }
+            Button("Cancel", role: .cancel) { cloud.pendingDelete = [] }
+        } message: {
+            Text(deleteMessage(local: local))
         }
     }
 
-    /// The Library grid's spacing: cards keep one size, and the leftover
-    /// width is shared evenly by the gaps and both side margins.
-    private func grid(_ uploads: [CloudUpload], local: [String: CaptureLibraryItem]) -> some View {
-        let cell = min(cardWidth, max(100, width - 32))
-        let columns = max(1, Int((width - 16) / (cell + 16)))
-        let space = max(16, floor((width - CGFloat(columns) * cell) / CGFloat(columns + 1)))
-        return LazyVGrid(columns: Array(repeating: GridItem(.fixed(cell), spacing: space), count: columns), spacing: 16) {
-            ForEach(uploads) { upload in
-                card(upload, local: local[upload.id])
-                    .frame(width: cell, height: floor(cell * 0.625) + 62)
-            }
-        }
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
+    private var deleteTitle: String {
+        let count = cloud.pendingDelete.count
+        return count > 1 ? "Delete \(count) uploads from cloud?" : "Delete from cloud?"
     }
 
-    private func list(_ uploads: [CloudUpload], local: [String: CaptureLibraryItem]) -> some View {
-        LazyVStack(spacing: 6) {
-            ForEach(uploads) { upload in
-                card(upload, local: local[upload.id]).frame(height: 76)
-            }
+    private func deleteMessage(local: [String: CaptureLibraryItem]) -> String {
+        let targets = cloud.pendingDelete
+        let anyLocal = targets.contains { local[$0.id] != nil }
+        if targets.count > 1 {
+            return "This permanently removes \(targets.count) cloud copies and breaks their share links."
+                + (anyLocal ? " Captures still in your Library stay there." : "")
         }
-        .padding(16)
+        return "This permanently removes the cloud copy and breaks its share link."
+            + (anyLocal ? " Your local capture stays in the Library." : "")
     }
 
-    private func card(_ upload: CloudUpload, local: CaptureLibraryItem?) -> some View {
-        CloudUploadCard(upload: upload, local: local, layout: layout,
-                        selected: cloud.selection == upload.id, deleting: cloud.deletingIDs.contains(upload.id))
-            // Selects at once; a second click opens the link.
-            .simultaneousGesture(TapGesture().onEnded { cloud.selection = upload.id })
-            .onTapGesture(count: 2) { cloud.open(upload) }
-            .contextMenu {
-                Button("Open Link", systemImage: "arrow.up.right") { cloud.open(upload) }
-                Button("Copy Link", systemImage: "link") { cloud.copyLink(upload) }
-                if let local {
-                    Button("Show in Library", systemImage: "photo.on.rectangle") { cloud.showInLibrary(local) }
-                }
-                Divider()
-                Button("Delete from Cloud…", systemImage: "icloud.slash", role: .destructive) {
-                    cloud.pendingDelete = upload
-                }
-            }
-            .accessibilityAction(named: "Open Link") { cloud.open(upload) }
-            .accessibilityAction(named: "Copy Link") { cloud.copyLink(upload) }
-            .accessibilityAction(named: "Delete from Cloud") { cloud.pendingDelete = upload }
+    /// Changes whenever a card would draw differently, so the collection reloads.
+    private func revision(_ uploads: [CloudUpload], local: [String: CaptureLibraryItem]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(uploads)
+        hasher.combine(Set(local.keys))
+        hasher.combine(CaptureLibraryModel.shared.contentRevision)
+        hasher.combine(cloud.deletingIDs)
+        return hasher.finalize()
     }
 }
 
@@ -301,12 +393,24 @@ private struct CloudUploadCard: View {
                 )
         }
         .opacity(deleting ? 0.5 : 1)
-        .contentShape(.rect)
         .onHover { isHovering = $0 }
+        // Cells are reused for other uploads.
+        .onChange(of: upload.id) { _, _ in isHovering = false }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(upload.name), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
             + (local == nil ? ", cloud only" : ", in Library"))
-        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityAction(named: "Quick Look") { act { $0.quickLook(toggling: false) } }
+        .accessibilityAction(named: "Open Link") { CloudLibraryModel.shared.open(upload) }
+        .accessibilityAction(named: "Copy Link") { CloudLibraryModel.shared.copyLinks([upload]) }
+        .accessibilityAction(named: "Delete from Cloud") { CloudLibraryModel.shared.pendingDelete = [upload] }
+    }
+
+    /// Selects just this upload, then acts on the selection.
+    private func act(_ action: (CloudLibraryModel) -> Void) {
+        let cloud = CloudLibraryModel.shared
+        cloud.selection = [upload.id]
+        action(cloud)
     }
 
     private var labels: some View {
@@ -426,18 +530,34 @@ struct CloudUploadInspector: View {
     let cloud: CloudLibraryModel
 
     var body: some View {
-        if let upload = cloud.selectedUpload {
+        let selected = cloud.selectedUploads
+        if selected.count > 1 {
+            multiple(selected)
+        } else if let upload = selected.first {
             let local = cloud.localItems[upload.id]
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 14) {
-                        CloudUploadThumbnail(upload: upload, local: local)
-                            .aspectRatio(1.45, contentMode: .fit)
-                            .clipShape(.rect(cornerRadius: 11))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
-                            }
+                        Button { cloud.quickLook(toggling: false) } label: {
+                            CloudUploadThumbnail(upload: upload, local: local)
+                                .aspectRatio(1.45, contentMode: .fit)
+                                .clipShape(.rect(cornerRadius: 11))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
+                                }
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: upload.isVideo ? "play.fill" : "arrow.up.left.and.arrow.down.right")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundStyle(.white)
+                                        .padding(8)
+                                        .background(.black.opacity(0.55), in: Circle())
+                                        .padding(10)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Quick Look \(upload.name)")
+                        .help("Open a large preview")
                         VStack(alignment: .leading, spacing: 7) {
                             Text(upload.name)
                                 .font(.system(size: 16, weight: .semibold))
@@ -483,8 +603,8 @@ struct CloudUploadInspector: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 0) {
                     action("Open Link", symbol: "arrow.up.right") { cloud.open(upload) }
-                    action("Copy Link", symbol: "link") { cloud.copyLink(upload) }
-                    action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = upload }
+                    action("Copy Link", symbol: "link") { cloud.copyLinks([upload]) }
+                    action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = [upload] }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -504,6 +624,41 @@ struct CloudUploadInspector: View {
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func multiple(_ uploads: [CloudUpload]) -> some View {
+        let local = cloud.localItems
+        let sizes = uploads.compactMap(\.size)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("\(uploads.count) uploads selected")
+                    .font(.system(size: 16, weight: .semibold))
+                Divider()
+                VStack(alignment: .leading, spacing: 14) {
+                    sectionTitle("Selection")
+                    VStack(spacing: 11) {
+                        detailRow("Screenshots", value: "\(uploads.filter { !$0.isVideo }.count)")
+                        detailRow("Recordings", value: "\(uploads.filter(\.isVideo).count)")
+                        detailRow("Cloud only", value: "\(uploads.filter { local[$0.id] == nil }.count)")
+                        if sizes.count == uploads.count {
+                            detailRow("Size", value: ByteCountFormatter.string(fromByteCount: Int64(sizes.reduce(0, +)), countStyle: .file))
+                        }
+                    }
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack(spacing: 0) {
+                action("Quick Look", symbol: "eye") { cloud.quickLook(toggling: false) }
+                action("Copy Links", symbol: "link") { cloud.copyLinks(uploads) }
+                action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = uploads }
+                    .disabled(cloud.isBusy)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
         }
     }
 
