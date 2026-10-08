@@ -9,17 +9,45 @@ enum CaptureLibraryAction: String {
     case export = "Export…"
     case reveal = "Reveal in Finder"
     case trash = "Move to Trash"
+
+    /// The captures' context menu, for `count` selected.
+    static func menu(selected count: Int, perform: @escaping (Self) -> Void) -> [LibraryMenuItem] {
+        [Self.preview, .edit, .rename, .copy, .export, .reveal, .trash].map { action in
+            LibraryMenuItem(
+                title: action.rawValue,
+                isEnabled: !(action == .rename || action == .edit || action == .preview) || count == 1,
+                startsGroup: action == .copy || action == .trash
+            ) { perform(action) }
+        }
+    }
+}
+
+/// A context menu entry for the Library's collection.
+struct LibraryMenuItem {
+    let title: String
+    var isEnabled = true
+    /// Drawn after a separator.
+    var startsGroup = false
+    let perform: () -> Void
 }
 
 /// Both layouts use NSCollectionView's reuse queue. Changing selection doesn't
 /// reload the collection; data changes reconcile selection by stable media IDs.
-struct CaptureLibraryCollection: NSViewRepresentable {
-    let items: [CaptureLibraryItem]
+/// Captures and cloud uploads share it, so both select, open and delete alike;
+/// the keys and clicks arrive as `CaptureLibraryAction`s.
+struct CaptureLibraryCollection<Entry: Identifiable>: NSViewRepresentable where Entry.ID == String {
+    let items: [Entry]
     let revision: Int
     let layout: CaptureLibraryLayout
     let cardWidth: CGFloat
     @Binding var selection: Set<String>
     let isBusy: Bool
+    var accessibilityLabel = "Captures"
+    /// The card for an entry, given whether it's selected and a callback for
+    /// where its title is drawn (clicking the title renames).
+    let cell: (Entry, Bool, @escaping (CGRect) -> Void) -> AnyView
+    /// The context menu, for the number of selected entries.
+    let menu: (Int) -> [LibraryMenuItem]
     let onAction: (CaptureLibraryAction) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -30,7 +58,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
         scrollView.drawsBackground = false
         let collection = LibraryCollectionView()
         collection.autoresizingMask = [.width]
-        collection.setAccessibilityLabel("Captures")
+        collection.setAccessibilityLabel(accessibilityLabel)
         collection.backgroundColors = [.clear]
         collection.isSelectable = true
         collection.allowsMultipleSelection = true
@@ -86,6 +114,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
         var indices: [String: Int] = [:]
         private var selectionAnchorID: String?
         private var pendingRange: (anchor: String, end: String)?
+        private var menuItems: [LibraryMenuItem] = []
 
         init(_ parent: CaptureLibraryCollection) { self.parent = parent }
 
@@ -95,10 +124,15 @@ struct CaptureLibraryCollection: NSViewRepresentable {
 
         func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
             let cell = collectionView.makeItem(withIdentifier: LibraryCollectionItem.identifier, for: indexPath)
-            if let cell = cell as? LibraryCollectionItem, parent.items.indices.contains(indexPath.item) {
-                cell.configure(parent.items[indexPath.item], layout: parent.layout)
-            }
+            configure(cell, at: indexPath)
             return cell
+        }
+
+        private func configure(_ item: NSCollectionViewItem, at indexPath: IndexPath) {
+            guard let cell = item as? LibraryCollectionItem, parent.items.indices.contains(indexPath.item) else { return }
+            let entry = parent.items[indexPath.item]
+            let draw = parent.cell
+            cell.configure { selected, onTitleFrame in draw(entry, selected, onTitleFrame) }
         }
 
         func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
@@ -114,9 +148,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
         }
 
         func collectionView(_ collectionView: NSCollectionView, willDisplay item: NSCollectionViewItem, forRepresentedObjectAt indexPath: IndexPath) {
-            if let cell = item as? LibraryCollectionItem, parent.items.indices.contains(indexPath.item) {
-                cell.configure(parent.items[indexPath.item], layout: parent.layout)
-            }
+            configure(item, at: indexPath)
         }
 
         fileprivate func selectionChanged() {
@@ -172,24 +204,23 @@ struct CaptureLibraryCollection: NSViewRepresentable {
                 collection.selectionIndexPaths = [path]
                 selectionChanged()
             }
-            let count = collection.selectionIndexPaths.count
+            menuItems = parent.menu(collection.selectionIndexPaths.count)
             let menu = NSMenu()
             menu.autoenablesItems = false
-            for action in [CaptureLibraryAction.preview, .edit, .rename, .copy, .export, .reveal, .trash] {
-                if action == .copy || action == .trash { menu.addItem(.separator()) }
-                let item = NSMenuItem(title: action.rawValue, action: #selector(performMenuAction(_:)), keyEquivalent: "")
+            for (index, entry) in menuItems.enumerated() {
+                if entry.startsGroup { menu.addItem(.separator()) }
+                let item = NSMenuItem(title: entry.title, action: #selector(performMenuItem(_:)), keyEquivalent: "")
                 item.target = self
-                item.representedObject = action.rawValue
-                item.isEnabled = !parent.isBusy && (!(action == .rename || action == .edit || action == .preview) || count == 1)
+                item.tag = index
+                item.isEnabled = !parent.isBusy && entry.isEnabled
                 menu.addItem(item)
             }
             return menu
         }
 
-        @objc private func performMenuAction(_ sender: NSMenuItem) {
-            guard let raw = sender.representedObject as? String,
-                  let action = CaptureLibraryAction(rawValue: raw), !parent.isBusy else { return }
-            parent.onAction(action)
+        @objc private func performMenuItem(_ sender: NSMenuItem) {
+            guard menuItems.indices.contains(sender.tag), !parent.isBusy else { return }
+            menuItems[sender.tag].perform()
         }
     }
 }
@@ -322,9 +353,9 @@ final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
 
 final class LibraryCollectionItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("CaptureLibraryCell")
-    private var entry: CaptureLibraryItem?
-    private var displayLayout: CaptureLibraryLayout = .grid
-    private var host: NSHostingView<LibraryCellContent>?
+    /// Draws the entry for a selection state; nil while the cell is unused.
+    private var content: ((Bool, @escaping (CGRect) -> Void) -> AnyView)?
+    private var host: NSHostingView<AnyView>?
     /// Where the title is drawn, in the cell's own (flipped) coordinates.
     private var titleFrame: CGRect = .zero
 
@@ -333,7 +364,7 @@ final class LibraryCollectionItem: NSCollectionViewItem {
     }
 
     override func loadView() {
-        let host = NSHostingView(rootView: LibraryCellContent(item: nil, layout: .grid, selected: false))
+        let host = NSHostingView(rootView: AnyView(EmptyView()))
         host.sizingOptions = []
         self.host = host
         view = host
@@ -341,14 +372,14 @@ final class LibraryCollectionItem: NSCollectionViewItem {
 
     override var isSelected: Bool { didSet { updateContent() } }
 
-    func configure(_ entry: CaptureLibraryItem, layout: CaptureLibraryLayout) {
-        self.entry = entry
-        displayLayout = layout
+    func configure(_ content: @escaping (Bool, @escaping (CGRect) -> Void) -> AnyView) {
+        self.content = content
         updateContent()
     }
 
     func clearContent() {
-        entry = nil
+        content = nil
+        titleFrame = .zero
         updateContent()
     }
 
@@ -359,9 +390,7 @@ final class LibraryCollectionItem: NSCollectionViewItem {
 
     private func updateContent() {
         _ = view
-        host?.rootView = LibraryCellContent(item: entry, layout: displayLayout, selected: isSelected) { [weak self] frame in
-            self?.titleFrame = frame
-        }
+        host?.rootView = content?(isSelected) { [weak self] frame in self?.titleFrame = frame } ?? AnyView(EmptyView())
     }
 }
 

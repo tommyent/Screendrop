@@ -225,7 +225,12 @@ struct CaptureLibraryView: View {
             }
         } else {
             CaptureLibraryCollection(items: model.visibleItems, revision: model.contentRevision, layout: layout,
-                cardWidth: cardWidth, selection: $model.selection, isBusy: model.isBusy, onAction: model.perform)
+                cardWidth: cardWidth, selection: $model.selection, isBusy: model.isBusy,
+                cell: { [layout] item, selected, onTitleFrame in
+                    AnyView(LibraryCellContent(item: item, layout: layout, selected: selected, onTitleFrame: onTitleFrame))
+                },
+                menu: { [model] in CaptureLibraryAction.menu(selected: $0, perform: model.perform) },
+                onAction: model.perform)
         }
     }
 
