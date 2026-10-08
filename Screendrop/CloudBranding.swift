@@ -79,7 +79,17 @@ struct CloudBranding: Decodable {
                 kCGImageSourceThumbnailMaxPixelSize: 96,
                 kCGImageSourceCreateThumbnailWithTransform: true
               ] as CFDictionary) else { return nil }
-        return NSImage(cgImage: image, size: .zero)
+        var size = NSSize(width: image.width, height: image.height)
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+           let height = properties[kCGImagePropertyPixelHeight] as? NSNumber {
+            let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+            let swapsAxes = (5...8).contains(orientation)
+            // Thumbnail transforms honor DPI; share-page previews fit the oriented pixel canvas.
+            size = NSSize(width: swapsAxes ? height.doubleValue : width.doubleValue,
+                          height: swapsAxes ? width.doubleValue : height.doubleValue)
+        }
+        return NSImage(cgImage: image, size: size)
     }
 
     static func thumbnail(_ data: Data) async -> NSImage? {
@@ -349,7 +359,10 @@ struct CloudBrandingSettingsGroup: View {
             HStack(spacing: 12) {
                 Text(title).frame(width: 80, alignment: .leading)
                 Group {
-                    if let preview { Image(nsImage: preview).resizable().scaledToFit() }
+                    if let preview {
+                        // Not scaledToFit: fit the pixel proportions, and check wide, tall and square renders when changing it.
+                        Image(nsImage: preview).resizable().aspectRatio(preview.size, contentMode: .fit)
+                    }
                     else { Image(systemName: "photo").foregroundStyle(.secondary) }
                 }
                 .frame(width: 32, height: 32)
