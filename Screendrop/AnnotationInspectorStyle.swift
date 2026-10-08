@@ -243,7 +243,7 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
 
                 accessory()
             }
-            .padding(.trailing, InspectorMetrics.horizontalPadding)
+            .padding(.horizontal, InspectorMetrics.horizontalPadding)
             .frame(height: 36)
             .onHover { isHeaderHovering = $0 }
 
@@ -266,13 +266,12 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A 7 pt glyph centred in the margin, with a 4 pt gap before the title.
+    /// A 7 pt glyph at the section inset, with a 4 pt gap before the title.
     private var disclosureChevron: some View {
-        Image(systemName: "chevron.down")
+        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
             .font(.system(size: 7, weight: .bold))
             .foregroundStyle(.secondary)
-            .rotationEffect(.degrees(isExpanded ? 0 : -90))
-            .frame(width: InspectorMetrics.horizontalPadding - 4)
+            .frame(width: 8, alignment: .leading)
             .padding(.trailing, 4)
             .accessibilityHidden(true)
     }

@@ -51,7 +51,11 @@ struct AnnotationEditorInspector: View {
                         onEditorAction()
                         model.selectTool(tool)
                     }
+                }
 
+                InspectorSectionDivider()
+
+                InspectorSection(accessibilityLabel: "Redact") {
                     smartRedactionRow
                 }
 
@@ -345,12 +349,7 @@ struct AnnotationEditorInspector: View {
 
     @ViewBuilder
     private var styleControls: some View {
-        if !model.hasInspectorStyleControls {
-            Text("Choose a drawing tool or select an annotation to change its style.")
-                .font(.inspectorLabel)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
+        if model.hasInspectorStyleControls {
             if model.selectionCount > 1 {
                 Text("\(model.selectionCount) annotations selected")
                     .font(.inspectorLabel)
