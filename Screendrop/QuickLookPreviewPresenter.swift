@@ -12,7 +12,7 @@ import QuickLookUI
 final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     static let shared = QuickLookPreviewPresenter()
     
-    private var previewURL: NSURL?
+    private var previewURLs: [NSURL] = []
     /// Set when Quick Look itself tucked an expanded stack into its peek tab,
     /// so closing Quick Look expands only a stack it tucked. It records that
     /// first collapse, not later changes: if the stack is expanded and tucked
@@ -24,20 +24,27 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
         QLPreviewPanel.sharedPreviewPanelExists() && QLPreviewPanel.shared()?.isVisible == true
     }
 
-    static var currentURL: URL? { shared.previewURL as URL? }
+    /// The first file of the open preview.
+    static var currentURL: URL? { shared.previewURLs.first as URL? }
     
     /// Pass `collapsingPreviewStack: true` when previewing from the floating
     /// stack, so its cards don't sit on top of the Quick Look window.
     static func show(url: URL, collapsingPreviewStack: Bool = false) {
-        shared.show(url: url, collapsingPreviewStack: collapsingPreviewStack)
+        shared.show(urls: [url], collapsingPreviewStack: collapsingPreviewStack)
+    }
+
+    /// Several files, stepped through with the arrow keys as in Finder.
+    static func show(urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        shared.show(urls: urls, collapsingPreviewStack: false)
     }
     
     static func dismiss() {
         shared.dismiss()
     }
     
-    private func show(url: URL, collapsingPreviewStack: Bool) {
-        previewURL = url as NSURL
+    private func show(urls: [URL], collapsingPreviewStack: Bool) {
+        previewURLs = urls.map { $0 as NSURL }
         
         guard let panel = QLPreviewPanel.shared() else {
             restorePreviewStack()
@@ -83,19 +90,19 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
         guard QLPreviewPanel.sharedPreviewPanelExists(),
               let panel = QLPreviewPanel.shared(),
               panel.isVisible else {
-            previewURL = nil
+            previewURLs = []
             return
         }
 
         panel.orderOut(nil)
-        previewURL = nil
+        previewURLs = []
         restorePreviewStack()
     }
 
     /// Fires when Quick Look closes on its own (e.g. the user clicks its close
     /// button or it loses key focus), which bypasses `dismiss()`.
     func windowWillClose(_ notification: Notification) {
-        previewURL = nil
+        previewURLs = []
         restorePreviewStack()
     }
 
@@ -108,13 +115,13 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
     
     nonisolated func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
         MainActor.assumeIsolated {
-            previewURL == nil ? 0 : 1
+            previewURLs.count
         }
     }
     
     nonisolated func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
         MainActor.assumeIsolated {
-            previewURL
+            previewURLs.indices.contains(index) ? previewURLs[index] : nil
         }
     }
 }
