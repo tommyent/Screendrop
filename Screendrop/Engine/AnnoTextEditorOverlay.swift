@@ -54,7 +54,8 @@ final class AnnoTextEditorOverlay: NSTextView {
         importsGraphics = false
         drawsBackground = false
         isVerticallyResizable = true
-        isHorizontallyResizable = true
+        // sync() owns the width; native fitting can shift aligned text's container origin.
+        isHorizontallyResizable = false
         textContainerInset = .zero
         textContainer?.lineFragmentPadding = 0
         // The shape owns wrapping: it measures the text and sets the frame, so the container must
@@ -136,7 +137,8 @@ final class AnnoTextEditorOverlay: NSTextView {
             layoutManager.ensureLayout(for: container)
             let used = layoutManager.usedRect(for: container)
             let natural = ceil(used.width)
-            container.size = CGSize(width: natural + 2, height: CGFloat.greatestFiniteMagnitude)
+            // Match TextMeasure's one-point allowance in the natural-width container.
+            container.size = CGSize(width: natural + 1, height: CGFloat.greatestFiniteMagnitude)
             // Leave room for the caret past the last glyph.
             width = Swift.max(width, Double(natural + fontSize * 0.5) + insetX * 2)
             height = Swift.max(height, Double(ceil(used.height)) + insetY * 2)
