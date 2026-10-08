@@ -382,8 +382,10 @@ struct AnnotationWatermarkInspector: View {
         Binding(
             get: { settings.text },
             set: { text in
-                settings.text = text
-                settings.isEnabled = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                var next = settings
+                next.text = text
+                next.isEnabled = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                settings = next
             }
         )
     }

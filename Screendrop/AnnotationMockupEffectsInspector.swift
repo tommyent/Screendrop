@@ -147,6 +147,7 @@ private struct AnnotationFocusPositionPad: View {
     let onInteractionBegan: () -> Void
 
     @State private var isDragging = false
+    @Environment(\.annotationEditorHistory) private var history
     @State private var isHovering = false
 
     var body: some View {
@@ -216,6 +217,7 @@ private struct AnnotationFocusPositionPad: View {
                         if !isDragging {
                             isDragging = true
                             onInteractionBegan()
+                            history?.setInspectorEditing(true)
                         }
                         position = CGPoint(
                             x: min(max(value.location.x / max(proxy.size.width, 1), 0), 1),
@@ -223,7 +225,9 @@ private struct AnnotationFocusPositionPad: View {
                         )
                     }
                     .onEnded { _ in
+                        guard isDragging else { return }
                         isDragging = false
+                        history?.setInspectorEditing(false)
                     }
             )
             .simultaneousGesture(
@@ -243,6 +247,12 @@ private struct AnnotationFocusPositionPad: View {
             )
         }
         .frame(height: 118)
+        .onDisappear {
+            if isDragging {
+                isDragging = false
+                history?.setInspectorEditing(false)
+            }
+        }
         .help("Drag to move the sharp focal area. Double-click to center.")
     }
 
