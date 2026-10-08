@@ -21,6 +21,8 @@ nonisolated struct CloudUpload: Identifiable, Hashable, Sendable, Decodable {
     var hasPassword: Bool? = nil
     /// Nil from a Worker that doesn't count comments.
     var commentCount: Int? = nil
+    /// Nil from a Worker that doesn't count likes.
+    var likeCount: Int? = nil
     /// The Worker lists `expiresAt` (null included), so it can also change
     /// the expiry and anonymous comments. Older Workers leave it out.
     var supportsShareSettings = false
@@ -36,7 +38,7 @@ nonisolated struct CloudUpload: Identifiable, Hashable, Sendable, Decodable {
 extension CloudUpload {
     private nonisolated enum CodingKeys: String, CodingKey {
         case id, url, title, filename, mediaType, size, duration, createdAt, views, thumbnailUrl
-        case expiresAt, allowAnonymousComments, socialEnabled, hasPassword, commentCount
+        case expiresAt, allowAnonymousComments, socialEnabled, hasPassword, commentCount, likeCount
     }
 
     nonisolated init(from decoder: any Decoder) throws {
@@ -57,6 +59,7 @@ extension CloudUpload {
             socialEnabled: try c.decodeIfPresent(Bool.self, forKey: .socialEnabled),
             hasPassword: try c.decodeIfPresent(Bool.self, forKey: .hasPassword),
             commentCount: try c.decodeIfPresent(Int.self, forKey: .commentCount),
+            likeCount: try c.decodeIfPresent(Int.self, forKey: .likeCount),
             supportsShareSettings: c.contains(.expiresAt)
         )
     }

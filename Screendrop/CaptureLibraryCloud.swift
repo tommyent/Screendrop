@@ -233,8 +233,9 @@ final class CloudLibraryModel {
                     password: password
                 )
                 if var updated, let index = uploads.firstIndex(where: { $0.id == upload.id }) {
-                    // Only the list counts comments; keep the count PATCH leaves out.
+                    // Only the list counts comments and likes; keep the counts PATCH leaves out.
                     updated.commentCount = updated.commentCount ?? uploads[index].commentCount
+                    updated.likeCount = updated.likeCount ?? uploads[index].likeCount
                     uploads[index] = updated
                 } else {
                     refresh()
@@ -396,6 +397,8 @@ private struct CloudUploadCard: View {
     let deleting: Bool
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var isHovering = false
+    /// The duration pill's width, kept clear by the comment and like badges.
+    @State private var durationWidth: CGFloat = 0
 
     var body: some View {
         Group {
@@ -409,7 +412,8 @@ private struct CloudUploadCard: View {
                     thumbnail.frame(width: 88, height: 58)
                     labels
                     Spacer(minLength: 8)
-                    Text([CloudUploadText.comments(upload.commentCount), upload.hasPassword == true ? "Password" : nil,
+                    Text([CloudUploadText.comments(upload.commentCount), CloudUploadText.likes(upload.likeCount),
+                          upload.hasPassword == true ? "Password" : nil,
                           CloudUploadText.expiry(upload.expiresAt), local == nil ? "Cloud only" : "In Library"]
                         .compactMap(\.self).joined(separator: " · "))
                         .font(.caption)
@@ -438,6 +442,7 @@ private struct CloudUploadCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(upload.name), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
             + (CloudUploadText.comments(upload.commentCount).map { ", \($0)" } ?? "")
+            + (CloudUploadText.likes(upload.likeCount).map { ", \($0)" } ?? "")
             + (upload.hasPassword == true ? ", password protected" : "")
             + (CloudUploadText.expiry(upload.expiresAt).map { ", \($0)" } ?? "")
             + (local == nil ? ", cloud only" : ", in Library"))
@@ -475,13 +480,16 @@ private struct CloudUploadCard: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
-            // Bottom left: free on every card, so it never meets the pills above or the duration.
+            // Bottom left, clear of the pills above. Side by side when they fit
+            // beside the duration, stacked when the card is too small.
             .overlay(alignment: .bottomLeading) {
-                if layout == .grid, let count = upload.commentCount, count > 0 {
-                    Label(count.formatted(), systemImage: "bubble.left.fill")
-                        .modifier(CloudCardPill(background: .black.opacity(0.65)))
-                        .padding(7)
-                        .help(CloudUploadText.comments(count) ?? "")
+                if layout == .grid, (upload.commentCount ?? 0) > 0 || (upload.likeCount ?? 0) > 0 {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 4) { socialPills }
+                        VStack(alignment: .leading, spacing: 4) { socialPills }
+                    }
+                    .padding(7)
+                    .padding(.trailing, upload.isVideo ? durationWidth + 4 : 0)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -510,9 +518,23 @@ private struct CloudUploadCard: View {
                         .padding(.horizontal, 5).padding(.vertical, 3)
                         .foregroundStyle(.white)
                         .background(.black.opacity(0.65), in: Capsule())
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { durationWidth = $0 }
                         .padding(7)
                 }
             }
+    }
+
+    @ViewBuilder private var socialPills: some View {
+        if let count = upload.commentCount, count > 0 {
+            Label(count.formatted(), systemImage: "bubble.left.fill")
+                .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                .help(CloudUploadText.comments(count) ?? "")
+        }
+        if let count = upload.likeCount, count > 0 {
+            Label(count.formatted(), systemImage: "heart.fill")
+                .modifier(CloudCardPill(background: .black.opacity(0.65)))
+                .help(CloudUploadText.likes(count) ?? "")
+        }
     }
 }
 
@@ -623,6 +645,12 @@ nonisolated enum CloudUploadText {
     static func comments(_ count: Int?) -> String? {
         guard let count, count > 0 else { return nil }
         return count == 1 ? "1 comment" : "\(count.formatted()) comments"
+    }
+
+    /// "1 like", "5 likes"; nil when there are none or the Worker doesn't count them.
+    static func likes(_ count: Int?) -> String? {
+        guard let count, count > 0 else { return nil }
+        return count == 1 ? "1 like" : "\(count.formatted()) likes"
     }
 
     /// "in 3 days", "Expired" or "Never".
@@ -770,6 +798,7 @@ struct CloudUploadInspector: View {
                             }
                             if let views = upload.views { detailRow("Views", value: views.formatted()) }
                             if let comments = upload.commentCount { detailRow("Comments", value: comments.formatted()) }
+                            if let likes = upload.likeCount { detailRow("Likes", value: likes.formatted()) }
                         }
                     }
                     Divider()
