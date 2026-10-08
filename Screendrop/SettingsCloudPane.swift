@@ -165,6 +165,8 @@ struct CloudSettingsPane: View {
                 }
             }
 
+            CloudBrandingSettingsGroup(workerURL: store.workerURL)
+
             // MARK: - Setup Guide
 
             Section {
