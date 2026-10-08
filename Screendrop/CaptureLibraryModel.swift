@@ -153,6 +153,7 @@ final class CaptureLibraryModel {
 
     func show(filter: CaptureLibraryFilter? = nil) {
         if let filter {
+            CloudLibraryModel.shared.isShown = false
             self.filter = filter
             tagFilter = nil
             searchText = ""

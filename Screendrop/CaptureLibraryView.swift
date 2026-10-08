@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CaptureLibraryView: View {
     @State private var model = CaptureLibraryModel.shared
+    @State private var cloud = CloudLibraryModel.shared
     @State private var history = ScreenshotHistoryStore.shared
     @State private var projects = RecordingProjectStore.shared
     @State private var libraryWindow: NSWindow?
@@ -14,13 +15,18 @@ struct CaptureLibraryView: View {
 
     private var activeFilter: CaptureLibraryFilter { model.filter ?? .all }
 
-    /// The sidebar picks either a kind of capture or a tag.
+    /// The sidebar picks a kind of capture, the cloud uploads or a tag.
     private var sidebarSelection: Binding<CaptureLibrarySidebarSelection?> {
         Binding {
+            if cloud.isShown { return .cloud }
             if let tag = model.tagFilter { return .tag(tag) }
             return model.filter.map { .kind($0) }
         } set: { selection in
+            cloud.isShown = selection == .cloud
             switch selection {
+            case .cloud:
+                // The toolbar's capture actions mustn't act on captures out of sight.
+                model.selection = []
             case .tag(let tag):
                 model.filter = .all
                 model.tagFilter = tag
@@ -50,6 +56,18 @@ struct CaptureLibraryView: View {
                         } icon: { Image(systemName: filter.symbol) }
                         .tag(CaptureLibrarySidebarSelection.kind(filter))
                     }
+                    Label {
+                        HStack {
+                            Text("Cloud")
+                            Spacer()
+                            if cloud.hasLoaded, CloudUploader.shared.isConfigured {
+                                Text(cloud.uploads.count, format: .number)
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption.monospacedDigit())
+                            }
+                        }
+                    } icon: { Image(systemName: "icloud") }
+                    .tag(CaptureLibrarySidebarSelection.cloud)
                 }
                 if !model.tags.isEmpty {
                     Section("Tags") {
@@ -89,7 +107,9 @@ struct CaptureLibraryView: View {
                 // Empty pages are only as tall as their message; fill the column anyway.
                 browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .modifier(LibraryBrowserSurface(
-                        showsDots: layout == .grid || !model.hasLoaded || model.visibleItems.isEmpty
+                        showsDots: layout == .grid || (cloud.isShown
+                            ? cloud.visibleUploads.isEmpty
+                            : !model.hasLoaded || model.visibleItems.isEmpty)
                     ))
                 Divider()
                 statusBar
@@ -101,25 +121,32 @@ struct CaptureLibraryView: View {
             // Inside the detail column the inspector sits under the toolbar,
             // so the toolbar runs unbroken across it.
             .inspector(isPresented: $inspectorVisible) {
-                CaptureLibraryInspector(model: model)
-                    // The inspector column paints its own grey, under the
-                    // toolbar too, so its content carries the sidebar's.
-                    .modifier(LibrarySidebarSurface())
-                    .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
+                Group {
+                    if cloud.isShown {
+                        CloudUploadInspector(cloud: cloud)
+                    } else {
+                        CaptureLibraryInspector(model: model)
+                    }
+                }
+                // The inspector column paints its own grey, under the
+                // toolbar too, so its content carries the sidebar's.
+                .modifier(LibrarySidebarSurface())
+                .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
             }
             .modifier(LibraryWindowSurface())
-            .navigationTitle(model.tagFilter ?? activeFilter.title)
+            .navigationTitle(cloud.isShown ? "Cloud" : model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
         .modifier(LibraryToolbarSeparator())
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search captures")
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: cloud.isShown ? "Search uploads" : "Search captures")
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
             AppActivationPolicy.enter()
             model.sortOrder = savedSort
             model.refresh()
+            cloud.refresh()
         }
         .onDisappear { AppActivationPolicy.leave() }
         .onWindowChange { window in
@@ -127,7 +154,10 @@ struct CaptureLibraryView: View {
             PreviewWindowCaptureExclusion.shared.register(window: window)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
-            if let window = notification.object as? NSWindow, window === libraryWindow { model.refresh() }
+            if let window = notification.object as? NSWindow, window === libraryWindow {
+                model.refresh()
+                if cloud.isShown { cloud.refresh() }
+            }
         }
         .onChange(of: history.items) { _, _ in model.refresh() }
         .onChange(of: projects.projects) { _, _ in model.refresh() }
@@ -150,7 +180,9 @@ struct CaptureLibraryView: View {
     }
 
     @ViewBuilder private var browser: some View {
-        if !model.hasLoaded {
+        if cloud.isShown {
+            CloudLibraryPage(cloud: cloud, layout: layout, cardWidth: cardWidth)
+        } else if !model.hasLoaded {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.visibleItems.isEmpty {
             if !model.searchText.isEmpty {
@@ -265,12 +297,18 @@ struct CaptureLibraryView: View {
             if let title = model.operationTitle {
                 ProgressView().controlSize(.mini)
                 Text(title)
+            } else if cloud.isShown {
+                let count = cloud.visibleUploads.count
+                Text("\(count) \(count == 1 ? "upload" : "uploads")")
+                if !cloud.deletingIDs.isEmpty { Text("· Deleting…") }
             } else {
                 Text("\(model.visibleItems.count) \(model.visibleItems.count == 1 ? "capture" : "captures")")
                 if !model.selection.isEmpty { Text("· \(model.selection.count) selected") }
             }
             Spacer()
-            if model.isLoading { ProgressView().controlSize(.mini).help("Refreshing Library") }
+            if cloud.isShown ? cloud.isLoading : model.isLoading {
+                ProgressView().controlSize(.mini).help(cloud.isShown ? "Refreshing uploads" : "Refreshing Library")
+            }
             if layout == .grid {
                 // Capped where the 640 px thumbnails stay sharp on Retina.
                 Slider(value: $cardWidth, in: 140...320) {
@@ -326,7 +364,7 @@ struct CaptureLibraryView: View {
                     ForEach(CaptureLibrarySort.allCases) { Text($0.title).tag($0) }
                 }
                 Divider()
-                Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
+                Button("Refresh", systemImage: "arrow.clockwise") { cloud.isShown ? cloud.refresh() : model.refresh() }
                     .keyboardShortcut("r", modifiers: .command)
             } label: { Label("Sort", systemImage: "arrow.up.arrow.down") }
             .help("Sort captures")
@@ -464,5 +502,6 @@ private struct LibraryWindowSurface: ViewModifier {
 
 enum CaptureLibrarySidebarSelection: Hashable {
     case kind(CaptureLibraryFilter)
+    case cloud
     case tag(String)
 }

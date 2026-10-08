@@ -226,6 +226,40 @@ final class CloudUploader: NSObject {
         try await Self.performDelete(uploadID: uploadID, creds: creds)
     }
 
+    // MARK: - List
+
+    /// Every upload on the Worker, newest first. Throws `.listUnavailable`
+    /// when the Worker predates GET /api/uploads.
+    func listUploads() async throws -> [CloudUpload] {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else {
+            throw CloudUploadError.notConfigured
+        }
+        let workerBase = Self.normalizeWorkerURL(creds.workerURL)
+        let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        var uploads: [CloudUpload] = []
+        var offset: Int? = 0
+        while let current = offset {
+            guard let request = CloudUploadList.request(workerBase: workerBase, token: token, offset: current) else {
+                throw CloudUploadError.invalidURL
+            }
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw CloudUploadError.invalidResponse
+            }
+            if http.statusCode == 404 { throw CloudUploadError.listUnavailable }
+            guard http.statusCode == 200 else {
+                let body = String(data: responseData, encoding: .utf8) ?? ""
+                throw CloudUploadError.serverError(http.statusCode, body)
+            }
+            let page = try CloudUploadList.decode(responseData)
+            uploads += page.uploads
+            // Only forward, so a confused Worker can't loop the app.
+            offset = page.next.flatMap { $0 > current ? $0 : nil }
+        }
+        return uploads
+    }
+
     nonisolated private static func performDelete(uploadID: String, creds: CloudCredentials) async throws {
         let workerBase = normalizeWorkerURL(creds.workerURL)
         let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -416,6 +450,7 @@ enum CloudUploadError: LocalizedError {
     case networkError(Error)
     case serverError(Int, String)
     case invalidResponse
+    case listUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -429,6 +464,8 @@ enum CloudUploadError: LocalizedError {
             "Server error (\(code)): \(body)"
         case .invalidResponse:
             "Invalid response from server."
+        case .listUnavailable:
+            "This Worker can't list uploads yet. Update it to manage every upload from the Library."
         }
     }
 }
