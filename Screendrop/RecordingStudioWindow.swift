@@ -184,7 +184,6 @@ private struct RecordingStudioContent: View {
             }
         }
         .keyboardShortcut(.defaultAction)
-        .buttonStyle(.borderedProminent)
     }
 
     private var videoCropAspectBinding: Binding<CropAspectRatio> {
@@ -348,8 +347,6 @@ private struct RecordingStudioContent: View {
                 Label("Export", systemImage: "arrow.down.circle")
                     .labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.accentColor)
             .disabled(!model.isLoaded || model.shareState.isBusy)
         case .exporting(let progress):
             ExportProgressPill(progress: progress) {

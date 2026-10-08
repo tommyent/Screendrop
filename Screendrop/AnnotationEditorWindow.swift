@@ -221,7 +221,6 @@ struct AnnotationEditorWindow: View {
             Text("Crop").padding(.horizontal, 8)
         }
         .keyboardShortcut(.defaultAction)
-        .buttonStyle(.borderedProminent)
     }
 
     private var aspectBinding: Binding<CropAspectRatio> {
