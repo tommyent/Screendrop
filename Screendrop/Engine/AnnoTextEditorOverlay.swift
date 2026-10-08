@@ -125,23 +125,17 @@ final class AnnoTextEditorOverlay: NSTextView {
         var width = Swift.max(bounds.w * zoom, Double(fontSize) * 0.6 + insetX * 2)
         var height = Swift.max(bounds.h * zoom, Double(TextMeasure.lineHeight(viewProps)) + insetY * 2)
 
-        if props.autoSize, let container = textContainer, let layoutManager {
-            // Auto-sizing text must never wrap. Sizing the container from the shape's measured
-            // width wraps the moment a keystroke outgrows it - the shape only re-measures *after*
-            // the text view has already laid out. Worse, the shape is measured at the page font
-            // size while the overlay lays out at `fontSize * zoom`, and those don't scale exactly.
-            //
-            // So: lay out unconstrained to find the text's natural width, then set the container to
-            // exactly that. Nothing can wrap, and alignment still has a real width to work in.
-            container.size = CGSize(width: 1_000_000, height: CGFloat.greatestFiniteMagnitude)
-            layoutManager.ensureLayout(for: container)
-            let used = layoutManager.usedRect(for: container)
-            let natural = ceil(used.width)
+        if props.autoSize, let container = textContainer {
+            // Measure independently with the overlay's exact scaled font. During native edits,
+            // the attached layout manager can report the entire unbounded container as used,
+            // placing centered or end-aligned glyphs far outside the canvas.
+            let measured = NSAttributedString(string: string, attributes: attributes).size()
+            let natural = ceil(measured.width)
             // Match TextMeasure's one-point allowance in the natural-width container.
             container.size = CGSize(width: natural + 1, height: CGFloat.greatestFiniteMagnitude)
             // Leave room for the caret past the last glyph.
             width = Swift.max(width, Double(natural + fontSize * 0.5) + insetX * 2)
-            height = Swift.max(height, Double(ceil(used.height)) + insetY * 2)
+            height = Swift.max(height, Double(ceil(measured.height)) + insetY * 2)
         } else {
             textContainer?.size = CGSize(width: width - insetX * 2, height: CGFloat.greatestFiniteMagnitude)
         }
