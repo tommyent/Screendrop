@@ -11,6 +11,7 @@ struct CaptureLibraryView: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @AppStorage("captureLibrary.layout") private var layout: CaptureLibraryLayout = .grid
     @AppStorage("captureLibrary.inspectorVisible") private var inspectorVisible = true
+    @AppStorage("captureLibrary.tagsExpanded") private var tagsExpanded = true
     @AppStorage("captureLibrary.cardWidth") private var cardWidth = 220.0
     @AppStorage("captureLibrary.sort") private var savedSort: CaptureLibrarySort = .newest
 
@@ -87,7 +88,7 @@ struct CaptureLibraryView: View {
                     .tag(CaptureLibrarySidebarSelection.comments)
                 }
                 if !model.tags.isEmpty {
-                    Section("Tags") {
+                    Section("Tags", isExpanded: $tagsExpanded) {
                         ForEach(model.tags, id: \.self) { tag in
                             Label {
                                 HStack {
