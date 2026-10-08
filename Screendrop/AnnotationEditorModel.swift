@@ -321,6 +321,7 @@ final class AnnotationEditorModel {
         let bindings = self.bindings
         let backgroundSettings = self.backgroundSettings
         let hasContent = !shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
+            || committedSnapshot.baseImageURL != savedSnapshot?.baseImageURL
         // A pre-v2 sidecar has nothing the editor can remove: its marks are the image.
         let hadDocument = !isLegacyDocument && ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
 
