@@ -7,9 +7,11 @@
 //  recording - Studio decides later whether (and where) the captured chords
 //  appear in the preview and export.
 //
-//  Only special keys (Tab, Esc, arrows, F-keys, …) and modifier shortcuts
-//  (⌘C, ⌃⌥→, …) are recorded. Plain typing - including shifted letters -
-//  never lands in the sidecar.
+//  Capture is global across apps. Printable keys, Space, Delete, Return,
+//  Enter, Forward Delete and Clear require Command or Control held.
+//  Esc, Tab, arrows, F1–F20, Home/End and Page Up/Down are recorded with or
+//  without Shift, Option or Fn, including Command/Control shortcuts.
+//  Caps Lock and standalone modifier changes are never recorded.
 //
 
 import AppKit
@@ -38,7 +40,6 @@ final class RecordingKeystrokeRecorder {
     private var globalMonitor: Any?
     private var localMonitor: Any?
 
-    private var lastModifierFlags: NSEvent.ModifierFlags = []
     /// Same physical keystroke can arrive from both the CGEventTap and the
     /// NSEvent monitors. Drop duplicates within `duplicateEventWindow`.
     private var lastProcessedEventTimes: [Int: TimeInterval] = [:]
@@ -49,7 +50,6 @@ final class RecordingKeystrokeRecorder {
         events = []
         pauseStartedUptime = nil
         pauseIntervals = []
-        lastModifierFlags = []
         lastProcessedEventTimes = [:]
         isCapturing = true
 
@@ -60,7 +60,7 @@ final class RecordingKeystrokeRecorder {
         }
         installEventTap()
 
-        let mask: NSEvent.EventTypeMask = [.keyDown, .flagsChanged]
+        let mask: NSEvent.EventTypeMask = [.keyDown]
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
             self?.handle(event)
         }
@@ -91,7 +91,6 @@ final class RecordingKeystrokeRecorder {
         runLoopSource = nil
         globalMonitor = nil
         localMonitor = nil
-        lastModifierFlags = []
         lastProcessedEventTimes = [:]
     }
 
@@ -146,7 +145,6 @@ final class RecordingKeystrokeRecorder {
     /// few other keys NSEvent's global monitor doesn't reliably deliver.
     private func installEventTap() {
         let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
-            | (1 << CGEventType.flagsChanged.rawValue)
 
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
         let callback: CGEventTapCallBack = { _, type, cgEvent, refcon in
@@ -205,24 +203,16 @@ final class RecordingKeystrokeRecorder {
         lastProcessedEventTimes[dedupeKey] = uptime
 
         switch event.type {
-        case .flagsChanged:
-            let currentFlags = event.modifierFlags.intersection(Self.trackedModifierMask)
-            let changedFlags = currentFlags.symmetricDifference(lastModifierFlags)
-            lastModifierFlags = currentFlags
-
-            // Caps Lock toggles in/out - record the toggle as its own event.
-            if changedFlags.contains(.capsLock) {
-                record(modifiers: [], key: "⇪", uptime: uptime)
-            }
-
         case .keyDown:
             // Skip auto-repeats so a held key doesn't spam the timeline.
-            guard !event.isARepeat else { return }
+            guard !event.isARepeat, event.keyCode != 57 else { return }
 
             let modifiers = Self.effectiveModifiers(
                 rawFlags: event.modifierFlags,
                 triggerKeyCode: event.keyCode
             )
+            guard modifiers.contains(.command) || modifiers.contains(.control)
+                    || Self.navigationKeyCodes.contains(event.keyCode) else { return }
 
             if let special = Self.specialKeyLabel(for: event.keyCode) {
                 record(
@@ -233,12 +223,7 @@ final class RecordingKeystrokeRecorder {
                 return
             }
 
-            // Letters/numbers/punctuation are only meaningful as part of a
-            // shortcut. Shift alone is just typing a capital letter, so it
-            // never forms a recorded chord.
-            let chordModifiers = modifiers.subtracting(.shift)
-            guard !chordModifiers.isEmpty,
-                  let raw = event.charactersIgnoringModifiers,
+            guard let raw = event.charactersIgnoringModifiers,
                   let first = raw.first,
                   !first.isWhitespace,
                   !first.isNewline else {
@@ -265,26 +250,25 @@ final class RecordingKeystrokeRecorder {
 
     // MARK: - Key identification
 
-    private static let trackedModifierMask: NSEvent.ModifierFlags = [
-        .command, .shift, .option, .control, .function, .capsLock
-    ]
-
     private static let displayModifierMask: NSEvent.ModifierFlags = [
         .command, .shift, .option, .control, .function
     ]
 
-    /// Apple keyboards report these key codes with `.function` already set
-    /// in the event's modifier flags whether or not the user is actually
-    /// holding fn. Treat the bit as a hardware artefact for these keys.
-    private static let implicitFunctionKeyCodes: Set<UInt16> = [
+    private static let navigationKeyCodes: Set<UInt16> = [
+        48, 53, // Tab and Esc
         // Arrow cluster
         123, 124, 125, 126,
         // Navigation cluster
-        115, 116, 117, 119, 121,
-        // Function row F1–F19
+        115, 116, 119, 121,
+        // Function row F1–F20
         96, 97, 98, 99, 100, 101, 103, 105, 106, 107,
-        109, 111, 113, 118, 120, 122, 64, 79, 80
+        109, 111, 113, 118, 120, 122, 64, 79, 80, 90
     ]
+
+    /// Apple keyboards report these key codes with `.function` already set
+    /// whether or not fn is held. Forward Delete shares that hardware bit,
+    /// but still requires Command or Control to be recorded.
+    private static let implicitFunctionKeyCodes = navigationKeyCodes.subtracting([48, 53]).union([117])
 
     static func effectiveModifiers(
         rawFlags: NSEvent.ModifierFlags,
@@ -347,6 +331,7 @@ final class RecordingKeystrokeRecorder {
         case 64: return "F17"
         case 79: return "F18"
         case 80: return "F19"
+        case 90: return "F20"
         default: return nil
         }
     }
