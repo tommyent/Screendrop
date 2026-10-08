@@ -39,6 +39,7 @@ extension RecordingBarPresenter {
 
 struct RecordingPickerControls: View {
     @State private var sources = RecordingSourceCatalog.shared
+    @State private var cameraSelectionGeneration = UUID()
     @AppStorage(ScreendropPreferences.recordingCameraDeviceIDKey) private var cameraID = ""
     @AppStorage(ScreendropPreferences.recordingMicrophoneDeviceIDKey) private var microphoneID = ""
     @AppStorage(ScreendropPreferences.recordingSystemAudioKey) private var systemAudio = false
@@ -248,8 +249,7 @@ struct RecordingPickerControls: View {
     /// Backs out of the picker without recording: stop any warm camera
     /// preview so it doesn't keep running in the background.
     private func dismissPicker() {
-        RecordingBarPresenter.shared.hide()
-        Task { await CameraRecordingManager.shared.stopPreview() }
+        RecordingBarPresenter.shared.dismissPicker()
     }
 
     // MARK: Input toggles
@@ -258,8 +258,9 @@ struct RecordingPickerControls: View {
         if cameraID.isEmpty {
             selectCamera(RecordingDeviceCatalog.cameras().first?.uniqueID)
         } else {
+            cameraSelectionGeneration = UUID()
             cameraID = ""
-            Task { await CameraRecordingManager.shared.stopPreview() }
+            Task { if cameraID.isEmpty { await CameraRecordingManager.shared.stopPreview() } }
         }
     }
 
@@ -303,8 +304,9 @@ struct RecordingPickerControls: View {
                     if selected {
                         selectCamera(device.uniqueID)
                     } else {
+                        cameraSelectionGeneration = UUID()
                         cameraID = ""
-                        Task { await CameraRecordingManager.shared.stopPreview() }
+                        Task { if cameraID.isEmpty { await CameraRecordingManager.shared.stopPreview() } }
                     }
                 }
             )) {
@@ -398,8 +400,13 @@ struct RecordingPickerControls: View {
 
     private func selectCamera(_ deviceID: String?) {
         guard let deviceID else { return }
+        let selection = UUID(), picker = RecordingBarPresenter.shared.pickerGeneration
+        cameraSelectionGeneration = selection
         Task { @MainActor in
             let authorized = await RecordingInputAuthorization.ensureAccess(for: .camera)
+            guard selection == cameraSelectionGeneration,
+                  picker == RecordingBarPresenter.shared.pickerGeneration,
+                  RecordingBarPresenter.shared.mode == .picker else { return }
             cameraID = authorized ? deviceID : ""
             if authorized {
                 await warmCameraPreview()

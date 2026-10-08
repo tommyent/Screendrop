@@ -65,6 +65,10 @@ final class CameraRecordingManager {
     /// opposed to just warming the sensor for the floating preview.
     private(set) var isWriting = false
     private var activeDeviceID: String?
+    private var generation = 0
+    // Capture the predecessor before replacing this task, so teardown drains
+    // queued setup/writing and later starts wait for teardown to finish.
+    private var operation: Task<CameraRecordingResult?, Never>?
 
     private init() {}
 
@@ -78,40 +82,40 @@ final class CameraRecordingManager {
     @discardableResult
     func startPreview(deviceID: String, displayID: CGDirectDisplayID?) async -> Bool {
         guard !isWriting else { return true }
-        if isRunning {
-            if activeDeviceID == deviceID {
-                showPreview(displayID: displayID)
-                return true
-            }
-            await stopPreview()
-        }
-        guard let device = RecordingDeviceCatalog.camera(withID: deviceID) else { return false }
-
-        let authorized = await AVCaptureDevice.requestAccess(for: .video)
-        guard authorized else { return false }
-
-        do {
-            try await engine.startSession(device: device)
-        } catch {
-            print("Camera preview failed to start: \(error)")
-            return false
-        }
-
-        isRunning = true
-        activeDeviceID = deviceID
+        let ticket = warmSession(deviceID: deviceID)
+        _ = await operation?.value
+        guard ticket == generation else { return false }
+        guard isRunning else { await cancel(); return false }
         showPreview(displayID: displayID)
         return true
+    }
+
+    private func warmSession(deviceID: String) -> Int {
+        if activeDeviceID == deviceID { return generation }
+        if activeDeviceID != nil { endSession(finish: false) }
+        activeDeviceID = deviceID
+        let ticket = generation, previous = operation
+        operation = Task {
+            _ = await previous?.value
+            guard ticket == generation,
+                  let device = RecordingDeviceCatalog.camera(withID: deviceID) else { return nil }
+            let authorized = await AVCaptureDevice.requestAccess(for: .video)
+            guard ticket == generation, authorized else { return nil }
+            do { try await engine.startSession(device: device) }
+            catch { print("Camera preview failed to start: \(error)"); return nil }
+            guard ticket == generation else { return nil }
+            isRunning = true
+            return nil
+        }
+        return ticket
     }
 
     /// Tears down a warm preview that never turned into a recording - the
     /// camera was toggled off, or the pre-record picker was dismissed
     /// without starting. No-op while an actual recording is using the camera.
     func stopPreview() async {
-        guard isRunning, !isWriting else { return }
-        isRunning = false
-        activeDeviceID = nil
-        hidePreview()
-        await engine.stopSessionOnly()
+        guard !isWriting else { return }
+        _ = await endSession(finish: false).value
     }
 
     /// Starts writing camera frames to `outputURL`. Reuses an already-warm
@@ -123,25 +127,22 @@ final class CameraRecordingManager {
     /// screen recording itself.
     func start(outputURL: URL, deviceID: String, displayID: CGDirectDisplayID?) async -> Bool {
         guard !isWriting else { return true }
-
-        if !isRunning || activeDeviceID != deviceID {
-            guard await startPreview(deviceID: deviceID, displayID: displayID) else { return false }
-        } else {
+        let ticket = warmSession(deviceID: deviceID)
+        let previous = operation
+        operation = Task {
+            _ = await previous?.value
+            guard ticket == generation, isRunning else { return nil }
+            guard !isWriting else { return nil }
             showPreview(displayID: displayID)
+            do { try await engine.beginWriting(outputURL: outputURL) }
+            catch { print("Camera recording failed to start: \(error)"); return nil }
+            guard ticket == generation else { return nil }
+            isWriting = true
+            return nil
         }
-
-        do {
-            try await engine.beginWriting(outputURL: outputURL)
-        } catch {
-            print("Camera recording failed to start: \(error)")
-            isRunning = false
-            activeDeviceID = nil
-            hidePreview()
-            await engine.stopSessionOnly()
-            return false
-        }
-
-        isWriting = true
+        _ = await operation?.value
+        guard ticket == generation else { return false }
+        guard isWriting else { await cancel(); return false }
         return true
     }
 
@@ -156,21 +157,29 @@ final class CameraRecordingManager {
     }
 
     func stop() async -> CameraRecordingResult? {
-        guard isWriting else { return nil }
-        isRunning = false
-        isWriting = false
-        activeDeviceID = nil
-        hidePreview()
-        return await engine.finish()
+        await endSession(finish: true).value
     }
 
     func cancel() async {
-        guard isRunning else { return }
+        _ = await endSession(finish: false).value
+    }
+
+    @discardableResult
+    private func endSession(finish: Bool) -> Task<CameraRecordingResult?, Never> {
+        generation += 1
+        let previous = operation, shouldFinish = finish && isWriting
         isRunning = false
         isWriting = false
         activeDeviceID = nil
         hidePreview()
-        await engine.cancel()
+        let task = Task<CameraRecordingResult?, Never> {
+            _ = await previous?.value
+            if shouldFinish { return await engine.finish() }
+            await engine.cancel()
+            return nil
+        }
+        operation = task
+        return task
     }
 
     private func showPreview(displayID: CGDirectDisplayID?) {

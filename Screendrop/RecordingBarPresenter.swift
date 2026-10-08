@@ -26,6 +26,7 @@ final class RecordingBarPresenter {
     }
 
     private(set) var mode: Mode = .picker
+    private(set) var pickerGeneration = 0
 
     /// The bar's frame inside the panel's content view, reported by SwiftUI.
     /// The panel is deliberately much larger than the bar, so this is what
@@ -49,9 +50,16 @@ final class RecordingBarPresenter {
 
     func togglePicker() {
         if let panel, panel.isVisible, mode == .picker {
-            hide()
+            dismissPicker()
         } else {
             showPicker()
+        }
+    }
+
+    func dismissPicker() {
+        hide()
+        Task { [picker = pickerGeneration] in
+            if picker == pickerGeneration { await CameraRecordingManager.shared.stopPreview() }
         }
     }
 
@@ -61,6 +69,7 @@ final class RecordingBarPresenter {
             NSSound.beep()
             return
         }
+        pickerGeneration += 1
         let panel = panel ?? makePanel()
         PreviewWindowCaptureExclusion.shared.register(window: panel)
         Task {
@@ -101,6 +110,7 @@ final class RecordingBarPresenter {
     }
 
     func hide() {
+        pickerGeneration += 1
         if mode == .picker { CaptureCountdownPresenter.shared.cancel() }
         // `orderOut` sends no exit events, so a hover that's live when the
         // bar hides has to be ended by hand - it holds the pointing hand.
@@ -166,7 +176,10 @@ final class RecordingBarPresenter {
         let cameraID = ScreendropPreferences.recordingCameraDeviceID
         guard !cameraID.isEmpty else { return }
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: false)
+        let picker = pickerGeneration
         Task {
+            guard picker == pickerGeneration, mode == .picker,
+                  ScreendropPreferences.recordingCameraDeviceID == cameraID else { return }
             await CameraRecordingManager.shared.startPreview(deviceID: cameraID, displayID: displayID)
         }
     }
@@ -245,8 +258,7 @@ private final class RecordingBarPanel: NSPanel {
         // Escape backs out of picking a source; it must not abandon a
         // recording that's already running.
         guard RecordingBarPresenter.shared.mode == .picker else { return }
-        RecordingBarPresenter.shared.hide()
-        Task { await CameraRecordingManager.shared.stopPreview() }
+        RecordingBarPresenter.shared.dismissPicker()
     }
 }
 
