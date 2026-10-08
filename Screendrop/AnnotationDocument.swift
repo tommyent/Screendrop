@@ -45,9 +45,12 @@ struct AnnotationDocument: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         baseImageFileName = try container.decodeIfPresent(String.self, forKey: .baseImageFileName) ?? ""
-        background = try container.decode(StoredBackground.self, forKey: .background)
-        // A v1 document's annotations can't be expressed in the shape model, so only its
-        // background survives.
+        // A v1 document's annotations can't be expressed in the shape model. They and its
+        // background are already baked into the display image, which the editor opens as a
+        // flat picture, so reloading the background would apply it a second time.
+        background = version >= 2
+            ? try container.decode(StoredBackground.self, forKey: .background)
+            : StoredBackground(AnnotationBackgroundSettings())
         shapes = version >= 2 ? (try container.decodeIfPresent([AnnoShape].self, forKey: .shapes) ?? []) : []
         bindings = version >= 2 ? (try container.decodeIfPresent([ArrowBinding].self, forKey: .bindings) ?? []) : []
     }

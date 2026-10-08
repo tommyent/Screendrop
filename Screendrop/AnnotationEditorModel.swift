@@ -35,6 +35,9 @@ final class AnnotationEditorModel {
                 .map(AnnotationCanvasExpansion.pixelsPerPoint(of:)) ?? 1
         }
     }
+    /// The sidecar predates v2. Its marks exist only in the display image the
+    /// editor loaded as its base, so restoring `.base.png` would erase them.
+    private var isLegacyDocument = false
     var previewImage: NSImage?
     /// The preview image's pixels, for the canvas's redaction passes to sample.
     @ObservationIgnored private(set) var previewCGImage: CGImage? {
@@ -86,11 +89,14 @@ final class AnnotationEditorModel {
 
     // Text style defaults (applied to new text, updated when selecting existing text)
     var textFontFamily: AnnoFontFamily = .pro
+    /// A face outside the SF families, by PostScript name; nil is the family.
+    var textFontFace: String?
     var textFontSize: CGFloat = 48
     var textIsBold = true
     var textIsItalic = false
     var textIsUnderline = false
     var textAlignment: NSTextAlignment = .left
+    var textBoxStyle: TextBoxStyle = .plain
 
     /// A full snapshot of the editor's image state, captured before a crop so
     /// the operation can be undone/redone.
@@ -210,6 +216,7 @@ final class AnnotationEditorModel {
         sourceURL = url
 
         let document = ScreenshotHistoryStore.shared.loadEditDocument(for: url)
+        isLegacyDocument = document.map { $0.version < 2 } ?? false
         let candidateBaseURL = ScreenshotHistoryStore.baseImageURL(for: url)
         let renderSourceURL: URL
         // Background-only and crop-only edits still have a preserved base.
@@ -309,7 +316,8 @@ final class AnnotationEditorModel {
         let bindings = self.bindings
         let backgroundSettings = self.backgroundSettings
         let hasContent = !shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
-        let hadDocument = ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
+        // A pre-v2 sidecar has nothing the editor can remove: its marks are the image.
+        let hadDocument = !isLegacyDocument && ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
 
         // Nothing drawn and nothing previously saved: there is no work to lose.
         guard hasContent || hadDocument else {
@@ -336,6 +344,8 @@ final class AnnotationEditorModel {
                 document: document
             )
             self.baseImageURL = ScreenshotHistoryStore.baseImageURL(for: resultURL)
+            // The sidecar is v2 now, and its base is the composite the old marks live in.
+            self.isLegacyDocument = false
         } else {
             // All annotations were cleared on a previously-edited image:
             // restore the untouched original.
@@ -520,11 +530,13 @@ final class AnnotationEditorModel {
         }
         if let props = shape.textProps {
             textFontFamily = props.fontFamily
+            textFontFace = props.fontFace
             textFontSize = CGFloat(props.fontSize)
             textIsBold = props.isBold
             textIsItalic = props.isItalic
             textIsUnderline = props.isUnderline
             textAlignment = props.align.nsTextAlignment
+            textBoxStyle = props.boxStyle ?? .plain
         }
     }
 
@@ -659,22 +671,27 @@ final class AnnotationEditorModel {
         strokeWidth = CGFloat(preset.strokeWidth)
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
-        textFontSize = CGFloat(preset.textFontSize)
+        textFontFace = preset.textFontFace
+        // Clamped here too, so a preset saved out of range by an older build heals on open.
+        textFontSize = AnnotationTextMetrics.clampedFontSize(CGFloat(preset.textFontSize))
         textIsBold = preset.textIsBold
         textIsItalic = preset.textIsItalic
         textIsUnderline = preset.textIsUnderline
         textAlignment = preset.textAlignment
+        textBoxStyle = preset.textBoxStyle
 
         engine.tool = selectedTool
         engine.currentSwatch = selectedSwatch
         engine.currentStrokeWidth = Double(strokeWidth)
         engine.currentRedactionDensity = Double(redactionDensity)
         engine.currentFontFamily = textFontFamily
+        engine.currentFontFace = textFontFace
         engine.currentTextFontSize = Double(textFontSize)
         engine.currentTextIsBold = textIsBold
         engine.currentTextIsItalic = textIsItalic
         engine.currentTextIsUnderline = textIsUnderline
         engine.currentTextAlign = TextAlign(textAlignment)
+        engine.currentTextBoxStyle = textBoxStyle
     }
 
     func saveAnnotationPreset() {
@@ -686,11 +703,13 @@ final class AnnotationEditorModel {
             strokeWidth: Double(strokeWidth),
             redactionDensity: Double(redactionDensity),
             textFontName: textFontFamily.rawValue,
+            textFontFace: textFontFace,
             textFontSize: Double(textFontSize),
             textIsBold: textIsBold,
             textIsItalic: textIsItalic,
             textIsUnderline: textIsUnderline,
-            textAlignmentRawValue: textAlignment.rawValue
+            textAlignmentRawValue: textAlignment.rawValue,
+            textBoxStyleRawValue: textBoxStyle.rawValue
         )
         AnnotationPresetStore.save(preset)
     }

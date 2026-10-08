@@ -37,11 +37,17 @@ struct AnnotationStylePreset: Codable, Equatable {
     var strokeWidth: Double = 4
     var redactionDensity: Double = 0.55
     var textFontName = AnnotationTextMetrics.defaultFontName
+    /// Optional for the same reason as the box fields below. `textFontName` stays an SF family, so
+    /// older builds read a face as SF Pro.
+    var textFontFace: String?
     var textFontSize: Double = 48
     var textIsBold = true
     var textIsItalic = false
     var textIsUnderline = false
     var textAlignmentRawValue = NSTextAlignment.left.rawValue
+    // Optional, unlike the fields above: synthesized decoding requires every non-optional key, so
+    // a required new field would fail every preset saved before it and silently reset them all.
+    var textBoxStyleRawValue: String?
 
     var selectedTool: AnnotationTool {
         AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle
@@ -57,6 +63,10 @@ struct AnnotationStylePreset: Codable, Equatable {
 
     var textAlignment: NSTextAlignment {
         NSTextAlignment(rawValue: textAlignmentRawValue) ?? .left
+    }
+
+    var textBoxStyle: TextBoxStyle {
+        textBoxStyleRawValue.flatMap(TextBoxStyle.init(rawValue:)) ?? .plain
     }
 }
 

@@ -46,6 +46,9 @@ struct CaptureLibraryCollection: NSViewRepresentable {
         collection.contextMenuProvider = { [weak coordinator = context.coordinator] event in
             coordinator?.menu(for: event)
         }
+        collection.mouseSelectionHandler = { [weak coordinator = context.coordinator] event in
+            coordinator?.handleMouseSelection(event)
+        }
         scrollView.documentView = collection
         context.coordinator.collection = collection
         return scrollView
@@ -81,6 +84,8 @@ struct CaptureLibraryCollection: NSViewRepresentable {
         var updating = false
         var initialLoad = true
         var indices: [String: Int] = [:]
+        private var selectionAnchorID: String?
+        private var pendingRange: (anchor: String, end: String)?
 
         init(_ parent: CaptureLibraryCollection) { self.parent = parent }
 
@@ -119,6 +124,45 @@ struct CaptureLibraryCollection: NSViewRepresentable {
             parent.selection = Set(collection.selectionIndexPaths.compactMap {
                 parent.items.indices.contains($0.item) ? parent.items[$0.item].id : nil
             })
+            if parent.selection.count == 1 { selectionAnchorID = parent.selection.first }
+        }
+
+        func handleMouseSelection(_ event: NSEvent) {
+            guard let collection else { return }
+            let path = collection.indexPathForItem(at: collection.convert(event.locationInWindow, from: nil))
+            if event.type == .leftMouseDown {
+                pendingRange = nil
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                guard flags.contains(.shift), flags.isDisjoint(with: [.command, .control, .option]),
+                      let path, parent.items.indices.contains(path.item) else { return }
+                let anchor = selectionAnchorID.flatMap { indices[$0] }
+                    .map { IndexPath(item: $0, section: 0) }
+                    .flatMap { collection.selectionIndexPaths.contains($0) ? $0 : nil }
+                    ?? collection.selectionIndexPaths.min()
+                if let anchor, parent.items.indices.contains(anchor.item) {
+                    pendingRange = (parent.items[anchor.item].id, parent.items[path.item].id)
+                }
+            } else if event.type == .leftMouseUp {
+                let range = pendingRange
+                pendingRange = nil
+                guard let path, parent.items.indices.contains(path.item) else {
+                    selectionAnchorID = nil
+                    return
+                }
+                let clickedID = parent.items[path.item].id
+                guard let range else {
+                    selectionAnchorID = collection.selectionIndexPaths.contains(path) ? clickedID : nil
+                    return
+                }
+                // Keep native click/keyboard focus, but select a linear range in
+                // display order. Resolve IDs again in case a refresh reordered items.
+                guard clickedID == range.end, let start = indices[range.anchor], let end = indices[range.end] else { return }
+                collection.selectionIndexPaths = Set((min(start, end)...max(start, end)).map {
+                    IndexPath(item: $0, section: 0)
+                })
+                selectionAnchorID = range.anchor
+                selectionChanged()
+            }
         }
 
         func menu(for event: NSEvent) -> NSMenu? {
@@ -153,6 +197,7 @@ struct CaptureLibraryCollection: NSViewRepresentable {
 final class LibraryCollectionView: NSCollectionView {
     var command: ((CaptureLibraryAction) -> Void)?
     var contextMenuProvider: ((NSEvent) -> NSMenu?)?
+    var mouseSelectionHandler: ((NSEvent) -> Void)?
 
     func configureLayout(_ displayLayout: CaptureLibraryLayout) {
         let flow = LibraryCollectionLayout()
@@ -176,6 +221,7 @@ final class LibraryCollectionView: NSCollectionView {
         pendingRename = nil
         let clicked = indexPathForItem(at: convert(event.locationInWindow, from: nil))
         let wasOnlySelection = clicked.map { selectionIndexPaths == [$0] } ?? false
+        mouseSelectionHandler?(event)
         super.mouseDown(with: event)
         if event.clickCount == 2 {
             guard let clicked else { return }
@@ -197,6 +243,11 @@ final class LibraryCollectionView: NSCollectionView {
         }
         pendingRename = rename
         DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: rename)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        mouseSelectionHandler?(event)
     }
 
     override func keyDown(with event: NSEvent) {

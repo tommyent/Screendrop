@@ -113,12 +113,23 @@ enum TextAlign: String, CaseIterable, Codable {
     }
 }
 
+/// Whether text is drawn on its own or on a filled box.
+enum TextBoxStyle: String, CaseIterable, Codable {
+    case plain
+    /// One rounded box around the whole text block, filled with the text's swatch.
+    case box
+}
+
 struct TextProps: Codable, Equatable, Hashable {
     var text: String = ""
+    /// The text's colour, or the box's when it has one.
     var swatch: AnnotationSwatch = .red
     /// Point size in page (image pixel) units.
     var fontSize: Double = 48
     var fontFamily: AnnoFontFamily = .pro
+    /// A face outside the SF families, by PostScript name (`AnnoFontFace`). Drawn instead of
+    /// `fontFamily` where installed; missing means the family.
+    var fontFace: String?
     var isBold = true
     var isItalic = false
     var isUnderline = false
@@ -128,6 +139,11 @@ struct TextProps: Codable, Equatable, Hashable {
     /// While true the box is exactly as wide as its text. Dragging a side handle turns it off,
     /// which is how text switches from growing to wrapping.
     var autoSize = true
+    /// Optional so text saved before boxes existed still decodes: synthesized decoding requires
+    /// every non-optional key. Missing means plain.
+    var boxStyle: TextBoxStyle?
+
+    var hasBox: Bool { boxStyle == .box }
 }
 
 enum RedactionKind: String, CaseIterable, Codable {

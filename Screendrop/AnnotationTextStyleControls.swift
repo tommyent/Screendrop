@@ -23,31 +23,50 @@ struct AnnotationTextStyleControls: View {
             HStack(spacing: 6) {
                 fontSizeStepper
 
-                Spacer()
+                Spacer(minLength: 0)
 
-                InspectorSegmented(
-                    options: TextStyleSegment.allCases,
-                    isSelected: { segment in
-                        switch segment {
-                        case .bold: model.selectedTextIsBold
-                        case .italic: model.selectedTextIsItalic
-                        case .underline: model.selectedTextIsUnderline
+                HStack(spacing: 4) {
+                    InspectorSegmented(
+                        options: TextBoxStyle.allCases,
+                        isSelected: { $0 == model.selectedTextBoxStyle },
+                        onTap: { model.selectedTextBoxStyle = $0 },
+                        label: { style in
+                            TextBoxStyleIcon(style: style)
+                                .help(style.title)
+                                .accessibilityLabel(style.title)
                         }
-                    },
-                    onTap: { segment in
-                        switch segment {
-                        case .bold: model.selectedTextIsBold.toggle()
-                        case .italic: model.selectedTextIsItalic.toggle()
-                        case .underline: model.selectedTextIsUnderline.toggle()
+                    )
+                    .frame(width: Self.segmentWidth * 2 + InspectorMetrics.controlInset * 2)
+
+                    InspectorSegmented(
+                        options: TextStyleSegment.allCases,
+                        isSelected: { segment in
+                            switch segment {
+                            case .bold: model.selectedTextIsBold
+                            case .italic: model.selectedTextIsItalic
+                            case .underline: model.selectedTextIsUnderline
+                            }
+                        },
+                        onTap: { segment in
+                            switch segment {
+                            case .bold: model.selectedTextIsBold.toggle()
+                            case .italic: model.selectedTextIsItalic.toggle()
+                            case .underline: model.selectedTextIsUnderline.toggle()
+                            }
+                        },
+                        label: { segment in
+                            // A named face has no bold or italic of its own, and none is
+                            // synthesized; the setting is kept for when the font changes back.
+                            let isInert = model.selectedTextFontFace != nil && segment != .underline
+                            Text(segment.title)
+                                .font(segment.font)
+                                .underline(segment == .underline)
+                                .opacity(isInert ? 0.35 : 1)
+                                .help(isInert ? "Not available in this font" : "")
                         }
-                    },
-                    label: { segment in
-                        Text(segment.title)
-                            .font(segment.font)
-                            .underline(segment == .underline)
-                    }
-                )
-                .frame(width: 90)
+                    )
+                    .frame(width: Self.segmentWidth * 3 + InspectorMetrics.controlInset * 2)
+                }
             }
 
             InspectorSegmented(
@@ -80,22 +99,30 @@ struct AnnotationTextStyleControls: View {
         }
     }
 
+    /// One segment of the plain/box toggle and of B/I/U, so the two read as one row of equal
+    /// buttons. Sized so stepper, toggle and B/I/U fit the inspector's narrowest column (260 pt,
+    /// 236 pt of content): measured at 234 pt.
+    private static let segmentWidth: CGFloat = 26
+
     private var fontFamilyMenu: some View {
         Menu {
             ForEach(AnnoFontFamily.allCases) { family in
-                Button {
-                    model.selectedTextFontFamily = family
-                } label: {
-                    if model.selectedTextFontFamily == family {
-                        Label(family.title, systemImage: "checkmark")
-                    } else {
-                        Text(family.title)
-                    }
+                fontMenuItem(
+                    family.title,
+                    isSelected: model.selectedTextFontFace == nil && model.selectedTextFontFamily == family
+                ) {
+                    model.setTextFont(family)
                 }
+            }
+            fontMenuItem(
+                AnnoFontFace.title(AnnoFontFace.markerFelt),
+                isSelected: model.selectedTextFontFace == AnnoFontFace.markerFelt
+            ) {
+                model.setTextFont(.pro, face: AnnoFontFace.markerFelt)
             }
         } label: {
             HStack(spacing: 6) {
-                Text(model.selectedTextFontFamily.title)
+                Text(model.selectedTextFontFace.map { AnnoFontFace.title($0) } ?? model.selectedTextFontFamily.title)
                     .font(.inspectorValue)
                     .foregroundStyle(.primary.opacity(0.85))
                     .lineLimit(1)
@@ -112,6 +139,16 @@ struct AnnotationTextStyleControls: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .help("Font family")
+    }
+
+    private func fontMenuItem(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if isSelected {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
     }
 
     private var fontSizeStepper: some View {
@@ -159,13 +196,13 @@ struct AnnotationTextStyleControls: View {
 
     private func commitFontSizeText() {
         let trimmedText = fontSizeText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let size = Double(trimmedText) else {
+        guard let size = Double(trimmedText), size.isFinite else {
             syncFontSizeText()
             return
         }
 
-        let clampedSize = max(size.rounded(), Double(AnnotationTextMetrics.minimumFontSize))
-        model.selectedTextFontSize = CGFloat(clampedSize)
+        let clampedSize = AnnotationTextMetrics.clampedFontSize(CGFloat(size.rounded()))
+        model.selectedTextFontSize = clampedSize
         fontSizeText = String(Int(clampedSize))
     }
 
@@ -174,6 +211,38 @@ struct AnnotationTextStyleControls: View {
         let size = max(model.selectedTextFontSize + delta, AnnotationTextMetrics.minimumFontSize)
         model.selectedTextFontSize = size
         syncFontSizeText()
+    }
+}
+
+private extension TextBoxStyle {
+    var title: String {
+        switch self {
+        case .plain: "Plain text"
+        case .box: "Text on a box"
+        }
+    }
+}
+
+/// A "T" on its own, or knocked out of a filled square, in the segment's own colour so it follows
+/// the selected and hover states like the other segments.
+private struct TextBoxStyleIcon: View {
+    let style: TextBoxStyle
+
+    var body: some View {
+        switch style {
+        case .plain:
+            Text("T")
+                .font(.system(size: 12, weight: .bold))
+        case .box:
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .frame(width: 14, height: 14)
+                .overlay {
+                    Text("T")
+                        .font(.system(size: 10, weight: .bold))
+                        .blendMode(.destinationOut)
+                }
+                .compositingGroup()
+        }
     }
 }
 

@@ -16,6 +16,15 @@ final class AnnoTextEditorOverlay: NSTextView {
     /// Which shape this caret belongs to, so the canvas can tell a retarget from a no-op.
     var editedShapeId: AnnoShapeID? { shapeId }
 
+    /// The box behind the text while it's edited, in view points; nil for plain text.
+    private var boxFill: NSColor? {
+        didSet { if boxFill != oldValue { needsDisplay = true } }
+    }
+    private var boxCornerRadius: CGFloat = 0
+    /// The shape's own box in view points. Not the view's bounds: those leave room for the caret
+    /// past the last glyph, and the box would shrink by that much when typing ends.
+    private var boxSize: CGSize = .zero
+
     /// `NSTextView.init(frame:)` is a convenience initializer that builds the text network and then
     /// routes through this designated one, so a subclass has to implement it - otherwise the
     /// runtime traps on an unimplemented initializer.
@@ -77,10 +86,11 @@ final class AnnoTextEditorOverlay: NSTextView {
         paragraph.maximumLineHeight = TextMeasure.lineHeight(viewProps)
         paragraph.lineBreakMode = .byWordWrapping
 
+        let ink = TextMeasure.ink(props).nsColor
         var attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .paragraphStyle: paragraph,
-            .foregroundColor: props.swatch.nsColor,
+            .foregroundColor: ink,
         ]
         if props.isUnderline {
             attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
@@ -89,19 +99,30 @@ final class AnnoTextEditorOverlay: NSTextView {
         typingAttributes = attributes
         defaultParagraphStyle = paragraph
         self.font = font
-        textColor = props.swatch.nsColor
+        textColor = ink
         alignment = paragraph.alignment
-        insertionPointColor = props.swatch.nsColor
+        insertionPointColor = ink
         if let storage = textStorage, storage.length > 0 {
             storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
         }
 
-        // The shape's box in view space. The frame origin is the shape's local origin, which is
-        // also what `frameRotation` turns about.
+        // A box draws behind the text (see `draw`) and pads it on every side; plain text has no
+        // inset, so this is a no-op for it.
+        let pageInset = TextMeasure.boxInsets(props)
+        let insetX = pageInset.x * zoom
+        let insetY = pageInset.y * zoom
+        textContainerInset = NSSize(width: insetX, height: insetY)
+        boxFill = props.hasBox ? props.swatch.nsColor : nil
+        boxCornerRadius = TextMeasure.boxCornerRadius(props) * zoom
+
+        // Everything the shape draws, in view space. The frame origin is the shape's top-left
+        // corner - its local origin, or the box's corner - placed where the shape's rotation puts
+        // it, so `frameRotation` turning about that corner matches the drawn shape.
         let bounds = editor.document.geometry(shape).bounds
-        let origin = editor.pageToScreen(Vec(shape.x, shape.y))
-        var width = Swift.max(bounds.w * zoom, Double(fontSize) * 0.6)
-        var height = Swift.max(bounds.h * zoom, Double(TextMeasure.lineHeight(viewProps)))
+        boxSize = CGSize(width: bounds.w * zoom, height: bounds.h * zoom)
+        let origin = editor.pageToScreen(shape.pageTransform.applyToPoint(Vec(bounds.x, bounds.y)))
+        var width = Swift.max(bounds.w * zoom, Double(fontSize) * 0.6 + insetX * 2)
+        var height = Swift.max(bounds.h * zoom, Double(TextMeasure.lineHeight(viewProps)) + insetY * 2)
 
         if props.autoSize, let container = textContainer, let layoutManager {
             // Auto-sizing text must never wrap. Sizing the container from the shape's measured
@@ -117,10 +138,10 @@ final class AnnoTextEditorOverlay: NSTextView {
             let natural = ceil(used.width)
             container.size = CGSize(width: natural + 2, height: CGFloat.greatestFiniteMagnitude)
             // Leave room for the caret past the last glyph.
-            width = Swift.max(width, Double(natural + fontSize * 0.5))
-            height = Swift.max(height, Double(ceil(used.height)))
+            width = Swift.max(width, Double(natural + fontSize * 0.5) + insetX * 2)
+            height = Swift.max(height, Double(ceil(used.height)) + insetY * 2)
         } else {
-            textContainer?.size = CGSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+            textContainer?.size = CGSize(width: width - insetX * 2, height: CGFloat.greatestFiniteMagnitude)
         }
 
         frameRotation = 0
@@ -144,6 +165,15 @@ final class AnnoTextEditorOverlay: NSTextView {
     /// exported PNG, which is the side that has to be right.
     override func draw(_ dirtyRect: NSRect) {
         NSGraphicsContext.current?.cgContext.setShouldSmoothFonts(false)
+        // The canvas skips the shape while it's edited, so the box has to come from here.
+        if let boxFill {
+            boxFill.setFill()
+            NSBezierPath(
+                roundedRect: CGRect(origin: .zero, size: boxSize),
+                xRadius: boxCornerRadius,
+                yRadius: boxCornerRadius
+            ).fill()
+        }
         super.draw(dirtyRect)
     }
 

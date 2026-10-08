@@ -19,7 +19,7 @@ struct AnnotationEditorWindow: View {
     @State private var isFinishing = false
     @State private var isSaving = false
     @State private var isUploading = false
-    @State private var closeGuard = EditorCloseGuard()
+    @State private var closeGuard = EditorCloseGuard(asksBeforeQuit: true)
     @State private var didCopyLink = false
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
@@ -479,7 +479,7 @@ struct AnnotationEditorWindow: View {
         closeGuard.projectName = { [weak model] in model?.sourceURL?.lastPathComponent ?? "this screenshot" }
         // Capture only the model, not this view and its @State close guard.
         closeGuard.onDecision = { [weak model] decision, done in
-            guard let model else { return }
+            guard let model else { return done(true) }
             switch decision {
             case .save:
                 Task {
@@ -491,18 +491,19 @@ struct AnnotationEditorWindow: View {
                                 historyURL: resultURL
                             )
                         }
-                        guard !model.hasUnsavedChanges else { return }
+                        guard !model.hasUnsavedChanges else { return done(false) }
                         model.releaseEditorResources()
-                        done()
+                        done(true)
                     } catch {
                         model.errorMessage = "Failed to save annotation: \(error.localizedDescription)"
+                        done(false)
                     }
                 }
             case .discard:
                 model.releaseEditorResources()
-                done()
+                done(true)
             case .delete, .cancel:
-                break
+                done(false)
             }
         }
     }

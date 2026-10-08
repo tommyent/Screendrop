@@ -293,11 +293,11 @@ final class ScreenshotHistoryStore {
         }
         let baseDestination = Self.baseImageURL(for: displayURL)
         var replacements: [(source: URL, destination: URL)] = []
+        // The base is always the image these shapes were drawn on. When that is the display
+        // image, an existing base belongs to something else (a pre-v2 sidecar's clean
+        // original), and keeping it would drop the marks baked into the display image.
         if baseURL.standardizedFileURL != baseDestination.standardizedFileURL {
-            if baseURL.standardizedFileURL != displayURL.standardizedFileURL
-                || !FileManager.default.fileExists(atPath: baseDestination.path) {
-                replacements.append((baseURL, baseDestination))
-            }
+            replacements.append((baseURL, baseDestination))
         }
         var document = document
         document.baseImageFileName = baseDestination.lastPathComponent

@@ -42,8 +42,9 @@ final class CloudUploader: NSObject {
     /// Set of item IDs whose upload failed (cleared after shake animation).
     private(set) var failedItemIDs: Set<UUID> = []
 
-    /// Active upload tasks keyed by item ID (for cancellation).
-    private var activeTasks: [UUID: Task<CloudUploadResult, any Error>] = [:]
+    /// One cancellable operation covers preparation and transport. Its ID
+    /// keeps a cancelled completion from clearing a newer retry's state.
+    private var activeTasks: [UUID: (id: UUID, task: Task<(CloudUploadResult, URL, Data?), any Error>)] = [:]
 
     private override init() {
         super.init()
@@ -59,65 +60,54 @@ final class CloudUploader: NSObject {
         title: String? = nil,
         socialEnabled: Bool = true
     ) async throws -> CloudUploadResult {
+        try Task.checkCancellation()
         guard isConfigured else {
             throw CloudUploadError.notConfigured
         }
+        let creds = CloudCredentialStore.shared.snapshot()
 
         // The Dock mirrors the whole span - the deliverable render (when
         // one is needed) plus the upload itself.
         let dockProgressID = DockExportProgressCoordinator.shared.start()
+        let operationID = UUID()
+        activeTasks[itemID]?.task.cancel()
+        uploadingItems.insert(itemID)
+        uploadProgress[itemID] = 0
+        failedItemIDs.remove(itemID)
 
-        // A session recording must upload what the user sees, not the raw
-        // screen master: render the saved project into the flattened
-        // deliverable first (cached until the edits change).
-        var fileURL = fileURL
-        let sessionDirectory = fileURL.deletingLastPathComponent()
-        if RecordingSession.isSessionDirectory(sessionDirectory) {
-            uploadingItems.insert(itemID)
-            uploadProgress[itemID] = 0
-            do {
+        let uploadTask = Task { [weak self] () throws -> (CloudUploadResult, URL, Data?) in
+            guard let self else { throw CancellationError() }
+            try Task.checkCancellation()
+
+            // The task is registered before this render can suspend.
+            var fileURL = fileURL
+            let sessionDirectory = fileURL.deletingLastPathComponent()
+            if RecordingSession.isSessionDirectory(sessionDirectory) {
                 fileURL = try await RecordingSessionRenderer.ensureDeliverable(
                     for: RecordingSession(directoryURL: sessionDirectory)
                 )
-            } catch {
-                DockExportProgressCoordinator.shared.finish(dockProgressID)
-                uploadingItems.remove(itemID)
-                uploadProgress.removeValue(forKey: itemID)
-                failedItemIDs.insert(itemID)
-                throw error
             }
-        }
+            try Task.checkCancellation()
 
-        let creds = CloudCredentialStore.shared.snapshot()
-        let fileName = fileURL.lastPathComponent
-        let fileData: Data
-        do {
-            fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-        } catch {
-            DockExportProgressCoordinator.shared.finish(dockProgressID)
-            uploadingItems.remove(itemID)
-            uploadProgress.removeValue(forKey: itemID)
-            failedItemIDs.insert(itemID)
-            throw error
-        }
-        let mimeType = mimeTypeForFile(fileURL)
-        let isVideo = mimeType.hasPrefix("video/")
-        let dimensions: (width: Int, height: Int)?
-        let duration: Double?
+            let fileName = fileURL.lastPathComponent
+            let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+            let mimeType = self.mimeTypeForFile(fileURL)
+            let isVideo = mimeType.hasPrefix("video/")
+            let transcriptData = isVideo && RecordingSession.isSessionDirectory(sessionDirectory)
+                ? CloudSidecarUploader.transcriptData(sessionDirectory: sessionDirectory, uploadedFileURL: fileURL)
+                : nil
+            let dimensions: (width: Int, height: Int)?
+            let duration: Double?
 
-        if isVideo {
-            let videoMeta = await videoDimensions(at: fileURL)
-            dimensions = videoMeta.dimensions
-            duration = videoMeta.duration
-        } else {
-            dimensions = imageDimensions(at: fileURL)
-            duration = nil
-        }
+            if isVideo {
+                let videoMeta = await self.videoDimensions(at: fileURL)
+                dimensions = videoMeta.dimensions
+                duration = videoMeta.duration
+            } else {
+                dimensions = self.imageDimensions(at: fileURL)
+                duration = nil
+            }
 
-        uploadingItems.insert(itemID)
-        uploadProgress[itemID] = 0
-
-        let uploadTask = Task { [weak self] () throws -> CloudUploadResult in
             let result = try await Self.streamUpload(
                 data: fileData,
                 filename: fileName,
@@ -131,6 +121,7 @@ final class CloudUploader: NSObject {
                 creds: creds,
                 progress: { [weak self] fraction in
                     Task { @MainActor [weak self] in
+                        guard self?.activeTasks[itemID]?.id == operationID else { return }
                         self?.uploadProgress[itemID] = fraction
                         DockExportProgressCoordinator.shared.update(
                             dockProgressID,
@@ -140,34 +131,47 @@ final class CloudUploader: NSObject {
                 }
             )
 
-            return result
+            return (result, fileURL, transcriptData)
         }
 
-        activeTasks[itemID] = uploadTask
+        activeTasks[itemID] = (operationID, uploadTask)
+        defer {
+            DockExportProgressCoordinator.shared.finish(dockProgressID)
+            if activeTasks[itemID]?.id == operationID {
+                activeTasks.removeValue(forKey: itemID)
+                uploadingItems.remove(itemID)
+                uploadProgress.removeValue(forKey: itemID)
+            }
+        }
 
         do {
-            let result = try await uploadTask.value
-            DockExportProgressCoordinator.shared.finish(dockProgressID)
-            activeTasks.removeValue(forKey: itemID)
-            uploadingItems.remove(itemID)
-            uploadProgress.removeValue(forKey: itemID)
+            let (result, uploadedFileURL, transcriptData) = try await withTaskCancellationHandler {
+                try await uploadTask.value
+            } onCancel: {
+                uploadTask.cancel()
+            }
+            guard !Task.isCancelled, !uploadTask.isCancelled,
+                  activeTasks[itemID]?.id == operationID else {
+                // A response in hand means the server accepted the upload.
+                // Cleanup must outlive this cancelled task and use its worker.
+                Task.detached(priority: .utility) {
+                    try? await Self.performDelete(uploadID: result.id, creds: creds)
+                }
+                throw CancellationError()
+            }
             uploadedURLs[itemID] = result.url
-            if isVideo {
-                scheduleSidecarUpload(uploadID: result.id, fileURL: fileURL, title: title, creds: creds)
+            if mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
+                scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, creds: creds)
             }
             return result
-        } catch is CancellationError {
-            DockExportProgressCoordinator.shared.finish(dockProgressID)
-            activeTasks.removeValue(forKey: itemID)
-            uploadingItems.remove(itemID)
-            uploadProgress.removeValue(forKey: itemID)
-            throw CancellationError()
         } catch {
-            DockExportProgressCoordinator.shared.finish(dockProgressID)
-            activeTasks.removeValue(forKey: itemID)
-            uploadingItems.remove(itemID)
-            uploadProgress.removeValue(forKey: itemID)
-            failedItemIDs.insert(itemID)
+            if uploadTask.isCancelled || Task.isCancelled || error is CancellationError
+                || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
+            if activeTasks[itemID]?.id == operationID {
+                failedItemIDs.insert(itemID)
+            }
             throw error
         }
     }
@@ -175,17 +179,16 @@ final class CloudUploader: NSObject {
     /// Ships the share-page extras (poster, title, transcript) after the
     /// video itself is up. Best-effort and detached: the share link is
     /// already usable, sidecars enrich the page when they land.
-    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, title: String?, creds: CloudCredentials) {
+    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, transcriptData: Data?, title: String?, creds: CloudCredentials) {
         let item = ScreenshotHistoryStore.shared.items.first {
             $0.url.standardizedFileURL == fileURL.standardizedFileURL
         }
-        let sessionDirectory = item?.recordingSession?.directoryURL
         let createdAt = item?.createdAt ?? Date()
         Task.detached(priority: .utility) {
             await CloudSidecarUploader.uploadVideoSidecars(
                 uploadID: uploadID,
                 uploadedFileURL: fileURL,
-                sessionDirectory: sessionDirectory,
+                transcriptData: transcriptData,
                 createdAt: createdAt,
                 customTitle: title,
                 creds: creds
@@ -194,15 +197,14 @@ final class CloudUploader: NSObject {
     }
 
     func cancelUpload(for itemID: UUID) {
-        activeTasks[itemID]?.cancel()
+        activeTasks[itemID]?.task.cancel()
         activeTasks.removeValue(forKey: itemID)
         uploadingItems.remove(itemID)
         uploadProgress.removeValue(forKey: itemID)
     }
 
     func clearUploadState(for itemID: UUID) {
-        uploadingItems.remove(itemID)
-        uploadProgress.removeValue(forKey: itemID)
+        cancelUpload(for: itemID)
         uploadedURLs.removeValue(forKey: itemID)
         failedItemIDs.remove(itemID)
     }
@@ -296,6 +298,7 @@ final class CloudUploader: NSObject {
             progress?(min(1, Double(sent) / Double(expected)))
         }
 
+        try Task.checkCancellation()
         let (responseData, response) = try await URLSession.shared.upload(
             for: request,
             from: data,

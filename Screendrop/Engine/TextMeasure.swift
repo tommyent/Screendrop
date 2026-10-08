@@ -20,6 +20,24 @@ enum AnnoFontFamily: String, CaseIterable, Codable, Identifiable {
         case .rounded: "SF Rounded"
         }
     }
+
+    /// An unknown family, from a newer build, reads as SF Pro. The synthesized decode would throw
+    /// and take the whole sidecar with it.
+    init(from decoder: Decoder) throws {
+        self = Self(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .pro
+    }
+}
+
+/// Faces offered beyond the SF families. A shape stores one by PostScript name in
+/// `TextProps.fontFace` and keeps `fontFamily` at SF Pro, so builds that predate the face still
+/// open the sidecar, and draw SF Pro.
+enum AnnoFontFace {
+    /// The Wide cut: the family name alone resolves to Thin.
+    static let markerFelt = "MarkerFelt-Wide"
+
+    static func title(_ name: String) -> String {
+        name == markerFelt ? "Marker Felt" : name
+    }
 }
 
 /// Lays a text shape out and turns it into glyph outlines.
@@ -52,6 +70,9 @@ enum TextMeasure {
 
     static func font(_ props: TextProps, opticalSize: Double? = nil) -> NSFont {
         let size = Swift.max(1, CGFloat(props.fontSize))
+        // A named face is used as it is: bold and italic are SF traits and would be synthesized
+        // here, and the optical size and weight below are SF's. Not installed: the family below.
+        if let name = props.fontFace, let face = NSFont(name: name, size: size) { return face }
         let weight: NSFont.Weight = props.isBold ? .bold : .regular
         let base = NSFont.systemFont(ofSize: size, weight: weight)
 
@@ -199,6 +220,65 @@ enum TextMeasure {
             let used = layoutManager.usedRect(for: container)
             return CGSize(width: width, height: Swift.max(height, ceil(used.height)))
         }
+    }
+
+    // MARK: - Box
+
+    /// The box's padding around the text and its corner radius, as multiples of the font size, so
+    /// a box keeps its proportions at any size. Vertical padding is the smaller because the line
+    /// box already leaves room above and below the glyphs.
+    static let boxPaddingX = 0.3
+    static let boxPaddingY = 0.1
+    static let boxCornerRadius = 0.25
+
+    /// How far the box reaches past the text box on each side, in page units. Zero without a box.
+    static func boxInsets(_ props: TextProps) -> (x: Double, y: Double) {
+        guard props.hasBox else { return (0, 0) }
+        let size = Swift.max(1, props.fontSize)
+        return (size * boxPaddingX, size * boxPaddingY)
+    }
+
+    /// Everything the shape draws, in its local space: the text box, grown by the box's padding.
+    /// Selection, hit-testing, the editing overlay and export all size from this.
+    static func outerRect(_ props: TextProps) -> CGRect {
+        let size = measure(props)
+        let inset = boxInsets(props)
+        return CGRect(
+            x: -inset.x,
+            y: -inset.y,
+            width: Double(size.width) + inset.x * 2,
+            height: Double(size.height) + inset.y * 2
+        )
+    }
+
+    static func boxCornerRadius(_ props: TextProps) -> CGFloat {
+        let rect = outerRect(props)
+        return Swift.min(CGFloat(Swift.max(1, props.fontSize) * boxCornerRadius), rect.height / 2)
+    }
+
+    /// Text on a box is white unless white's contrast with the box falls below this; then black.
+    /// Only very light boxes do: in the palette, yellow (1.46:1) and white (1.09:1). The next
+    /// lightest, turquoise (2.15:1), keeps white text.
+    static let boxBlackInkBelowContrast = 1.8
+
+    /// The glyphs' colour: the swatch for plain text; on a box, white, or black on a very light
+    /// box.
+    static func ink(_ props: TextProps) -> AnnotationSwatch {
+        guard props.hasBox else { return props.swatch }
+        return contrastWithWhite(props.swatch) < boxBlackInkBelowContrast ? .black : .white
+    }
+
+    /// WCAG's contrast ratio of white against the colour, from its relative luminance.
+    static func contrastWithWhite(_ swatch: AnnotationSwatch) -> Double {
+        let color = swatch.nsColor.usingColorSpace(.sRGB) ?? swatch.nsColor
+        func linear(_ c: CGFloat) -> Double {
+            let c = Double(c)
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(color.redComponent)
+            + 0.7152 * linear(color.greenComponent)
+            + 0.0722 * linear(color.blueComponent)
+        return 1.05 / (luminance + 0.05)
     }
 
     // MARK: - Glyph outlines

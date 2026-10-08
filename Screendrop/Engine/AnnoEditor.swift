@@ -134,10 +134,12 @@ final class AnnoEditor {
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
     var currentFontFamily: AnnoFontFamily = .pro
+    var currentFontFace: String?
     var currentTextIsBold = true
     var currentTextIsItalic = false
     var currentTextIsUnderline = false
     var currentTextAlign: TextAlign = .start
+    var currentTextBoxStyle: TextBoxStyle = .plain
     var currentArrowheadStart: Arrowhead = .none
     var currentArrowheadEnd: Arrowhead = .arrow
 

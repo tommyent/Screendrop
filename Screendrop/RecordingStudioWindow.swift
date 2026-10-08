@@ -233,15 +233,15 @@ private struct RecordingStudioContent: View {
             guard let model else { return }
             switch decision {
             case .save:
-                if model.saveProject() { done() }
+                done(model.saveProject())
             case .discard:
                 Task {
                     await model.discardChanges()
-                    done()
+                    done(true)
                 }
             case .delete:
                 model.deleteProject()
-                done()
+                done(true)
             case .cancel:
                 break
             }
@@ -2992,7 +2992,7 @@ private struct StudioInspector: View {
                     summary: audioSummary,
                     isExpanded: expansionBinding(for: .audio),
                     accessory: {
-                        if model.replacementAudio != nil {
+                        if model.hasReplacementAudio {
                             if model.hasRecordedAudio {
                                 InspectorResetButton(help: "Use the recorded audio again") {
                                     model.removeReplacementAudio()

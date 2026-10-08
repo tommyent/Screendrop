@@ -185,6 +185,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// temporary directory, so quitting - including a Sparkle update relaunch,
     /// which terminates the app - discards them. Warn before that happens.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Annotation edits have no draft, so ask about each dirty editor
+        // first. Once all are saved or discarded (their windows closed), run
+        // this again for the checks below; it replies itself if it defers.
+        if EditorCloseGuard.reviewBeforeQuit(completion: { approved in
+            let reply = approved ? self.applicationShouldTerminate(sender) : .terminateCancel
+            if reply != .terminateLater {
+                sender.reply(toApplicationShouldTerminate: reply == .terminateNow)
+            }
+        }) {
+            return .terminateLater
+        }
+
         // Studio's autosave is debounced. Flushing here means quitting never
         // costs the last edit - the project reopens on its draft.
         StudioProjectRegistry.shared.flushDrafts()

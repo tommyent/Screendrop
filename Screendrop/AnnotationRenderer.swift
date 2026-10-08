@@ -286,11 +286,14 @@ enum AnnotationRenderer {
                 // Snapshot what has been composed so far, so a blur picks up the background behind
                 // a transparent screenshot as well as the screenshot itself.
                 guard let snapshot = context.makeImage() else { return nil }
+                // `rect` is in user space, which the camera's foreground context translates away
+                // from the bitmap's own (y-up) pixels that the snapshot is cropped in.
+                let device = rect.applying(context.ctm)
                 let flipped = CGRect(
-                    x: rect.minX,
-                    y: CGFloat(snapshot.height) - rect.maxY,
-                    width: rect.width,
-                    height: rect.height
+                    x: device.minX,
+                    y: CGFloat(snapshot.height) - device.maxY,
+                    width: device.width,
+                    height: device.height
                 ).integral.intersection(
                     CGRect(x: 0, y: 0, width: snapshot.width, height: snapshot.height)
                 )
@@ -298,7 +301,8 @@ enum AnnotationRenderer {
                 return snapshot.cropping(to: flipped)
             },
             spotlightClip: highlightClipPath,
-            isFlippedContext: false
+            isFlippedContext: false,
+            sampleScale: scale
         )
 
         _ = canvasSize

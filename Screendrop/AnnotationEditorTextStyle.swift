@@ -28,8 +28,13 @@ extension AnnotationEditorModel {
     }
 
     var selectedTextFontFamily: AnnoFontFamily {
-        get { selectedTextShape?.textProps?.fontFamily ?? textFontFamily }
-        set { setTextFontFamily(newValue) }
+        selectedTextShape?.textProps?.fontFamily ?? textFontFamily
+    }
+
+    /// A face outside the SF families, by PostScript name; nil is the family.
+    var selectedTextFontFace: String? {
+        if let props = selectedTextShape?.textProps { return props.fontFace }
+        return textFontFace
     }
 
     var selectedTextIsBold: Bool {
@@ -52,19 +57,30 @@ extension AnnotationEditorModel {
         set { setTextAlignment(newValue) }
     }
 
+    var selectedTextBoxStyle: TextBoxStyle {
+        get { selectedTextShape?.textProps.map { $0.boxStyle ?? .plain } ?? textBoxStyle }
+        set { setTextBoxStyle(newValue) }
+    }
+
     func setTextFontSize(_ pointSize: CGFloat) {
-        let clamped = max(pointSize, 4)
+        let clamped = AnnotationTextMetrics.clampedFontSize(pointSize)
         textFontSize = clamped
         engine.currentTextFontSize = Double(clamped)
         saveAnnotationPreset()
         updateSelectedText { $0.fontSize = Double(clamped) }
     }
 
-    func setTextFontFamily(_ family: AnnoFontFamily) {
+    /// An SF family, or a face (`AnnoFontFace`) with the family to fall back on.
+    func setTextFont(_ family: AnnoFontFamily, face: String? = nil) {
         textFontFamily = family
+        textFontFace = face
         engine.currentFontFamily = family
+        engine.currentFontFace = face
         saveAnnotationPreset()
-        updateSelectedText { $0.fontFamily = family }
+        updateSelectedText {
+            $0.fontFamily = family
+            $0.fontFace = face
+        }
     }
 
     func setTextBold(_ bold: Bool) {
@@ -93,6 +109,13 @@ extension AnnotationEditorModel {
         engine.currentTextAlign = TextAlign(alignment)
         saveAnnotationPreset()
         updateSelectedText { $0.align = TextAlign(alignment) }
+    }
+
+    func setTextBoxStyle(_ style: TextBoxStyle) {
+        textBoxStyle = style
+        engine.currentTextBoxStyle = style
+        saveAnnotationPreset()
+        updateSelectedText { $0.boxStyle = style }
     }
 
     private func updateSelectedText(_ mutate: (inout TextProps) -> Void) {
