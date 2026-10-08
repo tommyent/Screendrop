@@ -119,12 +119,13 @@ final class CloudLibraryModel {
         NSPasteboard.general.setString(uploads.map(\.url).joined(separator: "\n"), forType: .string)
     }
 
-    /// The collection's keys and clicks. A double click (`.edit`) previews:
-    /// uploads are final, so they have no editor.
+    /// The collection's keys and clicks. Uploads are final, so they have no
+    /// editor: a double click (`.edit`) opens the share page, with its
+    /// comments, as the Library's link does.
     func perform(_ action: CaptureLibraryAction) {
         switch action {
         case .preview: quickLook()
-        case .edit: quickLook(toggling: false)
+        case .edit: if let upload = selectedUploads.first { open(upload) }
         case .copy: copyLinks(selectedUploads)
         case .trash: pendingDelete = selectedUploads
         case .rename, .export, .reveal: break
