@@ -120,6 +120,7 @@ struct CloudBrandingImage {
     let fileExtension: String
     let contentType: String
     let filename: String
+    let isSquare: Bool?
 
     init(url: URL) throws {
         let ext = url.pathExtension.lowercased()
@@ -143,6 +144,16 @@ struct CloudBrandingImage {
         self.fileExtension = format.0
         self.contentType = format.1
         self.filename = url.lastPathComponent
+        if let source,
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+           let height = properties[kCGImagePropertyPixelHeight] as? NSNumber {
+            isSquare = width == height
+        } else if let size = NSImage(data: data)?.size, size.width > 0, size.height > 0 {
+            isSquare = size.width == size.height
+        } else {
+            isSquare = nil
+        }
     }
 }
 
@@ -334,25 +345,38 @@ struct CloudBrandingSettingsGroup: View {
         let usesLogo = !isLogo && (clearing || (pending == nil && !model.hasFavicon))
         let preview = usesLogo ? (model.clearLogo ? nil : model.logoPreview)
             : (clearing ? nil : (isLogo ? model.logoPreview : model.faviconPreview))
-        return HStack(spacing: 12) {
-            Text(title).frame(width: 80, alignment: .leading)
-            Group {
-                if let preview { Image(nsImage: preview).resizable().scaledToFit() }
-                else { Image(systemName: "photo").foregroundStyle(.secondary) }
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Text(title).frame(width: 80, alignment: .leading)
+                Group {
+                    if let preview { Image(nsImage: preview).resizable().scaledToFit() }
+                    else { Image(systemName: "photo").foregroundStyle(.secondary) }
+                }
+                .frame(width: 32, height: 32)
+                .accessibilityLabel("\(title) preview")
+                Text(pending?.filename ?? (usesLogo ? "Logo / default" : (clearing ? "Default" : "Current")))
+                    .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                Spacer()
+                Button("Choose…") { choosingLogo = isLogo; isChoosingImage = true }
+                    .accessibilityLabel("Choose \(title.lowercased())")
+                Button("Clear") {
+                    if isLogo { model.logo = nil; model.clearLogo = true }
+                    else { model.favicon = nil; model.clearFavicon = true }
+                }
+                .disabled(clearing || (pending == nil && !(isLogo ? model.hasLogo : model.hasFavicon)))
+                .accessibilityLabel("Clear \(title.lowercased())")
             }
-            .frame(width: 32, height: 32)
-            .accessibilityLabel("\(title) preview")
-            Text(pending?.filename ?? (usesLogo ? "Logo / default" : (clearing ? "Default" : "Current")))
-                .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-            Spacer()
-            Button("Choose…") { choosingLogo = isLogo; isChoosingImage = true }
-                .accessibilityLabel("Choose \(title.lowercased())")
-            Button("Clear") {
-                if isLogo { model.logo = nil; model.clearLogo = true }
-                else { model.favicon = nil; model.clearFavicon = true }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isLogo ? "Square logo, at least 96 × 96 px (PNG or SVG)."
+                     : "Square favicon, 48 × 48 px (PNG or ICO).")
+                if pending?.isSquare == false {
+                    Text("This image isn’t square; it will be scaled to fit.")
+                }
             }
-            .disabled(clearing || (pending == nil && !(isLogo ? model.hasLogo : model.hasFavicon)))
-            .accessibilityLabel("Clear \(title.lowercased())")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, 92)
         }
         .disabled(!model.isReady)
     }
