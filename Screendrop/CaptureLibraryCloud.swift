@@ -209,6 +209,14 @@ final class CloudLibraryModel {
         previewFetch?.fraction = fraction
     }
 
+    /// Shows the Cloud page with one upload selected, as from a comment.
+    func showUpload(id: String) {
+        CaptureLibraryModel.shared.searchText = ""
+        CommentsLibraryModel.shared.setShown(false)
+        isShown = true
+        selection = [id]
+    }
+
     /// Selects the upload's capture in All Captures.
     func showInLibrary(_ item: CaptureLibraryItem) {
         isShown = false
@@ -677,7 +685,7 @@ nonisolated enum CloudUploadText {
     }
 }
 
-private struct CloudUploadThumbnail: View {
+struct CloudUploadThumbnail: View {
     let upload: CloudUpload
     let local: CaptureLibraryItem?
     @State private var image: CGImage?

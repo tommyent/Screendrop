@@ -4,6 +4,7 @@ import SwiftUI
 struct CaptureLibraryView: View {
     @State private var model = CaptureLibraryModel.shared
     @State private var cloud = CloudLibraryModel.shared
+    @State private var comments = CommentsLibraryModel.shared
     @State private var history = ScreenshotHistoryStore.shared
     @State private var projects = RecordingProjectStore.shared
     @State private var libraryWindow: NSWindow?
@@ -18,13 +19,15 @@ struct CaptureLibraryView: View {
     /// The sidebar picks a kind of capture, the cloud uploads or a tag.
     private var sidebarSelection: Binding<CaptureLibrarySidebarSelection?> {
         Binding {
+            if comments.isShown { return .comments }
             if cloud.isShown { return .cloud }
             if let tag = model.tagFilter { return .tag(tag) }
             return model.filter.map { .kind($0) }
         } set: { selection in
             cloud.isShown = selection == .cloud
+            comments.setShown(selection == .comments)
             switch selection {
-            case .cloud:
+            case .cloud, .comments:
                 // The toolbar's capture actions mustn't act on captures out of sight.
                 model.selection = []
             case .tag(let tag):
@@ -68,6 +71,20 @@ struct CaptureLibraryView: View {
                         }
                     } icon: { Image(systemName: "icloud") }
                     .tag(CaptureLibrarySidebarSelection.cloud)
+                    Label {
+                        HStack {
+                            Text("Comments")
+                            Spacer()
+                            // New since the page was last opened, as Mail counts unread mail.
+                            if comments.unreadCount > 0 {
+                                Text(comments.unreadCount > 99 ? "99+" : comments.unreadCount.formatted())
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption.monospacedDigit().weight(.semibold))
+                                    .accessibilityLabel("\(comments.unreadCount) new")
+                            }
+                        }
+                    } icon: { Image(systemName: "bubble.left.and.bubble.right") }
+                    .tag(CaptureLibrarySidebarSelection.comments)
                 }
                 if !model.tags.isEmpty {
                     Section("Tags") {
@@ -107,7 +124,7 @@ struct CaptureLibraryView: View {
                 // Empty pages are only as tall as their message; fill the column anyway.
                 browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .modifier(LibraryBrowserSurface(
-                        showsDots: layout == .grid || (cloud.isShown
+                        showsDots: comments.isShown ? comments.visibleComments.isEmpty : layout == .grid || (cloud.isShown
                             ? cloud.visibleUploads.isEmpty
                             : !model.hasLoaded || model.visibleItems.isEmpty)
                     ))
@@ -122,7 +139,9 @@ struct CaptureLibraryView: View {
             // so the toolbar runs unbroken across it.
             .inspector(isPresented: $inspectorVisible) {
                 Group {
-                    if cloud.isShown {
+                    if comments.isShown {
+                        CommentInspector(comments: comments)
+                    } else if cloud.isShown {
                         CloudUploadInspector(cloud: cloud)
                     } else {
                         CaptureLibraryInspector(model: model)
@@ -134,12 +153,12 @@ struct CaptureLibraryView: View {
                 .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
             }
             .modifier(LibraryWindowSurface())
-            .navigationTitle(cloud.isShown ? "Cloud" : model.tagFilter ?? activeFilter.title)
+            .navigationTitle(comments.isShown ? "Comments" : cloud.isShown ? "Cloud" : model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
         .modifier(LibraryToolbarSeparator())
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: cloud.isShown ? "Search uploads" : "Search captures")
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: comments.isShown ? "Search comments" : cloud.isShown ? "Search uploads" : "Search captures")
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
@@ -147,6 +166,7 @@ struct CaptureLibraryView: View {
             model.sortOrder = savedSort
             model.refresh()
             cloud.refresh()
+            comments.refresh()
         }
         .onDisappear { AppActivationPolicy.leave() }
         .onWindowChange { window in
@@ -157,6 +177,8 @@ struct CaptureLibraryView: View {
             if let window = notification.object as? NSWindow, window === libraryWindow {
                 model.refresh()
                 if cloud.isShown { cloud.refresh() }
+                // The sidebar's unread count, whichever page is open. No timer: only here, on open and on ⌘R.
+                comments.refresh()
             }
         }
         .onChange(of: history.items) { _, _ in model.refresh() }
@@ -180,7 +202,9 @@ struct CaptureLibraryView: View {
     }
 
     @ViewBuilder private var browser: some View {
-        if cloud.isShown {
+        if comments.isShown {
+            CommentsLibraryPage(comments: comments)
+        } else if cloud.isShown {
             CloudLibraryPage(cloud: cloud, layout: layout, cardWidth: cardWidth)
         } else if !model.hasLoaded {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -302,6 +326,11 @@ struct CaptureLibraryView: View {
             if let title = model.operationTitle {
                 ProgressView().controlSize(.mini)
                 Text(title)
+            } else if comments.isShown {
+                let count = comments.visibleComments.count
+                Text("\(count) \(count == 1 ? "comment" : "comments")")
+                if !comments.selection.isEmpty { Text("· \(comments.selection.count) selected") }
+                if !comments.deletingIDs.isEmpty { Text("· Deleting…") }
             } else if cloud.isShown, let fetch = cloud.previewFetch {
                 ProgressView(value: fetch.total).controlSize(.mini).frame(width: 60)
                 Text(fetch.title)
@@ -319,10 +348,11 @@ struct CaptureLibraryView: View {
                 if !model.selection.isEmpty { Text("· \(model.selection.count) selected") }
             }
             Spacer()
-            if cloud.isShown ? cloud.isLoading : model.isLoading {
-                ProgressView().controlSize(.mini).help(cloud.isShown ? "Refreshing uploads" : "Refreshing Library")
+            if comments.isShown ? comments.isLoading : cloud.isShown ? cloud.isLoading : model.isLoading {
+                ProgressView().controlSize(.mini)
+                    .help(comments.isShown ? "Refreshing comments" : cloud.isShown ? "Refreshing uploads" : "Refreshing Library")
             }
-            if layout == .grid {
+            if layout == .grid, !comments.isShown {
                 // Capped where the 640 px thumbnails stay sharp on Retina.
                 Slider(value: $cardWidth, in: 140...320) {
                     EmptyView()
@@ -368,6 +398,8 @@ struct CaptureLibraryView: View {
             }
             .labelStyle(.iconOnly)
             .pickerStyle(.segmented)
+            // Comments are always a list.
+            .disabled(comments.isShown)
             .help("Switch between grid and list")
         }
         .sharedBackgroundVisibility(.hidden)
@@ -377,14 +409,16 @@ struct CaptureLibraryView: View {
                     ForEach(CaptureLibrarySort.allCases) { Text($0.title).tag($0) }
                 }
                 Divider()
-                Button("Refresh", systemImage: "arrow.clockwise") { cloud.isShown ? cloud.refresh() : model.refresh() }
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    if comments.isShown { comments.refresh() } else if cloud.isShown { cloud.refresh() } else { model.refresh() }
+                }
                     .keyboardShortcut("r", modifiers: .command)
             } label: { Label("Sort", systemImage: "arrow.up.arrow.down") }
             .help("Sort captures")
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .primaryAction) {
-            if cloud.isShown { cloudActions } else { captureActions }
+            if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
@@ -395,6 +429,18 @@ struct CaptureLibraryView: View {
             .help(inspectorVisible ? "Hide Inspector" : "Show Inspector")
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+
+    /// Comments open on their share page; there's nothing to preview or edit.
+    @ViewBuilder private var commentActions: some View {
+        Menu {
+            ForEach(Array(comments.menuItems().enumerated()), id: \.offset) { _, item in
+                if item.startsGroup { Divider() }
+                Button(item.title, action: item.perform).disabled(!item.isEnabled)
+            }
+        } label: { Label("Actions", systemImage: "ellipsis.circle") }
+        .disabled(comments.selection.isEmpty)
+        .help("Comment actions")
     }
 
     /// Uploads are final, so the Cloud page has no Edit.
@@ -535,5 +581,6 @@ private struct LibraryWindowSurface: ViewModifier {
 enum CaptureLibrarySidebarSelection: Hashable {
     case kind(CaptureLibraryFilter)
     case cloud
+    case comments
     case tag(String)
 }
