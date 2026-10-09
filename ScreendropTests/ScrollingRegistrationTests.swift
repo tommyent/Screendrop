@@ -142,4 +142,47 @@ import Testing
         #expect(buffer.add(F.frame(40), at: 26).placements.last?.offset == 40)
         #expect(!buffer.isLost)
     }
+
+    @Test("Continuous placements classify aligned page rows; incoming rows remain provisional")
+    func movingPageRows() throws {
+        let video = 100..<220
+        let first = F.frame(0, video: video)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, observedMotionRows: Set(100..<200), pageWitnessRows: Set(0..<100)))
+        let event = buffer.add(F.frame(20, phase: 1, video: video), at: 1)
+        let placement = try #require(event.placements.last)
+        #expect(event.state == .appended && placement.offset == 20)
+        #expect(placement.stableRows == Set(0..<80))
+        #expect(placement.motionRows == Set(80..<180))
+        #expect(placement.stableRows.isDisjoint(with: placement.motionRows))
+        #expect(placement.motionRows.isDisjoint(with: Set(180..<200)))
+    }
+
+    @Test("Moving registration still requires eight distinct proven page rows", arguments: [7, 8])
+    func minimumMovingWitness(count: Int) throws {
+        let first = F.frame(0)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, pageWitnessRows: Set(20..<(20 + count))))
+        let event = buffer.add(F.frame(20), at: 1)
+        #expect((event.state == .appended) == (count == 8))
+        #expect(buffer.frontier == (count == 8 ? 20 : 0))
+    }
+
+    @Test("Continuous registration retains the whole stationary page veto")
+    func movingConflict() throws {
+        let first = F.frame(0)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, pageWitnessRows: Set(0..<F.height)))
+        #expect(buffer.add(F.frame(20), at: 1).placements.last?.offset == 20)
+        var pixels = F.frame(20).pixels
+        let moved = F.frame(60)
+        for y in 60..<140 {
+            pixels.replaceSubrange((y * F.width)..<((y + 1) * F.width), with: moved.row(y))
+        }
+        let animated = try #require(ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels))
+        for index in 2...5 {
+            #expect(buffer.add(animated, at: index).state != .appended)
+            #expect(buffer.lastVerifiedOffset == 20 && buffer.frontier == 20)
+        }
+    }
 }

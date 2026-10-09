@@ -11,11 +11,12 @@ enum ScrollingReworkFixture {
     }
     static func frame(_ offset: Int, phase: Int = 0, video: Range<Int>? = nil,
                       header: Int = 0, footer: Int = 0, pinned: Range<Int>? = nil,
-                      relayoutAt: Int? = nil) -> ScrollingCaptureRaster {
+                      relayoutAt: Int? = nil, greenAd: Range<Int>? = nil) -> ScrollingCaptureRaster {
         var pixels: [UInt32] = []
         for y in 0..<height { for x in 0..<width {
             let pageY = offset + y
             var value = pixel(x: x, pageY: pageY)
+            if greenAd?.contains(pageY) == true && pageY % 37 > 10 { value = 0xff239447 }
             if let video, video.contains(pageY), x < width - 4 {
                 value = 0xff000000 | UInt32((phase * 701 + x * 107 + pageY * 53) & 0xffffff)
             }

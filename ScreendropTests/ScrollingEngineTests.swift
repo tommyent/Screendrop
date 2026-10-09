@@ -232,4 +232,66 @@ import Testing
                 == ScrollingCaptureRaster(image: before, colorSpace: space)?.pixels)
         }
     }
+
+    @Test("Continuous scrolling through a green ad and wide video freezes one moment", arguments: [20, 30, 35], [false, true])
+    func continuousVideo(step: Int, briefRest: Bool) async throws {
+        let video = 700..<820
+        func frame(_ offset: Int, _ phase: Int) -> CGImage {
+            F.frame(offset, phase: phase, video: video, greenAd: 250..<650).image(in: space)!
+        }
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, 0), selection: rect, ignoredTrailingColumns: 0))
+        var lastOffset = 0
+        for (index, offset) in stride(from: step, through: 900, by: step).enumerated() {
+            let update = await engine.add(frame(offset, index + 1))
+            try #require(update.state != .lost && update.state != .limit)
+            lastOffset = offset
+            if briefRest && offset >= 580 && offset < 580 + step {
+                _ = await engine.add(frame(offset, index + 1)) // A repeated video frame is not page authority.
+                _ = await engine.add(frame(offset, index + 101))
+            }
+        }
+        let output = try #require(ScrollingCaptureRaster(image: await engine.makeImage()!, colorSpace: space))
+        try #require(output.height == lastOffset + rect.rows.count)
+        #expect(await engine.engine == .buffered)
+        var phases = Set<UInt32>()
+        for y in 0..<output.height { for x in 0..<output.width {
+            let pageY = y + 60, sourceX = x + 4, pixel = output.pixels[y * output.width + x]
+            if video.contains(pageY) { phases.insert((pixel & 0xffffff) - UInt32(sourceX * 107 + pageY * 53)) }
+            else {
+                #expect(pixel == ((250..<650).contains(pageY) && pageY % 37 > 10
+                    ? 0xff239447 : F.pixel(x: sourceX, pageY: pageY)))
+            }
+        } }
+        #expect(phases.count == 1)
+    }
+
+    @Test("Recovery uses the latest proven page patch, without confirming its gap")
+    func latestPageRecovery() async throws {
+        let video = 700..<820
+        func frame(_ offset: Int, _ phase: Int) -> CGImage {
+            F.frame(offset, phase: phase, video: video, greenAd: 250..<650).image(in: space)!
+        }
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, 0), selection: rect, ignoredTrailingColumns: 0))
+        for (index, offset) in stride(from: 20, through: 600, by: 20).enumerated() {
+            _ = await engine.add(frame(offset, index + 1))
+        }
+        let before = try #require(await engine.makeImage())
+        var update = await engine.add(frame(1000, 100))
+        for _ in 0..<25 { update = await engine.add(frame(1000, 100)) }
+        try #require(update.state == .lost && update.height == 680)
+        let target = try #require(ScrollingCaptureRaster(image: await engine.recoveryRows(60)!, colorSpace: space))
+        try #require(target.height == 38)
+        for y in 0..<target.height { for x in 0..<target.width {
+            #expect(target.pixels[y * target.width + x] == F.pixel(x: x + 4, pageY: y + 660))
+        } }
+        #expect(await engine.makeImage()?.height == before.height)
+        _ = await engine.add(frame(600, 101))
+        update = await engine.add(frame(600, 102))
+        #expect(update.state != .lost && update.height == 680)
+        for (index, offset) in stride(from: 620, through: 900, by: 20).enumerated() {
+            update = await engine.add(frame(offset, 103 + index))
+            #expect(update.state != .lost)
+        }
+        #expect(await engine.makeImage()?.height == 980)
+    }
 }

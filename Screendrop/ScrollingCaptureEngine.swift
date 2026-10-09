@@ -53,6 +53,7 @@ actor ScrollingCaptureEngine {
     private var matchingColumns: [Range<Int>]
     private var viewportHintOffset: Int?
     private var observedMotionRows = Set<Int>()
+    private var pageWitnessRows = Set<Int>()
     private var safeOffset = 0
     private var sampleIndex = 0
     private var buffer: ScrollingCaptureRegistrationBuffer?
@@ -62,6 +63,7 @@ actor ScrollingCaptureEngine {
     private var registrationOrigin = 0
     private var previous: ScrollingCaptureRaster
     private var recovering = false
+    private var recoveryPatch: (frame: ScrollingCaptureRaster, rows: Range<Int>)?
     private(set) var engine: Engine = .legacy
     private(set) var outputHeight: Int
 
@@ -147,6 +149,15 @@ actor ScrollingCaptureEngine {
                         safeImage = output
                         outputHeight = output.height
                         viewport = widerViewport(body: body, delta: offset - safeOffset, frame: frame)
+                        let delta = offset - safeOffset
+                        pageWitnessRows = Set(viewport.filter { y in
+                            if delta == 0 {
+                                return pageWitnessRows.contains(y) && lastSafeFrame.sameRow(y, as: frame, at: y)
+                            }
+                            return (0..<frame.height).contains(y + delta)
+                                && lastSafeFrame.sameRow(y + delta, as: frame, at: y)
+                                && !lastSafeFrame.sameRow(y, as: frame, at: y)
+                        })
                         lastSafeFrame = frame.using(columns: matchingColumns)!
                         safeOffset = offset
                         buffer = nil
@@ -175,7 +186,8 @@ actor ScrollingCaptureEngine {
             guard start < selection.rows.upperBound,
                   let first = lastSafeFrame.using(columns: matchingColumns),
                   let registration = ScrollingCaptureRegistrationBuffer(first: first,
-                confirmation: first, contentRows: viewport, observedMotionRows: observedMotionRows),
+                confirmation: first, contentRows: viewport, observedMotionRows: observedMotionRows,
+                pageWitnessRows: pageWitnessRows),
                   let output = ScrollingCaptureBandCompositor(initial: registration.initial,
                     selection: ScrollingCaptureOutputRect(columns: selection.columns, rows: start..<selection.rows.upperBound),
                     maximumOutputRows: maximumHeight) else { return update(.lost) }
@@ -187,8 +199,10 @@ actor ScrollingCaptureEngine {
             prefix = Array(safeImage.pixels.prefix(seam * safeImage.width))
         }
         var recovered: ScrollingCapturePlacement?
+        var recoveryEvent: ScrollingCaptureRegistrationBuffer.Event?
         if recovering {
-            guard let offset = recoveryOffset(frame, stable: stable) else { return update(.lost) }
+            guard let position = recoveryOffset(frame, stable: stable) else { return update(.lost) }
+            let offset = position.offset
             let lower = max(viewport.lowerBound, selection.rows.lowerBound)
             let upper = min(viewport.upperBound, selection.rows.upperBound)
             guard lower < upper else { return update(.lost) }
@@ -197,26 +211,36 @@ actor ScrollingCaptureEngine {
             let oldTop = viewport.lowerBound + offset - safeOffset
             let unchangedChrome = (0..<frame.height).filter { !viewport.contains($0) }
                 .allSatisfy { origin.sameRow($0, as: frame, at: $0) }
-            if !unchangedChrome || !viewport.contains(oldTop)
-                || !origin.sameRow(oldTop, as: frame, at: viewport.lowerBound) {
+            let sameBounds = unchangedChrome && viewport.contains(oldTop)
+                && origin.sameRow(oldTop, as: frame, at: viewport.lowerBound)
+                && widerViewport(body: rows, delta: offset - safeOffset, frame: frame) == viewport
+            if !sameBounds {
                 compositor?.narrowOwnerSourcingToSelection()
             }
             let moving = Set(compositor?.bands.flatMap { band in
                 band.rows.map { $0 + baseOffset - offset }
             } ?? []).intersection(rows)
-            guard let registration = ScrollingCaptureRegistrationBuffer(first: frame, confirmation: frame,
-                contentRows: rows, observedMotionRows: moving.union(Set(rows).subtracting(stable)))
-            else { return update(.lost) }
-            buffer = registration
-            registrationOrigin = offset - baseOffset
+            if sameBounds, var candidate = buffer, candidate.initial.contentRows == viewport {
+                let verified = candidate.add(frame, at: sampleIndex)
+                if verified.placements.last.map({ $0.offset + registrationOrigin == offset - baseOffset }) == true {
+                    buffer = candidate
+                    recoveryEvent = verified
+                }
+            }
+            if recoveryEvent == nil {
+                guard let registration = ScrollingCaptureRegistrationBuffer(first: frame, confirmation: frame,
+                    contentRows: rows, observedMotionRows: moving.union(Set(rows).subtracting(stable)),
+                    pageWitnessRows: position.rows) else { return update(.lost) }
+                buffer = registration
+                registrationOrigin = offset - baseOffset
+                recovered = ScrollingCapturePlacement(index: sampleIndex, offset: registrationOrigin,
+                    frame: frame, stableRows: position.rows, motionRows: moving.intersection(viewport), contentRows: viewport)
+            }
             compositor?.resume()
             recovering = false
-            recovered = ScrollingCapturePlacement(index: sampleIndex, offset: registrationOrigin,
-                frame: frame, stableRows: stable.intersection(viewport),
-                motionRows: Set(viewport).subtracting(stable), contentRows: viewport)
         }
         let matching = frame.using(columns: matchingColumns)!
-        var event = buffer!.add(matching, at: sampleIndex)
+        var event = recoveryEvent ?? buffer!.add(matching, at: sampleIndex)
         if engine == .legacy, let placed = event.placements.last, placed.offset > 0, sampleIndex > 1 {
             let proposed = widerViewport(body: viewport, delta: placed.offset, frame: matching)
             let old = lastSafeFrame.using(columns: matchingColumns)!
@@ -225,7 +249,7 @@ actor ScrollingCaptureEngine {
             }.map { $0 + placed.offset })
             if proposed != viewport,
                var candidate = ScrollingCaptureRegistrationBuffer(first: old, confirmation: old,
-                    contentRows: proposed, observedMotionRows: motion),
+                    contentRows: proposed, observedMotionRows: motion, pageWitnessRows: pageWitnessRows),
                let preceding = previous.using(columns: matchingColumns) {
                 _ = candidate.add(preceding, at: sampleIndex - 1)
                 let verified = candidate.add(matching, at: sampleIndex)
@@ -250,11 +274,9 @@ actor ScrollingCaptureEngine {
             return update(.lost)
         }
         var placements = event.placements.map { placement in
-            // Recovery drops wide matching authority, but preserves frozen owners.
-            let stable = placement.contentRows == viewport ? placement.stableRows
-                : Set(viewport.filter { y in previous.sameRow(y, as: placement.frame, at: y) })
-            return ScrollingCapturePlacement(index: placement.index, offset: placement.offset + registrationOrigin,
-                frame: placement.frame, stableRows: stable, motionRows: Set(viewport).subtracting(stable), contentRows: viewport)
+            ScrollingCapturePlacement(index: placement.index, offset: placement.offset + registrationOrigin,
+                frame: placement.frame, stableRows: placement.stableRows, motionRows: placement.motionRows,
+                contentRows: viewport)
         }
         if let recovered { placements = [recovered] }
         if let hint = viewportHintOffset, let placed = placements.last {
@@ -282,6 +304,7 @@ actor ScrollingCaptureEngine {
                 outputHeight = stop
             }
             engine = .buffered
+            rememberRecovery(placements.last!)
             return update(outputHeight > oldHeight ? .appended : .pending)
         }
         return update(.pending)
@@ -299,7 +322,8 @@ actor ScrollingCaptureEngine {
         recoveryRaster(count)?.image(in: colorSpace)
     }
 
-    private func recoveryRaster(_ count: Int) -> ScrollingCaptureRaster? {
+    private func recoveryRaster(_ count: Int, newest: Bool = true) -> ScrollingCaptureRaster? {
+        if newest, let patch = newestRecoveryPatch(count) { return patch.frame }
         if engine == .legacy {
             let height = min(count, safeImage.height)
             return ScrollingCaptureRaster(width: safeImage.width, height: height,
@@ -314,29 +338,78 @@ actor ScrollingCaptureEngine {
             pixels: Array(prefix[((end - height) * selection.columns.count)..<(end * selection.columns.count)]))
     }
 
-    private func recoveryOffset(_ frame: ScrollingCaptureRaster, stable: Set<Int>) -> Int? {
-        guard let raw = recoveryRaster(frame.height), let selected = frame.columns(selection.columns),
-              let reference = raw.using(columns: selected.matchingColumns) else { return nil }
+    private func recoveryOffset(_ frame: ScrollingCaptureRaster, stable: Set<Int>) -> (offset: Int, rows: Set<Int>)? {
+        guard let selected = frame.columns(selection.columns) else { return nil }
         let confirmed = engine == .legacy ? safeImage.height : min(outputHeight,
             prefix.count / selection.columns.count + min(compositor?.confirmedHeight ?? 0, compositor?.outputHeight ?? 0))
-        let start = confirmed - reference.height + selection.rows.lowerBound
-        var votes: [Int: Set<Int>] = [:]
-        let current = stable.intersection(viewport).intersection(selection.rows)
-        for y in current where !selected.isBlank(y) {
-            for oldY in 0..<reference.height where reference.sameRow(oldY, as: selected, at: y) {
-                let pageY = start + oldY
-                guard pageY >= max(viewport.lowerBound, selection.rows.lowerBound),
-                      engine != .legacy || pageY < safeOffset + viewport.upperBound,
-                      compositor?.bands.contains(where: { $0.rows.contains(pageY - baseOffset) }) != true else { continue }
-                votes[start + oldY - y, default: []].insert(reference.rowHash(oldY))
+        var references: [(frame: ScrollingCaptureRaster, start: Int)] = []
+        if let patch = newestRecoveryPatch(frame.height) { references.append((patch.frame, patch.rows.lowerBound)) }
+        if let old = recoveryRaster(frame.height, newest: false) {
+            references.append((old, confirmed - old.height + selection.rows.lowerBound))
+        }
+        var positions: [Int: Set<Int>] = [:]
+        for source in references {
+            guard let reference = source.frame.using(columns: selected.matchingColumns) else { continue }
+            let start = source.start
+            var votes: [Int: Set<Int>] = [:]
+            let current = stable.intersection(viewport).intersection(selection.rows)
+            for y in current where !selected.isBlank(y) {
+                for oldY in 0..<reference.height where reference.sameRow(oldY, as: selected, at: y) {
+                    let pageY = start + oldY
+                    guard pageY >= max(viewport.lowerBound, selection.rows.lowerBound),
+                          engine != .legacy || pageY < safeOffset + viewport.upperBound,
+                          compositor?.bands.contains(where: { $0.rows.contains(pageY - baseOffset) }) != true else { continue }
+                    votes[start + oldY - y, default: []].insert(reference.rowHash(oldY))
+                }
+            }
+            let offsets = votes.filter { $0.value.count >= 8 }.keys
+            guard offsets.count == 1, let offset = offsets.first,
+                  current.filter({ (0..<reference.height).contains(offset + $0 - start) })
+                    .allSatisfy({ reference.sameRow(offset + $0 - start, as: selected, at: $0) }) else { continue }
+            positions[offset, default: []].formUnion(current.filter { y in
+                let oldY = offset + y - start
+                return (0..<reference.height).contains(oldY) && reference.sameRow(oldY, as: selected, at: y)
+            })
+        }
+        guard positions.count == 1, let position = positions.first else { return nil }
+        return (position.key, position.value)
+    }
+
+    private func rememberRecovery(_ placement: ScrollingCapturePlacement) {
+        recoveryPatch = nil
+        let eligible = placement.stableRows.intersection(selection.rows).filter { y in
+            compositor?.bands.contains { $0.rows.contains(placement.offset + y) } != true
+        }.sorted()
+        var run: [Int] = []
+        func retain() {
+            guard Set(run.filter { !placement.frame.isBlank($0) }.map { placement.frame.rowHash($0) }).count >= 8,
+                  let first = run.first, let last = run.last else { return }
+            let pixels = run.flatMap { y in
+                Array(placement.frame.row(y).dropFirst(selection.columns.lowerBound).prefix(selection.columns.count))
+            }
+            if let frame = ScrollingCaptureRaster(width: selection.columns.count, height: run.count, pixels: pixels) {
+                recoveryPatch = (frame, (baseOffset + placement.offset + first)..<(baseOffset + placement.offset + last + 1))
             }
         }
-        let offsets = votes.filter { $0.value.count >= 8 }.keys
-        guard offsets.count == 1, let offset = offsets.first else { return nil }
-        for y in current where (0..<reference.height).contains(offset + y - start) {
-            guard reference.sameRow(offset + y - start, as: selected, at: y) else { return nil }
+        for y in eligible {
+            if let last = run.last, y != last + 1 { retain(); run.removeAll(keepingCapacity: true) }
+            run.append(y)
         }
-        return offset
+        retain()
+    }
+
+    private func newestRecoveryPatch(_ count: Int) -> (frame: ScrollingCaptureRaster, rows: Range<Int>)? {
+        guard engine == .buffered, count > 0, let patch = recoveryPatch,
+              compositor?.bands.contains(where: { band in
+                  band.rows.overlaps((patch.rows.lowerBound - baseOffset)..<(patch.rows.upperBound - baseOffset))
+              }) != true else { return nil }
+        let confirmed = min(outputHeight, prefix.count / selection.columns.count
+            + min(compositor?.confirmedHeight ?? 0, compositor?.outputHeight ?? 0)) + selection.rows.lowerBound
+        guard patch.rows.upperBound > confirmed else { return nil }
+        let height = min(count, patch.frame.height)
+        guard let image = ScrollingCaptureRaster(width: patch.frame.width, height: height,
+            pixels: Array(patch.frame.pixels.suffix(height * patch.frame.width))) else { return nil }
+        return (image, (patch.rows.upperBound - height)..<patch.rows.upperBound)
     }
 
     private func update(_ state: State) -> Update { Update(state: state, height: outputHeight, engine: engine) }
