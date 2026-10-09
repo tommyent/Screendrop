@@ -51,12 +51,8 @@ struct AnnotationEditorInspector: View {
                         onEditorAction()
                         model.selectTool(tool)
                     }
-                }
-
-                InspectorSectionDivider()
-
-                InspectorSection(accessibilityLabel: "Redact") {
-                    smartRedactionRow
+                    PixelColorRow()
+                        .padding(.top, InspectorMetrics.rowSpacing)
                 }
 
                 InspectorSectionDivider()
@@ -306,31 +302,17 @@ struct AnnotationEditorInspector: View {
 
     // MARK: Tools & style
 
-    private var smartRedactionRow: some View {
+    private func smartRedactionRow(tool: AnnotationTool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            InspectorRow("Redact") {
-                HStack(spacing: 6) {
-                    InspectorActionButton(
-                        "Pixelate",
-                        systemImage: "app.background.dotted",
-                        isBusy: model.isSmartRedacting
-                    ) {
-                        onEditorAction()
-                        model.smartRedact(using: .pixelate)
-                    }
-                    .help("Find sensitive content and pixelate it")
-
-                    InspectorActionButton(
-                        "Blur",
-                        systemImage: "drop.fill",
-                        isBusy: model.isSmartRedacting
-                    ) {
-                        onEditorAction()
-                        model.smartRedact(using: .blur)
-                    }
-                    .help("Find sensitive content and blur it")
-                }
+            InspectorActionButton(
+                "Find sensitive text…",
+                systemImage: "text.viewfinder",
+                isBusy: model.isSmartRedacting
+            ) {
+                onEditorAction()
+                model.smartRedact(using: tool)
             }
+            .help("Find sensitive text and \(tool == .blur ? "blur" : "pixelate") it")
 
             if model.isSmartRedacting {
                 HStack(spacing: 6) {
@@ -406,6 +388,9 @@ struct AnnotationEditorInspector: View {
                         range: 0.15...1,
                         format: .percent()
                     )
+                    if let tool = model.inspectedTool, tool.isRedactionTool {
+                        smartRedactionRow(tool: tool)
+                    }
                 }
             }
         }
@@ -480,7 +465,7 @@ private struct AnnotationInspectorToolGrid: View {
     let onSelect: (AnnotationTool) -> Void
 
     private let columns: [GridItem] = Array(
-        repeating: GridItem(.flexible(), spacing: 4), count: 6
+        repeating: GridItem(.fixed(30), spacing: 4), count: 6
     )
     @Environment(\.colorScheme) private var colorScheme
 
@@ -500,11 +485,11 @@ private struct AnnotationInspectorToolGrid: View {
                 )
             }
         }
-        .frame(maxWidth: 280)
-        .frame(maxWidth: .infinity)
+        .frame(width: 6 * 30 + 5 * 4)
         .padding(InspectorMetrics.controlInset)
         .background(shape.fill(InspectorControlPalette.trackFill(for: colorScheme)))
         .clipShape(shape)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -524,7 +509,7 @@ private struct AnnotationToolCell: View {
                 Image(systemName: tool.systemImage)
                     .font(.system(size: 13, weight: .medium))
             }
-            .aspectRatio(1, contentMode: .fit)
+            .frame(width: 30, height: 30)
             .contentShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
         }
         .buttonStyle(.plain)

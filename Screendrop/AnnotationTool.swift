@@ -83,10 +83,20 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     }
 
     var helpText: String {
-        if self == .highlight {
-            return "Draw an area to keep visible; everything outside is dimmed"
+        let shortcut: String
+        switch self {
+        case .select, .filledRectangle, .freehand: return title
+        case .rectangle: shortcut = "R"
+        case .ellipse: shortcut = "O"
+        case .line: shortcut = "L"
+        case .arrow: shortcut = "A"
+        case .numberedCircle: shortcut = "1"
+        case .text: shortcut = "T"
+        case .highlight: return "Highlight: keep this area visible and dim everything outside"
+        case .pixelate: shortcut = "P"
+        case .blur: shortcut = "B"
         }
-        return title
+        return "\(title) (\(shortcut))"
     }
 
     var isFilledShape: Bool {
