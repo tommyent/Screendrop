@@ -149,16 +149,22 @@ final class AnnotationKeyCommandHandlerView: NSView {
                 return nil
             }
 
+            // Tab and the arrow keys belong to whichever inspector control
+            // has keyboard focus, held repeats included (a slider steps its
+            // value with them). Only with nothing focused do they act on the
+            // pixels under the pointer.
+            let nothingFocused = self.window?.firstResponder === self.window
+
             // Tab copies the colour under the pointer, as in Shottr. Off the
             // image it keeps moving the keyboard focus.
-            if Self.isPlainTab(event), self.onCopyColor?() == true {
+            if nothingFocused, Self.isPlainTab(event), self.onCopyColor?() == true {
                 return nil
             }
 
             // Holding an arrow key over the image measures, as in Shottr:
             // up or down the height under the pointer, left or right the
             // width. Shift may be held too; it includes the border.
-            if let axis = Self.measureAxis(event), self.onMeasure?(axis) == true {
+            if nothingFocused, let axis = Self.measureAxis(event), self.onMeasure?(axis) == true {
                 return nil
             }
 
@@ -226,11 +232,17 @@ final class AnnotationKeyCommandHandlerView: NSView {
         }
 
         localKeyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
-            if Self.measureAxis(event) != nil, self?.window?.isKeyWindow == true {
+            // Any arrow released ends a measurement, even with a modifier
+            // pressed since it went down.
+            if Self.isArrow(event), self?.window?.isKeyWindow == true {
                 _ = self?.onMeasure?(nil)
             }
             return event
         }
+    }
+
+    private static func isArrow(_ event: NSEvent) -> Bool {
+        (123...126).contains(event.keyCode)
     }
 
     /// ←/→ measure across, ↑/↓ down; with Command, Option or Control they
