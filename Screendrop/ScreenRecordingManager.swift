@@ -20,36 +20,6 @@ import AVFoundation
 import Observation
 import ScreenCaptureKit
 
-enum ScreenRecordingSourceMode: String, CaseIterable, Identifiable {
-    case fullscreen
-    case window
-    case area
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .fullscreen:
-            "Full Screen"
-        case .window:
-            "Window"
-        case .area:
-            "Area"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .fullscreen:
-            "display"
-        case .window:
-            "macwindow"
-        case .area:
-            "rectangle.dashed"
-        }
-    }
-}
-
 struct ScreenRecordingSource {
     enum Kind {
         case fullscreen(SCDisplay)
