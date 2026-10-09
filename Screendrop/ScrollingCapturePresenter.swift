@@ -260,7 +260,7 @@ final class ScrollingCapturePresenter {
             backing: .buffered,
             defer: false
         )
-        panel.sharingType = .none
+        PreviewWindowCaptureExclusion.shared.register(window: panel)
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
