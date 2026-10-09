@@ -121,3 +121,49 @@ extension PixelBuffer {
         return PixelPoint(x: x, y: y)
     }
 }
+
+/// Which way the arrow-key ruler measures (sd-p31).
+nonisolated enum PixelMeasureAxis: Sendable {
+    /// ← or →: the width of the run through the pointer.
+    case horizontal
+    /// ↑ or ↓: its height.
+    case vertical
+}
+
+/// The arrow-key ruler at one pointer position: the run of pixels through
+/// it along one axis, from edge to edge.
+nonisolated struct PixelRuler: Equatable, Sendable {
+    let axis: PixelMeasureAxis
+    /// The run's ends in page space, the image's own pixel space: the outer
+    /// edges of its first and last pixels, through the middle of the
+    /// pointer's row or column.
+    let pageStart: CGPoint
+    let pageEnd: CGPoint
+    /// The same ends in canvas points.
+    let start: CGPoint
+    let end: CGPoint
+    let pixels: Int
+    let label: String
+
+    init?(buffer: PixelBuffer, imageFrame: CGRect, pointer: CGPoint, axis: PixelMeasureAxis,
+          includingBorder: Bool, pixelsPerPoint: CGFloat) {
+        guard let pixel = buffer.pixel(at: pointer, imageFrame: imageFrame),
+              let span = buffer.span(x: pixel.x, y: pixel.y, includingBorder: includingBorder) else { return nil }
+        let run = axis == .horizontal ? span.horizontal : span.vertical
+        let across = CGFloat(axis == .horizontal ? pixel.y : pixel.x) + 0.5
+        let from = CGFloat(run.lowerBound), to = CGFloat(run.upperBound + 1)
+        let pageStart = axis == .horizontal ? CGPoint(x: from, y: across) : CGPoint(x: across, y: from)
+        let pageEnd = axis == .horizontal ? CGPoint(x: to, y: across) : CGPoint(x: across, y: to)
+        func canvas(_ page: CGPoint) -> CGPoint {
+            CGPoint(x: imageFrame.minX + page.x / CGFloat(buffer.width) * imageFrame.width,
+                    y: imageFrame.minY + page.y / CGFloat(buffer.height) * imageFrame.height)
+        }
+        self.axis = axis
+        self.pageStart = pageStart
+        self.pageEnd = pageEnd
+        start = canvas(pageStart)
+        end = canvas(pageEnd)
+        pixels = run.count
+        label = PixelMeasurement.label(pixels: run.count, pixelsPerPoint: pixelsPerPoint)
+    }
+}

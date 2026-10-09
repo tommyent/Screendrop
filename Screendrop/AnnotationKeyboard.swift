@@ -25,6 +25,9 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     let isCropping: () -> Bool
     /// Tab: copies the colour under the pointer; false when it isn't over the image.
     let onCopyColor: () -> Bool
+    /// A held arrow key measures (an axis); its release, or the window
+    /// losing focus, ends that (nil). Returns whether the key was used.
+    let onMeasure: (PixelMeasureAxis?) -> Bool
 
     func makeNSView(context: Context) -> AnnotationKeyCommandHandlerView {
         let view = AnnotationKeyCommandHandlerView()
@@ -54,6 +57,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.onCancelCrop = onCancelCrop
         view.isCropping = isCropping
         view.onCopyColor = onCopyColor
+        view.onMeasure = onMeasure
     }
 }
 
@@ -75,17 +79,33 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var onCancelCrop: (() -> Void)?
     var isCropping: (() -> Bool)?
     var onCopyColor: (() -> Bool)?
+    var onMeasure: ((PixelMeasureAxis?) -> Bool)?
 
     private var localKeyMonitor: Any?
+    private var localKeyUpMonitor: Any?
+    private var resignKeyObserver: NSObjectProtocol?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateLocalKeyMonitor()
+        // A key released while another window has focus never reaches us.
+        if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
+        resignKeyObserver = window.map { window in
+            NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { _ = self?.onMeasure?(nil) }
+            }
+        }
     }
 
     deinit {
         if let localKeyMonitor {
             NSEvent.removeMonitor(localKeyMonitor)
+        }
+        if let localKeyUpMonitor {
+            NSEvent.removeMonitor(localKeyUpMonitor)
+        }
+        if let resignKeyObserver {
+            NotificationCenter.default.removeObserver(resignKeyObserver)
         }
     }
 
@@ -129,6 +149,13 @@ final class AnnotationKeyCommandHandlerView: NSView {
             // Tab copies the colour under the pointer, as in Shottr. Off the
             // image it keeps moving the keyboard focus.
             if Self.isPlainTab(event), self.onCopyColor?() == true {
+                return nil
+            }
+
+            // Holding an arrow key over the image measures, as in Shottr:
+            // up or down the height under the pointer, left or right the
+            // width. Shift may be held too; it includes the border.
+            if let axis = Self.measureAxis(event), self.onMeasure?(axis) == true {
                 return nil
             }
 
@@ -188,6 +215,24 @@ final class AnnotationKeyCommandHandlerView: NSView {
             }
 
             return event
+        }
+
+        localKeyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
+            if Self.measureAxis(event) != nil, self?.window?.isKeyWindow == true {
+                _ = self?.onMeasure?(nil)
+            }
+            return event
+        }
+    }
+
+    /// ←/→ measure across, ↑/↓ down; with Command, Option or Control they
+    /// are left alone.
+    private static func measureAxis(_ event: NSEvent) -> PixelMeasureAxis? {
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return nil }
+        switch event.keyCode {
+        case 123, 124: return .horizontal
+        case 125, 126: return .vertical
+        default: return nil
         }
     }
 

@@ -1,10 +1,11 @@
 import AppKit
 import Observation
 
-/// The screenshot's pixels under the editor's pointer (sd-t4k): the colour
-/// the inspector shows and Tab copies. Each editor window owns one, apart
-/// from `AnnotationEditorModel`, since it's about the source pixels rather
-/// than the annotations.
+/// The screenshot's pixels under the editor's pointer (sd-t4k, sd-p31): the
+/// colour the inspector shows and Tab copies, and which way a held arrow key
+/// is measuring. Each editor window owns one, apart from
+/// `AnnotationEditorModel`, since it's about the source pixels rather than
+/// the annotations.
 @Observable
 final class PixelProbe {
     /// The base image at full resolution; nil until it's decoded.
@@ -15,6 +16,8 @@ final class PixelProbe {
     private(set) var hovered: PixelColor?
     /// The hex Tab copied, for a moment, so the inspector can confirm it.
     private(set) var copiedHex: String?
+    /// Set while an arrow key is held over the image.
+    private(set) var measuring: PixelMeasureAxis?
 
     @ObservationIgnored private var url: URL?
     @ObservationIgnored private var clearCopied: Task<Void, Never>?
@@ -27,6 +30,7 @@ final class PixelProbe {
         self.url = url
         buffer = nil
         hovered = nil
+        measuring = nil
         guard let url else { return }
         pixelsPerPoint = CGImageSourceCreateWithURL(url as CFURL, nil)
             .map(AnnotationCanvasExpansion.pixelsPerPoint(of:)) ?? 1
@@ -44,6 +48,22 @@ final class PixelProbe {
             .flatMap { buffer?.pixel(at: $0, imageFrame: imageFrame) }
             .flatMap { buffer?.color(x: $0.x, y: $0.y) }
         if color != hovered { hovered = color }
+        // Leaving the canvas ends a measurement; the held key's repeats
+        // start it again on the way back.
+        if location == nil { measuring = nil }
+    }
+
+    /// An arrow key went down (an axis) or up (nil). A measurement starts
+    /// only over the image, so elsewhere the arrows reach the focused
+    /// control. Returns whether the key was used.
+    func measure(_ axis: PixelMeasureAxis?) -> Bool {
+        guard let axis else {
+            measuring = nil
+            return false
+        }
+        guard hovered != nil || measuring != nil else { return false }
+        if measuring != axis { measuring = axis }
+        return true
     }
 
     /// Tab: puts the hovered colour's hex on the pasteboard. Only over the

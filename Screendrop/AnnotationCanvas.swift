@@ -458,6 +458,10 @@ struct AnnotationCanvas: View {
 
             if model.isCropping {
                 AnnotationCropOverlay(model: model, imageFrame: imageFrame)
+            } else if let probe, let axis = probe.measuring {
+                // Inside the camera's projection, so the ruler tilts with
+                // the image it measures.
+                PixelMeasureOverlay(probe: probe, axis: axis, imageFrame: imageFrame, pointer: hoveredLocation)
             }
         }
         .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
