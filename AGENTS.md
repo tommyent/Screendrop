@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Screendrop is a native macOS screenshot and screen recording tool. Its Library window opens on normal launch; login launches remain in the menu bar (`LSUIElement = YES`). `AppActivationPolicy` uses `.regular` while Library, Settings, or editor windows are open, and returns to `.accessory` when they close. Built with SwiftUI + AppKit and no test target.
+Screendrop is a native macOS screenshot and screen recording tool. Its Library window opens on normal launch; login launches remain in the menu bar (`LSUIElement = YES`). `AppActivationPolicy` uses `.regular` while Library, Settings, or editor windows are open, and returns to `.accessory` when they close. Built with SwiftUI + AppKit with a hostless Swift Testing unit test target.
 
 **Deployment target:** macOS 26.4 (Xcode 26.4 / Tahoe beta SDK).
 **Bundle ID:** `com.fayazahmed.Screendrop`
@@ -22,7 +22,15 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build \
 
 There are two shared schemes (`Screendrop` and `Screendrop Dev`) - both build the same target with Debug config. Use `Screendrop` unless told otherwise.
 
-No test target exists. Build success is the only automated verification.
+`ScreendropTests` is wired into both shared schemes. It compiles the selected production logic directly, with no app host, windows, permissions or live services.
+
+```bash
+xcodebuild test -project Screendrop.xcodeproj -scheme "Screendrop Dev" \
+  -configuration "Debug Dev" -destination "platform=macOS" \
+  DEVELOPMENT_TEAM=NMM3956F6W -allowProvisioningUpdates
+```
+
+See `ScreendropTests/README.md` for coverage and fixture rules. Run tests before committing.
 
 ## Swift concurrency settings
 
