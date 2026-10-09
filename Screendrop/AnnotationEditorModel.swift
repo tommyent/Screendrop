@@ -65,7 +65,7 @@ final class AnnotationEditorModel {
     var isPreviewDownscaled = false
     var imageSize: CGSize = .zero
 
-    var selectedTool: AnnotationTool = .rectangle
+    var selectedTool: AnnotationTool = .select
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
     var geoFill: AnnoFillStyle = .none
@@ -136,6 +136,7 @@ final class AnnotationEditorModel {
     private var smartRedactionGeneration = UUID()
 
     init() {
+        engine.tool = selectedTool
         engine.onChange = { [weak self] in
             guard let self else { return }
             recordHistoryChange()
@@ -830,7 +831,7 @@ final class AnnotationEditorModel {
 
     private func applyAnnotationPreset() {
         let preset = AnnotationPresetStore.load()
-        selectedTool = preset.selectedTool
+        selectedTool = .select
         selectedSwatch = preset.swatch
         strokeWidth = CGFloat(preset.strokeWidth)
         geoFill = preset.geoFill
