@@ -9,16 +9,130 @@
 /* Begin PBXBuildFile section */
 		31A100022F9DC05A002A7AF3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 31A100012F9DC05A002A7AF3 /* Sparkle */; };
 		5EB13EE1F16DFCBCFE9A3449 /* DockProgress in Frameworks */ = {isa = PBXBuildFile; productRef = 6711E7AD88BD96C1258D3CE6 /* DockProgress */; };
+		AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */; };
+		AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */; };
+		AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */; };
+		AA6100000000000000000067 /* Screendrop/Engine/AnnoEditorMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CB /* Screendrop/Engine/AnnoEditorMeasure.swift */; };
+		AA6100000000000000000068 /* Screendrop/Engine/AnnoEditorSnapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CC /* Screendrop/Engine/AnnoEditorSnapping.swift */; };
+		AA6100000000000000000069 /* Screendrop/Engine/AnnoShapeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CD /* Screendrop/Engine/AnnoShapeDrawing.swift */; };
+		AA610000000000000000006A /* Screendrop/Engine/AnnoSnapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CE /* Screendrop/Engine/AnnoSnapping.swift */; };
+		AA610000000000000000006B /* Screendrop/Engine/ArrowLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CF /* Screendrop/Engine/ArrowLabel.swift */; };
+		AA610000000000000000006C /* Screendrop/Engine/ArrowShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D0 /* Screendrop/Engine/ArrowShared.swift */; };
+		AA610000000000000000006D /* Screendrop/Engine/ArrowTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D1 /* Screendrop/Engine/ArrowTypes.swift */; };
+		AA610000000000000000006E /* Screendrop/Engine/Arrowheads.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D2 /* Screendrop/Engine/Arrowheads.swift */; };
+		AA610000000000000000006F /* Screendrop/Engine/Box.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D3 /* Screendrop/Engine/Box.swift */; };
+		AA6100000000000000000070 /* Screendrop/Engine/CurvedArrow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D4 /* Screendrop/Engine/CurvedArrow.swift */; };
+		AA6100000000000000000071 /* Screendrop/Engine/Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D5 /* Screendrop/Engine/Document.swift */; };
+		AA6100000000000000000072 /* Screendrop/Engine/GeoPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D6 /* Screendrop/Engine/GeoPaths.swift */; };
+		AA6100000000000000000073 /* Screendrop/Engine/Geometry2d.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D7 /* Screendrop/Engine/Geometry2d.swift */; };
+		AA6100000000000000000074 /* Screendrop/Engine/InkPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D8 /* Screendrop/Engine/InkPath.swift */; };
+		AA6100000000000000000075 /* Screendrop/Engine/Intersect.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000D9 /* Screendrop/Engine/Intersect.swift */; };
+		AA6100000000000000000076 /* Screendrop/Engine/Magnifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000DA /* Screendrop/Engine/Magnifier.swift */; };
+		AA6100000000000000000077 /* Screendrop/Engine/Mat.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000DB /* Screendrop/Engine/Mat.swift */; };
+		AA6100000000000000000078 /* Screendrop/Engine/MathUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000DC /* Screendrop/Engine/MathUtils.swift */; };
+		AA6100000000000000000079 /* Screendrop/Engine/PathBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000DD /* Screendrop/Engine/PathBuilder.swift */; };
+		AA610000000000000000007A /* Screendrop/Engine/PerfectDash.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000DE /* Screendrop/Engine/PerfectDash.swift */; };
+		AA610000000000000000007B /* Screendrop/Engine/Shape.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000DF /* Screendrop/Engine/Shape.swift */; };
+		AA610000000000000000007C /* Screendrop/Engine/ShapeRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E0 /* Screendrop/Engine/ShapeRenderer.swift */; };
+		AA610000000000000000007D /* Screendrop/Engine/Shapes2d.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E1 /* Screendrop/Engine/Shapes2d.swift */; };
+		AA610000000000000000007E /* Screendrop/Engine/StraightArrow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E2 /* Screendrop/Engine/StraightArrow.swift */; };
+		AA610000000000000000007F /* Screendrop/Engine/StrokeOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E3 /* Screendrop/Engine/StrokeOptions.swift */; };
+		AA6100000000000000000080 /* Screendrop/Engine/StrokeOutline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E4 /* Screendrop/Engine/StrokeOutline.swift */; };
+		AA6100000000000000000081 /* Screendrop/Engine/StrokePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E5 /* Screendrop/Engine/StrokePipeline.swift */; };
+		AA6100000000000000000082 /* Screendrop/Engine/TextMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E6 /* Screendrop/Engine/TextMeasure.swift */; };
+		AA6100000000000000000083 /* Screendrop/Engine/Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E7 /* Screendrop/Engine/Theme.swift */; };
+		AA6100000000000000000084 /* Screendrop/Engine/Vec.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E8 /* Screendrop/Engine/Vec.swift */; };
+		AA6100000000000000000085 /* Screendrop/AnnotationTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000E9 /* Screendrop/AnnotationTool.swift */; };
+		AA6100000000000000000086 /* Screendrop/AnnotationSwatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000EA /* Screendrop/AnnotationSwatch.swift */; };
+		AA6100000000000000000087 /* Screendrop/AnnotationPresetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000EB /* Screendrop/AnnotationPresetStore.swift */; };
+		AA6100000000000000000088 /* Screendrop/AnnotationMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000EC /* Screendrop/AnnotationMetrics.swift */; };
+		AA6100000000000000000089 /* Screendrop/AnnotationRedactionImageProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000ED /* Screendrop/AnnotationRedactionImageProcessor.swift */; };
+		AA610000000000000000008A /* Screendrop/AnnoRedactionPreviewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000EE /* Screendrop/AnnoRedactionPreviewCache.swift */; };
+		AA610000000000000000008B /* Screendrop/BoundedCGImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000EF /* Screendrop/BoundedCGImageCache.swift */; };
+		AA610000000000000000008C /* Screendrop/AnnotationCanvasViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F0 /* Screendrop/AnnotationCanvasViewport.swift */; };
+		AA610000000000000000008D /* Screendrop/StudioScreenLayerCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F1 /* Screendrop/StudioScreenLayerCache.swift */; };
+		AA610000000000000000008E /* Screendrop/ScrollingCaptureStitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F2 /* Screendrop/ScrollingCaptureStitcher.swift */; };
+		AA610000000000000000008F /* Screendrop/PixelInspection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F3 /* Screendrop/PixelInspection.swift */; };
+		AA6100000000000000000090 /* Screendrop/CloudCommentList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F4 /* Screendrop/CloudCommentList.swift */; };
+		AA6100000000000000000091 /* Screendrop/CloudUploadList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F5 /* Screendrop/CloudUploadList.swift */; };
+		AA6100000000000000000092 /* Screendrop/CloudPreviewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */; };
+		AA6100000000000000000093 /* Screendrop/CaptureTagField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */; };
+		AA6100000000000000000094 /* Screendrop/CaptureTagStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */; };
+		AA6200000000000000000001 /* Screendrop/ScreenshotHistoryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */; };
+		AA6200000000000000000002 /* Screendrop/AnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */; };
+		AA6200000000000000000003 /* Screendrop/AnnotationBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */; };
+		AA6200000000000000000004 /* Screendrop/AnnotationShadowStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000014 /* Screendrop/AnnotationShadowStyle.swift */; };
+		AA6200000000000000000005 /* Screendrop/ScreenRecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000015 /* Screendrop/ScreenRecordingState.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		3163891D2F9DC05A002A7AF3 /* Screendrop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screendrop.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA6100000000000000000001 /* ScreendropTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ScreendropTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditor.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorInteraction.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorMagnifier.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000CB /* Screendrop/Engine/AnnoEditorMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorMeasure.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000CC /* Screendrop/Engine/AnnoEditorSnapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorSnapping.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000CD /* Screendrop/Engine/AnnoShapeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoShapeDrawing.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000CE /* Screendrop/Engine/AnnoSnapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoSnapping.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000CF /* Screendrop/Engine/ArrowLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/ArrowLabel.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D0 /* Screendrop/Engine/ArrowShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/ArrowShared.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D1 /* Screendrop/Engine/ArrowTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/ArrowTypes.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D2 /* Screendrop/Engine/Arrowheads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Arrowheads.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D3 /* Screendrop/Engine/Box.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Box.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D4 /* Screendrop/Engine/CurvedArrow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/CurvedArrow.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D5 /* Screendrop/Engine/Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Document.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D6 /* Screendrop/Engine/GeoPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/GeoPaths.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D7 /* Screendrop/Engine/Geometry2d.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Geometry2d.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D8 /* Screendrop/Engine/InkPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/InkPath.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000D9 /* Screendrop/Engine/Intersect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Intersect.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000DA /* Screendrop/Engine/Magnifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Magnifier.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000DB /* Screendrop/Engine/Mat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Mat.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000DC /* Screendrop/Engine/MathUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/MathUtils.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000DD /* Screendrop/Engine/PathBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/PathBuilder.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000DE /* Screendrop/Engine/PerfectDash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/PerfectDash.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000DF /* Screendrop/Engine/Shape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Shape.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E0 /* Screendrop/Engine/ShapeRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/ShapeRenderer.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E1 /* Screendrop/Engine/Shapes2d.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Shapes2d.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E2 /* Screendrop/Engine/StraightArrow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/StraightArrow.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E3 /* Screendrop/Engine/StrokeOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/StrokeOptions.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E4 /* Screendrop/Engine/StrokeOutline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/StrokeOutline.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E5 /* Screendrop/Engine/StrokePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/StrokePipeline.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E6 /* Screendrop/Engine/TextMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/TextMeasure.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E7 /* Screendrop/Engine/Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Theme.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E8 /* Screendrop/Engine/Vec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/Vec.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000E9 /* Screendrop/AnnotationTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationTool.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000EA /* Screendrop/AnnotationSwatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationSwatch.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000EB /* Screendrop/AnnotationPresetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationPresetStore.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000EC /* Screendrop/AnnotationMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationMetrics.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000ED /* Screendrop/AnnotationRedactionImageProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationRedactionImageProcessor.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000EE /* Screendrop/AnnoRedactionPreviewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnoRedactionPreviewCache.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000EF /* Screendrop/BoundedCGImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/BoundedCGImageCache.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F0 /* Screendrop/AnnotationCanvasViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationCanvasViewport.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F1 /* Screendrop/StudioScreenLayerCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/StudioScreenLayerCache.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F2 /* Screendrop/ScrollingCaptureStitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureStitcher.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F3 /* Screendrop/PixelInspection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/PixelInspection.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F4 /* Screendrop/CloudCommentList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CloudCommentList.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F5 /* Screendrop/CloudUploadList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CloudUploadList.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CloudPreviewCache.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CaptureTagField.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CaptureTagStyles.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScreenshotHistoryMetadata.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationDocument.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationBackground.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000014 /* Screendrop/AnnotationShadowStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationShadowStyle.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000015 /* Screendrop/ScreenRecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScreenRecordingState.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3163891F2F9DC05A002A7AF3 /* Screendrop */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Screendrop;
+			sourceTree = "<group>";
+		};
+		AA6100000000000000000002 /* ScreendropTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ScreendropTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,6 +147,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA6100000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -40,6 +160,8 @@
 			isa = PBXGroup;
 			children = (
 				3163891F2F9DC05A002A7AF3 /* Screendrop */,
+				AA6100000000000000000002 /* ScreendropTests */,
+				AA6100000000000000000003 /* Tested logic */,
 				3163891E2F9DC05A002A7AF3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,8 +170,70 @@
 			isa = PBXGroup;
 			children = (
 				3163891D2F9DC05A002A7AF3 /* Screendrop.app */,
+				AA6100000000000000000001 /* ScreendropTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA6100000000000000000003 /* Tested logic */ = {
+			isa = PBXGroup;
+			children = (
+				AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */,
+				AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */,
+				AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */,
+				AA6200000000000000000014 /* Screendrop/AnnotationShadowStyle.swift */,
+				AA6200000000000000000015 /* Screendrop/ScreenRecordingState.swift */,
+				AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */,
+				AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */,
+				AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */,
+				AA61000000000000000000CB /* Screendrop/Engine/AnnoEditorMeasure.swift */,
+				AA61000000000000000000CC /* Screendrop/Engine/AnnoEditorSnapping.swift */,
+				AA61000000000000000000CD /* Screendrop/Engine/AnnoShapeDrawing.swift */,
+				AA61000000000000000000CE /* Screendrop/Engine/AnnoSnapping.swift */,
+				AA61000000000000000000CF /* Screendrop/Engine/ArrowLabel.swift */,
+				AA61000000000000000000D0 /* Screendrop/Engine/ArrowShared.swift */,
+				AA61000000000000000000D1 /* Screendrop/Engine/ArrowTypes.swift */,
+				AA61000000000000000000D2 /* Screendrop/Engine/Arrowheads.swift */,
+				AA61000000000000000000D3 /* Screendrop/Engine/Box.swift */,
+				AA61000000000000000000D4 /* Screendrop/Engine/CurvedArrow.swift */,
+				AA61000000000000000000D5 /* Screendrop/Engine/Document.swift */,
+				AA61000000000000000000D6 /* Screendrop/Engine/GeoPaths.swift */,
+				AA61000000000000000000D7 /* Screendrop/Engine/Geometry2d.swift */,
+				AA61000000000000000000D8 /* Screendrop/Engine/InkPath.swift */,
+				AA61000000000000000000D9 /* Screendrop/Engine/Intersect.swift */,
+				AA61000000000000000000DA /* Screendrop/Engine/Magnifier.swift */,
+				AA61000000000000000000DB /* Screendrop/Engine/Mat.swift */,
+				AA61000000000000000000DC /* Screendrop/Engine/MathUtils.swift */,
+				AA61000000000000000000DD /* Screendrop/Engine/PathBuilder.swift */,
+				AA61000000000000000000DE /* Screendrop/Engine/PerfectDash.swift */,
+				AA61000000000000000000DF /* Screendrop/Engine/Shape.swift */,
+				AA61000000000000000000E0 /* Screendrop/Engine/ShapeRenderer.swift */,
+				AA61000000000000000000E1 /* Screendrop/Engine/Shapes2d.swift */,
+				AA61000000000000000000E2 /* Screendrop/Engine/StraightArrow.swift */,
+				AA61000000000000000000E3 /* Screendrop/Engine/StrokeOptions.swift */,
+				AA61000000000000000000E4 /* Screendrop/Engine/StrokeOutline.swift */,
+				AA61000000000000000000E5 /* Screendrop/Engine/StrokePipeline.swift */,
+				AA61000000000000000000E6 /* Screendrop/Engine/TextMeasure.swift */,
+				AA61000000000000000000E7 /* Screendrop/Engine/Theme.swift */,
+				AA61000000000000000000E8 /* Screendrop/Engine/Vec.swift */,
+				AA61000000000000000000E9 /* Screendrop/AnnotationTool.swift */,
+				AA61000000000000000000EA /* Screendrop/AnnotationSwatch.swift */,
+				AA61000000000000000000EB /* Screendrop/AnnotationPresetStore.swift */,
+				AA61000000000000000000EC /* Screendrop/AnnotationMetrics.swift */,
+				AA61000000000000000000ED /* Screendrop/AnnotationRedactionImageProcessor.swift */,
+				AA61000000000000000000EE /* Screendrop/AnnoRedactionPreviewCache.swift */,
+				AA61000000000000000000EF /* Screendrop/BoundedCGImageCache.swift */,
+				AA61000000000000000000F0 /* Screendrop/AnnotationCanvasViewport.swift */,
+				AA61000000000000000000F1 /* Screendrop/StudioScreenLayerCache.swift */,
+				AA61000000000000000000F2 /* Screendrop/ScrollingCaptureStitcher.swift */,
+				AA61000000000000000000F3 /* Screendrop/PixelInspection.swift */,
+				AA61000000000000000000F4 /* Screendrop/CloudCommentList.swift */,
+				AA61000000000000000000F5 /* Screendrop/CloudUploadList.swift */,
+				AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */,
+				AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */,
+				AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */,
+			);
+			name = "Tested logic";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -78,6 +262,18 @@
 			productName = Screendrop;
 			productReference = 3163891D2F9DC05A002A7AF3 /* Screendrop.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AA6100000000000000000004 /* ScreendropTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA6100000000000000000005;
+			buildPhases = (AA6100000000000000000007 /* Sources */, AA6100000000000000000008 /* Frameworks */, AA6100000000000000000009 /* Resources */);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (AA6100000000000000000002 /* ScreendropTests */);
+			name = ScreendropTests;
+			productName = ScreendropTests;
+			productReference = AA6100000000000000000001 /* ScreendropTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -113,6 +309,7 @@
 			projectRoot = "";
 			targets = (
 				3163891C2F9DC05A002A7AF3 /* Screendrop */,
+				AA6100000000000000000004 /* ScreendropTests */,
 			);
 		};
 /* End PBXProject section */
@@ -125,6 +322,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA6100000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -132,6 +335,67 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA6100000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA6200000000000000000001 /* Screendrop/ScreenshotHistoryMetadata.swift in Sources */,
+				AA6200000000000000000002 /* Screendrop/AnnotationDocument.swift in Sources */,
+				AA6200000000000000000003 /* Screendrop/AnnotationBackground.swift in Sources */,
+				AA6200000000000000000004 /* Screendrop/AnnotationShadowStyle.swift in Sources */,
+				AA6200000000000000000005 /* Screendrop/ScreenRecordingState.swift in Sources */,
+				AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */,
+				AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */,
+				AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */,
+				AA6100000000000000000067 /* Screendrop/Engine/AnnoEditorMeasure.swift in Sources */,
+				AA6100000000000000000068 /* Screendrop/Engine/AnnoEditorSnapping.swift in Sources */,
+				AA6100000000000000000069 /* Screendrop/Engine/AnnoShapeDrawing.swift in Sources */,
+				AA610000000000000000006A /* Screendrop/Engine/AnnoSnapping.swift in Sources */,
+				AA610000000000000000006B /* Screendrop/Engine/ArrowLabel.swift in Sources */,
+				AA610000000000000000006C /* Screendrop/Engine/ArrowShared.swift in Sources */,
+				AA610000000000000000006D /* Screendrop/Engine/ArrowTypes.swift in Sources */,
+				AA610000000000000000006E /* Screendrop/Engine/Arrowheads.swift in Sources */,
+				AA610000000000000000006F /* Screendrop/Engine/Box.swift in Sources */,
+				AA6100000000000000000070 /* Screendrop/Engine/CurvedArrow.swift in Sources */,
+				AA6100000000000000000071 /* Screendrop/Engine/Document.swift in Sources */,
+				AA6100000000000000000072 /* Screendrop/Engine/GeoPaths.swift in Sources */,
+				AA6100000000000000000073 /* Screendrop/Engine/Geometry2d.swift in Sources */,
+				AA6100000000000000000074 /* Screendrop/Engine/InkPath.swift in Sources */,
+				AA6100000000000000000075 /* Screendrop/Engine/Intersect.swift in Sources */,
+				AA6100000000000000000076 /* Screendrop/Engine/Magnifier.swift in Sources */,
+				AA6100000000000000000077 /* Screendrop/Engine/Mat.swift in Sources */,
+				AA6100000000000000000078 /* Screendrop/Engine/MathUtils.swift in Sources */,
+				AA6100000000000000000079 /* Screendrop/Engine/PathBuilder.swift in Sources */,
+				AA610000000000000000007A /* Screendrop/Engine/PerfectDash.swift in Sources */,
+				AA610000000000000000007B /* Screendrop/Engine/Shape.swift in Sources */,
+				AA610000000000000000007C /* Screendrop/Engine/ShapeRenderer.swift in Sources */,
+				AA610000000000000000007D /* Screendrop/Engine/Shapes2d.swift in Sources */,
+				AA610000000000000000007E /* Screendrop/Engine/StraightArrow.swift in Sources */,
+				AA610000000000000000007F /* Screendrop/Engine/StrokeOptions.swift in Sources */,
+				AA6100000000000000000080 /* Screendrop/Engine/StrokeOutline.swift in Sources */,
+				AA6100000000000000000081 /* Screendrop/Engine/StrokePipeline.swift in Sources */,
+				AA6100000000000000000082 /* Screendrop/Engine/TextMeasure.swift in Sources */,
+				AA6100000000000000000083 /* Screendrop/Engine/Theme.swift in Sources */,
+				AA6100000000000000000084 /* Screendrop/Engine/Vec.swift in Sources */,
+				AA6100000000000000000085 /* Screendrop/AnnotationTool.swift in Sources */,
+				AA6100000000000000000086 /* Screendrop/AnnotationSwatch.swift in Sources */,
+				AA6100000000000000000087 /* Screendrop/AnnotationPresetStore.swift in Sources */,
+				AA6100000000000000000088 /* Screendrop/AnnotationMetrics.swift in Sources */,
+				AA6100000000000000000089 /* Screendrop/AnnotationRedactionImageProcessor.swift in Sources */,
+				AA610000000000000000008A /* Screendrop/AnnoRedactionPreviewCache.swift in Sources */,
+				AA610000000000000000008B /* Screendrop/BoundedCGImageCache.swift in Sources */,
+				AA610000000000000000008C /* Screendrop/AnnotationCanvasViewport.swift in Sources */,
+				AA610000000000000000008D /* Screendrop/StudioScreenLayerCache.swift in Sources */,
+				AA610000000000000000008E /* Screendrop/ScrollingCaptureStitcher.swift in Sources */,
+				AA610000000000000000008F /* Screendrop/PixelInspection.swift in Sources */,
+				AA6100000000000000000090 /* Screendrop/CloudCommentList.swift in Sources */,
+				AA6100000000000000000091 /* Screendrop/CloudUploadList.swift in Sources */,
+				AA6100000000000000000092 /* Screendrop/CloudPreviewCache.swift in Sources */,
+				AA6100000000000000000093 /* Screendrop/CaptureTagField.swift in Sources */,
+				AA6100000000000000000094 /* Screendrop/CaptureTagStyles.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +712,63 @@
 			};
 			name = "Debug Dev";
 		};
+		AA610000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fayazahmed.Screendrop.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "";
+			};
+			name = "Debug";
+		};
+		AA610000000000000000000B /* Debug Dev */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fayazahmed.Screendrop.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "";
+			};
+			name = "Debug Dev";
+		};
+		AA610000000000000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.fayazahmed.Screendrop.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "";
+			};
+			name = "Release";
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -468,6 +789,12 @@
 				31CA951B2FCB2749003035C6 /* Debug Dev */,
 				3163892A2F9DC05B002A7AF3 /* Release */,
 			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA6100000000000000000005 /* Build configuration list for PBXNativeTarget "ScreendropTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (AA610000000000000000000A /* Debug */, AA610000000000000000000B /* Debug Dev */, AA610000000000000000000C /* Release */);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};

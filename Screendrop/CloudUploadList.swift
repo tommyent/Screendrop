@@ -94,6 +94,12 @@ nonisolated enum CloudUploadList {
         try decoder.decode(Page.self, from: data)
     }
 
+    /// Offset pages can repeat an upload when a new one arrives between requests.
+    static func deduplicated(_ uploads: [CloudUpload]) -> [CloudUpload] {
+        var seen: Set<String> = []
+        return uploads.filter { seen.insert($0.id).inserted }
+    }
+
     /// One upload, as PATCH /api/upload/:id answers.
     static func decodeUpload(_ data: Data) throws -> CloudUpload {
         try decoder.decode(CloudUpload.self, from: data)

@@ -131,18 +131,15 @@ final class ScreenshotHistoryStore {
     }
 
     /// Loads the editable annotation document for a screenshot, if one exists.
-    func loadEditDocument(for displayURL: URL) -> AnnotationDocument? {
-        let documentURL = Self.editDocumentURL(for: displayURL)
-        guard let data = try? Data(contentsOf: documentURL),
-              let document = try? JSONDecoder().decode(AnnotationDocument.self, from: data) else {
-            return nil
-        }
-        return document
+    func loadEditDocument(for displayURL: URL) throws -> AnnotationDocument? {
+        try AnnotationDocument.load(from: Self.editDocumentURL(for: displayURL))
     }
 
     func hasEditDocument(for displayURL: URL) -> Bool {
         FileManager.default.fileExists(atPath: Self.editDocumentURL(for: displayURL).path)
     }
+
+    @ObservationIgnored private var metadata = ScreenshotHistoryMetadata<ScreenshotHistoryItem>()
 
     private(set) var items: [ScreenshotHistoryItem] = []
 
@@ -283,6 +280,7 @@ final class ScreenshotHistoryStore {
         renderedURL: URL,
         document: AnnotationDocument
     ) throws -> URL {
+        _ = try loadEditDocument(for: displayURL)
         guard isHistoryURL(displayURL) else {
             let imported = importScreenshot(from: baseURL)
             guard isHistoryURL(imported) else { throw CocoaError(.fileWriteUnknown) }
@@ -321,6 +319,7 @@ final class ScreenshotHistoryStore {
     /// Restores the base and removes the editable files as one recoverable save.
     @discardableResult
     func removeAnnotations(displayURL: URL) throws -> URL {
+        _ = try loadEditDocument(for: displayURL)
         guard isHistoryURL(displayURL) else { return displayURL }
         let baseDestination = Self.baseImageURL(for: displayURL)
         let documentURL = Self.editDocumentURL(for: displayURL)
@@ -476,22 +475,14 @@ final class ScreenshotHistoryStore {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.metadataURL),
-              let decoded = try? JSONDecoder().decode([ScreenshotHistoryItem].self, from: data) else {
-            items = []
-            return
-        }
-
-        items = decoded
+        items = metadata.load(from: Self.metadataURL)
             .filter { FileManager.default.fileExists(atPath: $0.url.path) }
             .sorted { $0.createdAt > $1.createdAt }
     }
 
     private func saveMetadata() {
         do {
-            try FileManager.default.createDirectory(at: Self.applicationSupportDirectory, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(items)
-            try data.write(to: Self.metadataURL, options: .atomic)
+            try metadata.save(items, to: Self.metadataURL)
         } catch {
             print("Failed to save screenshot history: \(error)")
         }

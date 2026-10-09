@@ -499,7 +499,7 @@ nonisolated enum RecordingSessionStore {
             .map { RecordingSession(directoryURL: $0) }
     }
 
-    static func deleteSession(_ session: RecordingSession) {
-        try? FileManager.default.removeItem(at: session.directoryURL)
+    static func deleteSession(_ session: RecordingSession) throws {
+        try FileManager.default.trashItem(at: session.directoryURL, resultingItemURL: nil)
     }
 }

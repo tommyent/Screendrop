@@ -30,6 +30,7 @@ extension RecordingBarPresenter {
 
 struct RecordingSessionControls: View {
     @State private var manager = ScreenRecordingManager.shared
+    @State private var showsDiscardConfirmation = false
 
     private var isPaused: Bool {
         manager.state == .paused
@@ -64,7 +65,7 @@ struct RecordingSessionControls: View {
                 id: .restart,
                 title: "Start over",
                 systemImage: "arrow.counterclockwise",
-                accessibility: "Restart - discard what's recorded and start again"
+                accessibility: "Restart - move this take to the Trash and start again"
             ) {
                 manager.restartRecording()
             }
@@ -85,12 +86,21 @@ struct RecordingSessionControls: View {
                 id: .discard,
                 title: "Discard recording",
                 systemImage: "trash.fill",
-                accessibility: "Discard - delete this recording without saving"
+                accessibility: "Discard - move this recording to the Trash"
             ) {
-                manager.deleteRecording()
+                showsDiscardConfirmation = true
             }
-            .disabled(manager.state == .starting)
+            .disabled(!manager.state.canDiscard)
+            .confirmationDialog("Move this recording to the Trash?", isPresented: $showsDiscardConfirmation,
+                                titleVisibility: .visible) {
+                Button("Move to Trash", role: .destructive) { manager.deleteRecording() }
+                Button("Cancel", role: .cancel) { }
+                    .keyboardShortcut(.defaultAction)
+            } message: {
+                Text("You can recover the recording from the Trash.")
+            }
         }
+        .onChange(of: manager.state) { _, _ in showsDiscardConfirmation = false }
     }
 
     private var elapsed: some View {

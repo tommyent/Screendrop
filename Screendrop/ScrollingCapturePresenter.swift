@@ -50,7 +50,8 @@ final class ScrollingCapturePresenter {
     /// Frames line up again after track was lost; the strip says so briefly.
     private(set) var hasRecovered = false
 
-    @ObservationIgnored private var outcome: Outcome?
+    private(set) var session = ScrollingCaptureSession()
+    @ObservationIgnored private var resumeRequested = false
     @ObservationIgnored private var isSelectingArea = false
     @ObservationIgnored private var isCapturing = false
     @ObservationIgnored private var panel: NSPanel?
@@ -65,10 +66,7 @@ final class ScrollingCapturePresenter {
     /// How long the strip shows that frames line up again before it goes.
     private static let recoveredDisplayTime: Duration = .milliseconds(1500)
 
-    private enum Outcome {
-        case done
-        case cancelled
-    }
+    var isPausedForVideo: Bool { session.isPausedForVideo }
 
     private init() {}
 
@@ -81,7 +79,8 @@ final class ScrollingCapturePresenter {
             return nil
         }
         isRunning = true
-        outcome = nil
+        session = ScrollingCaptureSession()
+        resumeRequested = false
         defer { isRunning = false }
 
         guard ScreenRecordingManager.ensureScreenCapturePermission(),
@@ -90,9 +89,9 @@ final class ScrollingCapturePresenter {
         }
         let pointerDisplayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
         guard let display = content.displays.first(where: { $0.displayID == pointerDisplayID }) ?? content.displays.first,
-              outcome == nil,
+              session.outcome == nil,
               let rect = await selectArea(on: display),
-              outcome != .cancelled else {
+              session.outcome != .cancelled else {
             return nil
         }
 
@@ -152,9 +151,15 @@ final class ScrollingCapturePresenter {
         defer { isCapturing = false }
         // ponytail: a sample that fails is skipped silently; a display that
         // keeps failing leaves the height still until the user ends the session.
-        while outcome == nil {
+        while session.outcome == nil {
+            if resumeRequested {
+                resumeRequested = false
+                await stitcher.resetMotionDetection()
+                // Let hover controls settle after the user pauses the video.
+                try? await Task.sleep(for: .milliseconds(300))
+            }
             try? await Task.sleep(for: Self.sampleInterval)
-            guard outcome == nil, !hasReachedLimit,
+            guard session.outcome == nil, !hasReachedLimit, !isPausedForVideo,
                   let frame = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else {
                 continue
             }
@@ -163,11 +168,21 @@ final class ScrollingCapturePresenter {
             case .appended, .unchanged: hasLostTrack = false
             case .noMatch: hasLostTrack = true
             }
+            if hasLostTrack, await stitcher.hasPersistentLocalChange {
+                session.pauseForVideo()
+                showRecoveryStrip()
+                if let recoveryPanel {
+                    NSAccessibility.post(element: recoveryPanel, notification: .announcementRequested, userInfo: [
+                        .announcement: ScrollingCaptureRecoveryStrip.pauseMessage,
+                        .priority: NSAccessibilityPriorityLevel.high.rawValue
+                    ])
+                }
+            }
             let height = await stitcher.stitchedHeight
             // The image is cropped to the cap on Done, so never show more.
             stitchedHeight = min(height, Self.maximumHeight)
             hasReachedLimit = stitchedHeight >= Self.maximumHeight
-            if hasLostTrack, !wasLost, outcome == nil {
+            if hasLostTrack, !wasLost, session.outcome == nil {
                 if recoveryTarget == nil || recoveryTargetHeight != height,
                    let rows = await stitcher.lastAcceptedRows(recoveryRows) {
                     recoveryTarget = Self.downscaled(rows, toWidth: recoveryPixelWidth)
@@ -179,7 +194,7 @@ final class ScrollingCapturePresenter {
             }
         }
 
-        guard outcome != .cancelled, let image = await stitcher.makeImage() else { return nil }
+        guard session.outcome != .cancelled, let image = await stitcher.makeImage() else { return nil }
         let capped = image.height > Self.maximumHeight
             ? image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: Self.maximumHeight))
             : image
@@ -191,14 +206,20 @@ final class ScrollingCapturePresenter {
     /// is nothing to keep, so it cancels instead.
     func finish() {
         if isCapturing {
-            outcome = outcome ?? .done
+            session.finish()
         } else {
             cancel()
         }
     }
 
+    func continueCapture() {
+        guard isPausedForVideo, session.outcome == nil else { return }
+        session.resume()
+        resumeRequested = true
+    }
+
     func cancel() {
-        outcome = .cancelled
+        session.cancel()
         if isSelectingArea {
             RecordingAreaSelectionPresenter.shared.cancel()
         }
@@ -239,6 +260,7 @@ final class ScrollingCapturePresenter {
             backing: .buffered,
             defer: false
         )
+        panel.sharingType = .none
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -270,7 +292,7 @@ final class ScrollingCapturePresenter {
         recoveryHideTask?.cancel()
         hasRecovered = false
         let size = ScrollingCaptureRecoveryStrip.panelSize
-        let strip = recoveryPanel ?? Self.makePanel(ScrollingCaptureRecoveryStrip(), size: size, origin: .zero)
+        let strip = recoveryPanel ?? Self.makePanel(ScrollingCaptureRecoveryContent(), size: size, origin: .zero)
         strip.setFrameOrigin(Self.recoveryStripOrigin(size: size, besideBar: panel.frame, region: region, on: panel.screen))
         strip.orderFrontRegardless()
         recoveryPanel = strip
@@ -415,6 +437,8 @@ private struct ScrollingCaptureBar: View {
     private var title: String {
         if presenter.hasReachedLimit {
             "Maximum height reached"
+        } else if presenter.isPausedForVideo {
+            "Capture paused"
         } else if presenter.hasLostTrack {
             "Scroll back to where you left off"
         } else {
@@ -423,6 +447,7 @@ private struct ScrollingCaptureBar: View {
     }
 
     private var detail: String {
+        if presenter.isPausedForVideo { return "Done keeps what’s captured" }
         if presenter.hasLostTrack && !presenter.hasReachedLimit {
             return "Couldn't line this view up"
         }
@@ -432,58 +457,15 @@ private struct ScrollingCaptureBar: View {
     }
 }
 
-/// The end of the stitch so far, shown while track is lost: the content to
-/// bring back into the region. There's no "you are here" mark - with track
-/// lost, where the view sits relative to it is exactly what isn't known.
-private struct ScrollingCaptureRecoveryStrip: View {
-    static let imageSize = CGSize(width: 356, height: 72)
-    static let stripSize = CGSize(width: 380, height: 116)
-    static let panelSize = CGSize(
-        width: stripSize.width + ScrollingCaptureBar.margin * 2,
-        height: stripSize.height + ScrollingCaptureBar.margin * 2
-    )
-
+private struct ScrollingCaptureRecoveryContent: View {
     @State private var presenter = ScrollingCapturePresenter.shared
 
-    private var tint: Color {
-        Color(nsColor: presenter.hasRecovered ? .systemGreen : .systemOrange)
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                if presenter.hasRecovered {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(tint)
-                }
-                Text(presenter.hasRecovered ? "Back on track" : "Where you left off")
-                    .foregroundStyle(BarMetrics.activeTint)
-            }
-            .font(.caption.weight(.semibold))
-            .frame(height: 16)
-            Group {
-                if let target = presenter.recoveryTarget {
-                    Image(decorative: target, scale: 1)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Color(nsColor: .quaternaryLabelColor)
-                }
-            }
-            .frame(width: Self.imageSize.width, height: Self.imageSize.height, alignment: .bottom)
-            .clipShape(.rect(cornerRadius: 6))
-            .overlay {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(tint, lineWidth: 1.5)
-            }
-        }
-        .padding(.horizontal, 12)
-        .frame(width: Self.stripSize.width, height: Self.stripSize.height)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
-        .padding(ScrollingCaptureBar.margin)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(presenter.hasRecovered
-            ? "Back on track"
-            : "Where you left off: the last captured rows. Scroll back until they're in the region.")
+        ScrollingCaptureRecoveryStrip(
+            target: presenter.recoveryTarget,
+            hasRecovered: presenter.hasRecovered,
+            isPausedForVideo: presenter.isPausedForVideo,
+            onContinue: presenter.continueCapture
+        )
     }
 }

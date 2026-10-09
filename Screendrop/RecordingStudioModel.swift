@@ -1196,8 +1196,7 @@ final class RecordingStudioModel {
     }
 
     /// True until the project has been saved at least once. Only these get
-    /// offered "Delete and close" - throwing away a project the user already
-    /// committed to would be unrecoverable.
+    /// offered "Move to Trash and Close"; saved projects discard only their unsaved edits.
     var hasNeverBeenSaved: Bool {
         guard let session else { return false }
         return !session.hasSavedProject
@@ -1279,12 +1278,22 @@ final class RecordingStudioModel {
         flushDraft()
     }
 
-    /// Deletes the whole recording package - footage included - and its
-    /// History entry. Reserved for a project that was never saved.
-    func deleteProject() {
-        guard let session else { return }
-        teardown()
-        RecordingProjectStore.shared.delete(session)
+    /// Moves a never-saved project and its footage to the Trash before closing.
+    @discardableResult
+    func deleteProject() -> Bool {
+        guard let session else { return false }
+        flushDraft()
+        do {
+            try RecordingProjectStore.shared.delete(session)
+            // Teardown must not recreate a draft at the package's former location.
+            isLoaded = false
+            teardown()
+            return true
+        } catch {
+            FailureAlert.present(message: "The recording could not be moved to the Trash", error: error,
+                                 detail: "Your editor will stay open and your footage has been kept.")
+            return false
+        }
     }
 
     private func flashSaveConfirmation() {

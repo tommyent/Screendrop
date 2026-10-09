@@ -6,6 +6,17 @@
 import CoreGraphics
 import Foundation
 
+struct ScrollingCaptureSession {
+    enum Outcome: Equatable { case done, cancelled }
+    private(set) var outcome: Outcome?
+    private(set) var isPausedForVideo = false
+
+    mutating func pauseForVideo() { isPausedForVideo = true }
+    mutating func resume() { isPausedForVideo = false }
+    mutating func finish() { outcome = outcome ?? .done }
+    mutating func cancel() { outcome = .cancelled }
+}
+
 /// Stitches the frames of a scrolling capture into one tall image.
 ///
 /// Every frame is the same screen region, captured while the user scrolls.
@@ -75,6 +86,11 @@ actor ScrollingCaptureStitcher {
     /// Columns which together proved the last accepted scroll. They can
     /// establish idle page content while the video keeps changing.
     private var pageColumns: [[Range<Int>]] = []
+    private var lastSample: [UInt32] = []
+    private var lastChanges: [Bool] = []
+    private var changingSamples = 0
+    /// Diagnostic only: this never grants permission to append a frame.
+    private(set) var hasPersistentLocalChange = false
 
     /// Height of the stitched image so far, in pixels.
     private(set) var stitchedHeight: Int
@@ -98,12 +114,19 @@ actor ScrollingCaptureStitcher {
         last = pixels
         lastColumns = Self.columnProfile(of: pixels, width: width, height: height, hashedWidth: hashedWidth)
         stitchedHeight = height
+        lastSample = Self.motionSample(pixels, width: width, height: height, hashedWidth: hashedWidth)
     }
 
     func add(_ frame: CGImage) -> Update {
         guard frame.width == width, frame.height == height,
               let pixels = Self.pixels(of: frame, colorSpace: colorSpace) else {
+            resetMotionDetection()
             return .noMatch
+        }
+        var refused = false
+        defer {
+            if refused { observeLocalChange(pixels) }
+            else { resetMotionDetection() }
         }
         let isIdentical = pixels.withUnsafeBytes { new in
             last.withUnsafeBytes { old in memcmp(new.baseAddress!, old.baseAddress!, new.count) == 0 }
@@ -164,6 +187,7 @@ actor ScrollingCaptureStitcher {
         case .identical:
             return .unchanged
         case .unmatched:
+            refused = true
             return .noMatch
         case .shifted(let lineUpEdges, let lineUpShift, let lineUpColumns):
             edges = lineUpEdges
@@ -182,7 +206,10 @@ actor ScrollingCaptureStitcher {
         // treated like any other lost frame: scrolling back picks it up again.
         let cut = Self.cut(in: band)
         let start = cut - shift
-        guard start >= band.lowerBound else { return .noMatch }
+        guard start >= band.lowerBound else {
+            refused = true
+            return .noMatch
+        }
         let bytesPerRow = width * 4
         fixedEdges = edges
         pageColumns = matchedColumns
@@ -191,6 +218,48 @@ actor ScrollingCaptureStitcher {
         lastColumns = columns
         stitchedHeight += shift
         return .appended
+    }
+
+    /// Continue clears the diagnosis, never the last accepted overlap or output.
+    func resetMotionDetection() {
+        lastSample = []
+        lastChanges = []
+        changingSamples = 0
+        hasPersistentLocalChange = false
+    }
+
+    private nonisolated static func motionSample(
+        _ pixels: [UInt8], width: Int, height: Int, hashedWidth: Int
+    ) -> [UInt32] {
+        let columns = min(64, hashedWidth), rows = min(64, height)
+        var sample: [UInt32] = []
+        sample.reserveCapacity(columns * rows)
+        for y in 0..<rows { for x in 0..<columns {
+            let px = (x * hashedWidth + hashedWidth / 2) / columns
+            let py = (y * height + height / 2) / rows
+            let i = (py * width + px) * 4
+            sample.append(UInt32(pixels[i]) | UInt32(pixels[i + 1]) << 8 | UInt32(pixels[i + 2]) << 16)
+        } }
+        return sample
+    }
+
+    private func observeLocalChange(_ pixels: [UInt8]) {
+        let sample = Self.motionSample(pixels, width: width, height: height, hashedWidth: hashedWidth)
+        let changes = zip(sample, lastSample).map { new, old in
+            (0..<3).contains { channel in
+                abs(Int((new >> (channel * 8)) & 255) - Int((old >> (channel * 8)) & 255)) > 12
+            }
+        }
+        let changed = changes.filter { $0 }.count
+        // Ignore tiny carets/spinners and whole-view changes. Six overlapping
+        // local changes cover about 300 ms at the capture's sample rate.
+        let local = changes.count == sample.count && changed >= max(1, sample.count / 20)
+            && changed <= sample.count * 9 / 10
+        let repeated = zip(changes, lastChanges).filter { new, old in new && old }.count >= max(1, changed / 2)
+        changingSamples = local ? (repeated ? min(6, changingSamples + 1) : 1) : 0
+        hasPersistentLocalChange = changingSamples == 6
+        lastSample = sample
+        lastChanges = changes
     }
 
     /// The first frame down to the cut, every row appended since, then the
