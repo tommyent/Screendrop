@@ -1171,7 +1171,6 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         }
 
         if let artworkPlacement {
-            context.setAlpha(CGFloat(min(max(pointer.opacity, 0), 1)))
             context.concatenate(artworkPlacement.transform)
             context.draw(artworkPlacement.image, in: artworkPlacement.rect)
         }

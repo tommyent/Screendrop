@@ -1059,8 +1059,6 @@ private struct StudioCursorOverlay: View {
                         x: tip.x + (0.5 - anchor.x) * size.width,
                         y: tip.y + (0.5 - anchor.y) * size.height
                     )
-                    .opacity(pointer.opacity)
-                    .blur(radius: CGFloat(pointer.blurRadius))
             }
         }
         .frame(width: cardSize.width, height: cardSize.height)
