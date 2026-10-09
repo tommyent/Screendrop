@@ -29,6 +29,28 @@ struct LibraryLogicTests {
         #expect(stored == mark && !stored.isUnread(comment("b", second: 2)))
     }
 
+    @Test func uploadPagingKeepsFirstOccurrenceWhenOffsetsShift() throws {
+        func row(_ id: Int, title: String = "first") -> String {
+            #"{"id":"up\#(id)","url":"https://example.invalid/\#(id)","filename":"test.png","title":"\#(title)","mediaType":"image","createdAt":"2026-10-09T00:00:00Z"}"#
+        }
+        func page(_ rows: [String]) throws -> [CloudUpload] {
+            try CloudUploadList.decode(Data(("{\"uploads\":[" + rows.joined(separator: ",") + "]}").utf8)).uploads
+        }
+        let first = try page((0..<500).map { row($0) })
+        let second = try page([row(499, title: "repeated")] + (500..<1000).map { row($0) })
+        let listed = CloudUploadList.deduplicated(first + second)
+        #expect(listed.count == 1000)
+        #expect(listed.map(\.id) == (0..<1000).map { "up\($0)" })
+        #expect(listed[499].title == "first")
+    }
+
+    @Test func uploadDedupePreservesUniqueAndEmptyLists() throws {
+        #expect(CloudUploadList.deduplicated([]).isEmpty)
+        let data = Data(#"{"uploads":[{"id":"a","url":"https://example.invalid/a","filename":"test.png","mediaType":"image","createdAt":"2026-10-09T00:00:00Z"}]}"#.utf8)
+        let uploads = try CloudUploadList.decode(data).uploads
+        #expect(CloudUploadList.deduplicated(uploads) == uploads)
+    }
+
     @Test func tagMatchesRankExactPrefixThenContainsStably() {
         let tags = ["Onboarding", "Design", "Long note", "On", "Bug", "online"]
         #expect(CaptureTagField.matches("on", in: tags) == ["On", "Onboarding", "online", "Long note"])

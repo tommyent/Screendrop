@@ -317,7 +317,7 @@ final class CloudUploader: NSObject {
             // Only forward, so a confused Worker can't loop the app.
             offset = page.next.flatMap { $0 > current ? $0 : nil }
         }
-        return uploads
+        return CloudUploadList.deduplicated(uploads)
     }
 
     // MARK: - Comments

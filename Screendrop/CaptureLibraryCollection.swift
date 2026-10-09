@@ -91,7 +91,7 @@ struct CaptureLibraryCollection<Entry: Identifiable>: NSViewRepresentable where 
         defer { coordinator.updating = false }
         if old.revision != revision || old.layout != layout || coordinator.initialLoad {
             coordinator.initialLoad = false
-            coordinator.indices = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
+            coordinator.indices = Dictionary(items.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
             (collection.collectionViewLayout as? LibraryCollectionLayout)?.displayLayout = layout
             collection.reloadData()
             collection.collectionViewLayout?.invalidateLayout()
