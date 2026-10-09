@@ -4,7 +4,7 @@
 
 Screendrop is a native macOS screenshot and screen recording tool. Its Library window opens on normal launch; login launches remain in the menu bar (`LSUIElement = YES`). `AppActivationPolicy` uses `.regular` while Library, Settings, or editor windows are open, and returns to `.accessory` when they close. Built with SwiftUI + AppKit with a hostless Swift Testing unit test target.
 
-**Deployment target:** macOS 26.4 (Xcode 26.4 / Tahoe beta SDK).
+**Deployment target:** macOS 26.0 for the app target (the project-level default says 26.4). Builds with the Xcode 26.4+ / Tahoe SDK.
 **Bundle ID:** `com.fayazahmed.Screendrop`
 
 ## Build
@@ -44,11 +44,11 @@ When adding new types, assume `@MainActor` isolation by default. If a type must 
 
 ## Architecture
 
-All source is in `Screendrop/` (flat, no subdirectories). Key flow:
+All source is in `Screendrop/` (flat, except the annotation engine in `Screendrop/Engine/`). Key flow:
 
 1. **App entry** - `ScreendropApp.swift`: `@main` App struct. Creates a `MenuBarExtra`, a Settings window, and an annotation editor `WindowGroup`.
 2. **Hotkeys** - `HotkeyManager.swift`: Registers global Carbon hotkeys (Option+1/2/3) at launch via `AppDelegate`.
-3. **Capture** - `CaptureCoordinator.swift` → `ScreenshotManager.swift`: Fullscreen uses `ScreenCaptureKit`; window/area use `/usr/sbin/screencapture` CLI.
+3. **Capture** - `CaptureCoordinator.swift` → `ScreenshotManager.swift`: Fullscreen, window and area use the `/usr/sbin/screencapture` CLI; Scrolling Capture uses `ScreenCaptureKit`.
 4. **Preview** - `PreviewPanelPresenter.swift` + `PreviewWindowView.swift`: Borderless floating `NSPanel` showing a screenshot stack. Uses `ScreenshotPreviewStack` (an `@Observable` model).
 5. **Annotation** - `AnnotationEditorWindow.swift` + `AnnotationEditorModel.swift` + `AnnotationCanvas.swift`: Full annotation editor with tools (rectangle, ellipse, arrow, freehand, text, numbered circles, pixelate, blur). All coordinates are normalized (0..1) relative to the image.
 6. **Rendering** - `AnnotationRenderer.swift`: Composites annotations onto the source image at full pixel resolution using Core Graphics.
@@ -65,7 +65,7 @@ All annotation positions/sizes are normalized to `[0, 1]` relative to the source
 
 ## Conventions
 
-- **No SPM packages or external dependencies.** The project uses only Apple frameworks (SwiftUI, AppKit, ScreenCaptureKit, CoreGraphics, CoreImage, ImageIO, Carbon).
+- **No new SPM packages or external dependencies.** Besides the existing Sparkle and DockProgress packages, the project uses only Apple frameworks (SwiftUI, AppKit, ScreenCaptureKit, CoreGraphics, CoreImage, ImageIO, Carbon).
 - **`@Observable` macro** (Observation framework) is used for state - not `ObservableObject`/`@Published`.
 - **App sandbox is disabled** (`ENABLE_APP_SANDBOX = NO`) - the app needs screen capture permissions and direct filesystem access.
 - Screenshots are saved as lossless PNG to `NSTemporaryDirectory()` first, then optionally compressed to JPEG on export.
