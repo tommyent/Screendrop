@@ -1817,8 +1817,8 @@ private struct StudioTimelineEditor: View {
 
     private var clipLane: some View {
         RecordingClipTimelineView(
-            selectedClipID: $model.selectedClipID,
-            playheadTime: $model.currentTime,
+            selectedClipID: model.selectedClipID,
+            playheadTime: model.currentTime,
             timeline: model.clipTimeline,
             sourceDuration: model.sourceDuration,
             thumbnails: model.timelineThumbnails,
