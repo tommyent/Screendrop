@@ -381,6 +381,13 @@ struct AnnotationEditorInspector: View {
                     }
                 }
 
+                if model.isHandDrawnStyleAvailable {
+                    InspectorToggle("Hand-drawn", isOn: Binding(
+                        get: { model.handDrawn },
+                        set: { onEditorAction(); model.setHandDrawn($0) }
+                    ))
+                }
+
                 if model.isRedactionStyleAvailable {
                     InspectorSlider(
                         "Strength",

@@ -121,18 +121,23 @@ enum Arrowheads {
 
 /// The arrow's body as a path, mirroring `ArrowPath.tsx`.
 enum ArrowPath {
-    static func body(_ info: ArrowInfo) -> PathBuilder {
+    static func body(_ info: ArrowInfo, handDrawn: Bool = false) -> PathBuilder {
         let path = PathBuilder()
         switch info.body {
         case let .straight(start, end):
             // The arrow's own ends get no jitter offset, so its arrowheads stay attached.
             path.move(to: start, opts: .init(offset: 0, roundness: 0))
+            if handDrawn { path.line(to: Vec.med(start, end), opts: .init(roundness: 0)) }
             path.line(to: end, opts: .init(offset: 0, roundness: 0))
         case let .arc(arc):
             path.move(to: info.start.point, opts: .init(offset: 0, roundness: 0))
+            if handDrawn {
+                // Jitter the interior while both terminals stay attached to their arrowheads.
+                path.circularArc(radius: arc.radius, largeArc: false, sweep: arc.sweepFlag != 0, to: info.middle)
+            }
             path.circularArc(
                 radius: arc.radius,
-                largeArc: arc.largeArcFlag != 0,
+                largeArc: handDrawn ? false : arc.largeArcFlag != 0,
                 sweep: arc.sweepFlag != 0,
                 to: info.end.point,
                 opts: .init(offset: 0, roundness: 0)

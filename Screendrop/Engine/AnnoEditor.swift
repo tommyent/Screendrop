@@ -139,6 +139,7 @@ final class AnnoEditor {
     var currentStrokeWidth: Double = 4
     var currentMagnifierZoom: Double = 3
     var currentGeoFill: AnnoFillStyle = .none
+    var currentDash: DashStyle = .solid
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
     var currentFontFamily: AnnoFontFamily = .pro

@@ -61,7 +61,7 @@ enum AnnoShapeRenderer {
     static func elements(for shape: AnnoShape, in document: AnnoDocument) -> [RenderElement] {
         switch shape.kind {
         case let .geo(props):
-            geoElements(props)
+            geoElements(props, seed: shape.id.raw)
         case let .draw(props):
             drawElements(props)
         case .arrow:
@@ -134,23 +134,25 @@ enum AnnoShapeRenderer {
 
     // MARK: - Geo
 
-    private static func geoElements(_ props: GeoProps) -> [RenderElement] {
+    private static func geoElements(_ props: GeoProps, seed: String) -> [RenderElement] {
         let path = GeoPaths.path(for: props)
-
+        var elements: [RenderElement] = []
         if props.fill != .none {
-            return [RenderElement(
+            elements.append(RenderElement(
                 content: .path(path.solidPath()),
                 fill: props.swatch.nsColor,
                 stroke: nil
-            )]
+            ))
+            if props.dash != .draw { return elements }
         }
-        return [strokeElement(
-            path: path,
+        elements.append(strokeElement(
+            path: props.dash == .draw && props.geo == .ellipse ? GeoPaths.handDrawnEllipse(props) : path,
             dash: props.dash,
             strokeWidth: props.strokeWidth,
             color: props.swatch.nsColor,
-            seed: ""
-        )]
+            seed: seed
+        ))
+        return elements
     }
 
     /// Stroke a path in whichever dash style is asked for.
@@ -204,7 +206,7 @@ enum AnnoShapeRenderer {
 
         var elements: [RenderElement] = []
         elements.append(strokeElement(
-            path: ArrowPath.body(info),
+            path: ArrowPath.body(info, handDrawn: props.dash == .draw),
             dash: props.dash,
             strokeWidth: props.strokeWidth,
             color: props.swatch.nsColor,

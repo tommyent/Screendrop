@@ -49,6 +49,7 @@ struct AnnotationStylePreset: Codable, Equatable {
     // a required new field would fail every preset saved before it and silently reset them all.
     var textBoxStyleRawValue: String?
     var geoFillRawValue: String?
+    var handDrawn: Bool?
 
     var selectedTool: AnnotationTool {
         (AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle).paletteTool

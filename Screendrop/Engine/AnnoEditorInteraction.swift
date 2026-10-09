@@ -139,6 +139,7 @@ extension AnnoEditor {
             props.fill = tool == .filledRectangle ? .solid : currentGeoFill
             props.swatch = currentSwatch
             props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
+            props.dash = currentDash
             props.w = 1
             props.h = 1
             kind = .geo(props)
@@ -164,6 +165,7 @@ extension AnnoEditor {
         props.swatch = currentSwatch
         props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
         props.arrowheadStart = tool == .line ? .none : currentArrowheadStart
+        props.dash = currentDash
         props.arrowheadEnd = tool == .line ? .none : currentArrowheadEnd
         props.start = Vec(0, 0)
         props.end = Vec(0, 0)

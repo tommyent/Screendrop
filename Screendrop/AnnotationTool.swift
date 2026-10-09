@@ -139,6 +139,10 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         isRedactionTool
     }
 
+    var supportsHandDrawnStyle: Bool {
+        [.rectangle, .filledRectangle, .ellipse, .line, .arrow].contains(self)
+    }
+
     var supportsAspectLock: Bool {
         switch self {
         case .rectangle, .filledRectangle, .ellipse, .highlight:

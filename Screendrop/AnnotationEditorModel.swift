@@ -69,6 +69,7 @@ final class AnnotationEditorModel {
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
     var geoFill: AnnoFillStyle = .none
+    var handDrawn = false
     var magnifierZoom: CGFloat = 3
     var redactionDensity: CGFloat = 0.55
     var backgroundSettings = AnnotationBackgroundSettings() {
@@ -202,6 +203,7 @@ final class AnnotationEditorModel {
 
     var isColorStyleAvailable: Bool { isStyleAvailable { $0.supportsColorStyle } }
     var isStrokeStyleAvailable: Bool { isStyleAvailable { $0.supportsStrokeStyle } }
+    var isHandDrawnStyleAvailable: Bool { isStyleAvailable { $0.supportsHandDrawnStyle } }
     var isRedactionStyleAvailable: Bool { isStyleAvailable { $0.supportsRedactionDensityStyle } }
     var isFillStyleAvailable: Bool {
         isStyleAvailable { $0.paletteTool == .rectangle || $0 == .ellipse }
@@ -588,6 +590,19 @@ final class AnnotationEditorModel {
         }
     }
 
+    func setHandDrawn(_ enabled: Bool) {
+        handDrawn = enabled
+        engine.currentDash = enabled ? .draw : .solid
+        saveAnnotationPreset()
+        engine.applyStyleToSelection { shape in
+            switch shape.kind {
+            case var .geo(props): props.dash = enabled ? .draw : .solid; shape.kind = .geo(props)
+            case var .arrow(props): props.dash = enabled ? .draw : .solid; shape.kind = .arrow(props)
+            default: break
+            }
+        }
+    }
+
     func setSwatch(_ swatch: AnnotationSwatch) {
         selectedSwatch = swatch
         engine.currentSwatch = swatch
@@ -639,6 +654,10 @@ final class AnnotationEditorModel {
     /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
         guard let shape = selectedShape else { return }
+        if let dash = shape.geoProps?.dash ?? shape.arrowProps?.dash {
+            handDrawn = dash == .draw
+            engine.currentDash = dash
+        }
         if case let .magnifier(props) = shape.kind {
             magnifierZoom = CGFloat(props.zoom)
             engine.currentMagnifierZoom = props.zoom
@@ -815,6 +834,7 @@ final class AnnotationEditorModel {
         selectedSwatch = preset.swatch
         strokeWidth = CGFloat(preset.strokeWidth)
         geoFill = preset.geoFill
+        handDrawn = preset.handDrawn ?? false
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
         textFontFace = preset.textFontFace
@@ -830,6 +850,7 @@ final class AnnotationEditorModel {
         engine.currentSwatch = selectedSwatch
         engine.currentStrokeWidth = Double(strokeWidth)
         engine.currentGeoFill = geoFill
+        engine.currentDash = handDrawn ? .draw : .solid
         engine.currentRedactionDensity = Double(redactionDensity)
         engine.currentFontFamily = textFontFamily
         engine.currentFontFace = textFontFace
@@ -857,7 +878,8 @@ final class AnnotationEditorModel {
             textIsUnderline: textIsUnderline,
             textAlignmentRawValue: textAlignment.rawValue,
             textBoxStyleRawValue: textBoxStyle.rawValue,
-            geoFillRawValue: geoFill.rawValue
+            geoFillRawValue: geoFill.rawValue,
+            handDrawn: handDrawn
         )
         AnnotationPresetStore.save(preset)
     }
