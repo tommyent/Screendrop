@@ -8,20 +8,27 @@ struct PixelColorRow: View {
 
     var body: some View {
         let color = probe?.hovered
-        InspectorRow("Color") {
-            HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(color.map(Color.init) ?? .clear)
-                    .frame(width: 14, height: 14)
-                    .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5) }
-                Text(color?.hex ?? "—")
-                    .font(.inspectorNumeric)
-                    .textSelection(.enabled)
-                Spacer(minLength: 4)
-                Text(probe?.copiedHex != nil ? "Copied" : "Tab to copy")
+        // "Pixel", not "Color": Style's swatches below are the annotation's colour.
+        InspectorRow("Pixel") {
+            if let color {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color(color))
+                        .frame(width: 14, height: 14)
+                        .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5) }
+                    Text(color.hex)
+                        .font(.inspectorNumeric)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 4)
+                    Text(probe?.copiedHex != nil ? "Copied" : "Tab to copy")
+                        .font(.inspectorLabel)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                // An empty swatch and a dash read as a colour control set to nothing.
+                Text("Hover the image")
                     .font(.inspectorLabel)
-                    .foregroundStyle(.secondary)
-                    .opacity(color == nil && probe?.copiedHex == nil ? 0 : 1)
+                    .foregroundStyle(.tertiary)
             }
         }
         .help("The colour under the pointer. Tab copies its hex.")
