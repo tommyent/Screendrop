@@ -195,7 +195,7 @@ private final class BrandingNoRedirect: NSObject, URLSessionTaskDelegate {
 
 @Observable
 final class CloudBrandingModel {
-    var siteName = "Screendrop"
+    var siteName = "Sukusho"
     var logo: CloudBrandingImage?
     var favicon: CloudBrandingImage?
     var clearLogo = false

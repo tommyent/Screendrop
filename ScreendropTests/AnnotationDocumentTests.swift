@@ -44,7 +44,7 @@ struct AnnotationDocumentTests {
             #expect(try Data(contentsOf: display) == Data("display pixels".utf8))
             #expect(try Data(contentsOf: base) == Data("untouched pixels".utf8))
             #expect(try Data(contentsOf: sidecar) == original)
-            #expect(AnnotationDocumentReadError.unreadable.localizedDescription.contains("newer Screendrop"))
+            #expect(AnnotationDocumentReadError.unreadable.localizedDescription.contains("newer Sukusho"))
         }
     }
 

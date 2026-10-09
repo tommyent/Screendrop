@@ -114,7 +114,7 @@ final class HotkeyManager {
     private func registerHotKey(action: CaptureHotkeyAction, shortcut: HotkeyShortcut) throws -> EventHotKeyRef {
         guard eventHandlerRef != nil else {
             throw NSError(domain: "Screendrop.Hotkeys", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "Keyboard shortcuts could not be initialized. Try reopening Screendrop."
+                NSLocalizedDescriptionKey: "Keyboard shortcuts could not be initialized. Try reopening Sukusho."
             ])
         }
         let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: action.hotKeyID)

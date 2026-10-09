@@ -83,7 +83,7 @@ struct GeneralSettingsPane: View {
                 Toggle(isOn: launchAtLoginBinding) {
                     SettingsControlLabel(
                         "Launch at login",
-                        detail: "Start Screendrop automatically when you sign in."
+                        detail: "Start Sukusho automatically when you sign in."
                     )
                 }
                 .toggleStyle(.switch)
@@ -93,7 +93,7 @@ struct GeneralSettingsPane: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 } else if launchAtLoginStatus.requiresApproval {
-                    Text("Approve Screendrop in System Settings → General → Login Items.")
+                    Text("Approve Sukusho in System Settings → General → Login Items.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -109,7 +109,7 @@ struct GeneralSettingsPane: View {
                 Toggle(isOn: $showMenuBarIcon) {
                     SettingsControlLabel(
                         "Show menu bar icon",
-                        detail: "When hidden, reopen Screendrop to get back to Settings."
+                        detail: "When hidden, reopen Sukusho to get back to Settings."
                     )
                 }
                 .toggleStyle(.switch)
@@ -118,8 +118,8 @@ struct GeneralSettingsPane: View {
             Section("Capture Visibility") {
                 Toggle(isOn: $includeAppWindowsInCaptures) {
                     SettingsControlLabel(
-                        "Include Screendrop windows in captures",
-                        detail: "Show preview cards, recording controls, Settings, and other Screendrop windows in screenshots and screen recordings."
+                        "Include Sukusho windows in captures",
+                        detail: "Show preview cards, recording controls, Settings, and other Sukusho windows in screenshots and screen recordings."
                     )
                 }
                 .toggleStyle(.switch)

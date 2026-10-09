@@ -59,7 +59,7 @@ struct AnnotationDocument: Codable, Equatable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         guard version <= Self.currentVersion else {
             throw DecodingError.dataCorruptedError(forKey: .version, in: container,
-                debugDescription: "The edit document needs a newer Screendrop build.")
+                debugDescription: "The edit document needs a newer Sukusho build.")
         }
         baseImageFileName = try container.decodeIfPresent(String.self, forKey: .baseImageFileName) ?? ""
         // A v1 document's annotations can't be expressed in the shape model. They and its
@@ -81,7 +81,7 @@ enum AnnotationDocumentReadError: LocalizedError {
     case unreadable
 
     var errorDescription: String? {
-        "This capture’s edits could not be read. They may have been made by a newer Screendrop build. Save and Done are blocked to protect the original image and edits. Open the capture in a compatible newer build."
+        "This capture’s edits could not be read. They may have been made by a newer Sukusho build. Save and Done are blocked to protect the original image and edits. Open the capture in a compatible newer build."
     }
 }
 

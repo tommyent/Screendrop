@@ -44,7 +44,7 @@ struct ScreenshotHistoryMetadata<Row: Codable> {
     func save(_ items: [Row], to url: URL) throws {
         guard !isReadOnly else {
             throw NSError(domain: "Screendrop.History", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "The Library index could not be fully read. The original history.json has been preserved; use a compatible Screendrop build before saving Library changes."
+                NSLocalizedDescriptionKey: "The Library index could not be fully read. The original history.json has been preserved; use a compatible Sukusho build before saving Library changes."
             ])
         }
         let data = try JSONEncoder().encode(items)

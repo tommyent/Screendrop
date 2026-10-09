@@ -326,9 +326,9 @@ enum AnnotationBackgroundPresetTransferError: LocalizedError {
         case .presetNotFound:
             "The selected preset no longer exists."
         case .invalidJSON:
-            "This is not a valid Screendrop preset file."
+            "This is not a valid Sukusho preset file."
         case .invalidFormat:
-            "This JSON file is not a Screendrop screenshot preset."
+            "This JSON file is not a Sukusho screenshot preset."
         case .unsupportedVersion(let version):
             "This preset uses unsupported format version \(version)."
         case .emptyFile:

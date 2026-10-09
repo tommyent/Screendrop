@@ -85,13 +85,13 @@ enum RecordingInputAuthorization {
         alert.messageText = "\(input.title) access needed"
 
         if isRestricted {
-            alert.informativeText = "Screendrop can't use the \(input.title.lowercased()) because access is restricted on this Mac."
+            alert.informativeText = "Sukusho can't use the \(input.title.lowercased()) because access is restricted on this Mac."
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return
         }
 
-        alert.informativeText = "Allow Screendrop to use the \(input.title.lowercased()) in Privacy & Security, then select it again."
+        alert.informativeText = "Allow Sukusho to use the \(input.title.lowercased()) in Privacy & Security, then select it again."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
 

@@ -19,11 +19,11 @@ struct ScreendropApp: App {
     var body: some Scene {
         let _ = configurePreviewPresentation()
 
-        MenuBarExtra("Screendrop", image: "MenuBarIcon", isInserted: $showMenuBarIcon) {
+        MenuBarExtra("Sukusho", image: "MenuBarIcon", isInserted: $showMenuBarIcon) {
             MenuBarView()
         }
 
-        Window("Screendrop Library", id: "CAPTURE_LIBRARY") {
+        Window("Sukusho Library", id: "CAPTURE_LIBRARY") {
             CaptureLibraryView()
         }
         .defaultSize(width: 1180, height: 760)
@@ -40,7 +40,7 @@ struct ScreendropApp: App {
             }
         }
         
-        WindowGroup("Screendrop Annotate", id: "ANNOTATION_EDITOR", for: URL.self) { value in
+        WindowGroup("Sukusho Annotate", id: "ANNOTATION_EDITOR", for: URL.self) { value in
             AnnotationEditorWindow(url: value)
         }
         .commands {
@@ -49,7 +49,7 @@ struct ScreendropApp: App {
         .windowResizability(.contentSize)
         .defaultSize(width: 1100, height: 760)
 
-        WindowGroup("Screendrop Recording Editor", id: "VIDEO_EDITOR", for: URL.self) { value in
+        WindowGroup("Sukusho Recording Editor", id: "VIDEO_EDITOR", for: URL.self) { value in
             RecordingStudioWindow(url: value)
         }
         .windowResizability(.contentSize)
@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updaterManager = UpdaterManager.shared
     private var openedFilesAtLaunch = false
 
-    /// Files handed to us via Finder's "Open With" (or `open -a Screendrop`)
+    /// Files handed to us via Finder's "Open With" (or `open -a Sukusho`)
     /// before `onOpenFiles` is wired up, e.g. a cold launch where SwiftUI's
     /// scene body - and therefore the `openWindow` closure - hasn't run yet.
     private var pendingOpenURLs: [URL] = []
@@ -167,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Finder "Open With" / `open -a Screendrop file.png` entry point.
+    /// Finder "Open With" / `open -a Sukusho file.png` entry point.
     func application(_ application: NSApplication, open urls: [URL]) {
         openedFilesAtLaunch = true
         guard let onOpenFiles else {
@@ -209,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "Some video edits can't be saved"
-            alert.informativeText = "Videos that aren't recording projects lose their edits when Screendrop quits. Export them first if you want to keep them."
+            alert.informativeText = "Videos that aren't recording projects lose their edits when Sukusho quits. Export them first if you want to keep them."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Anyway")
 
@@ -240,8 +240,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .warning
             alert.messageText = "A screen recording is still in progress"
             alert.informativeText = unsavedCount > 0
-                ? "Screendrop will finish and save the recording before quitting. You also have \(unsavedCount) unsaved capture\(unsavedCount == 1 ? "" : "s") that will be discarded."
-                : "Screendrop will finish and save the recording before quitting. This can take a moment for a long recording."
+                ? "Sukusho will finish and save the recording before quitting. You also have \(unsavedCount) unsaved capture\(unsavedCount == 1 ? "" : "s") that will be discarded."
+                : "Sukusho will finish and save the recording before quitting. This can take a moment for a long recording."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Finish Recording and Quit")
 

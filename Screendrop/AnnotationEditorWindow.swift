@@ -32,7 +32,7 @@ struct AnnotationEditorWindow: View {
             .disabled(model.isCommitting)
             .allowsHitTesting(!model.isCommitting)
             .modifier(CaptureLibraryEditorRegistration(url: url))
-            .navigationTitle("Screendrop Annotate")
+            .navigationTitle("Sukusho Annotate")
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {

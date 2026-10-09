@@ -124,7 +124,7 @@ struct MenuBarView: View {
             
             Divider()
             
-            Button("Quit Screendrop") {
+            Button("Quit Sukusho") {
                 NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q")

@@ -33,7 +33,7 @@ struct SettingsAboutPane: View {
                         .frame(width: 72, height: 72)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Screendrop")
+                        Text("Sukusho")
                             .font(.largeTitle.bold())
 
                         Text(versionText)
@@ -62,14 +62,14 @@ struct SettingsAboutPane: View {
             }
 
             Section("Project") {
-                Text("Screendrop is a lightweight open-source app for capturing screenshots and screen recordings on macOS.")
+                Text("Sukusho is a lightweight open-source app for capturing screenshots and screen recordings on macOS.")
                     .foregroundStyle(.secondary)
 
                 Link("Source Code", destination: URL(string: "https://github.com/fayazara/screendrop")!)
             }
 
             Section("Credits") {
-                Text("Built by Fayaz Ahmed")
+                Text("Based on Screendrop by Fayaz Ahmed")
                     .foregroundStyle(.secondary)
 
                 Link("GitHub", destination: URL(string: "https://github.com/fayazara")!)

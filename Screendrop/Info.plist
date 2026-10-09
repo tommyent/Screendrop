@@ -18,15 +18,15 @@
 		</dict>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Screendrop records your camera alongside the screen so you can add a camera bubble to recordings.</string>
+	<string>Sukusho records your camera alongside the screen so you can add a camera bubble to recordings.</string>
 	<key>NSInputMonitoringUsageDescription</key>
-	<string>Screendrop needs input monitoring permission to show key press captions while recording.</string>
+	<string>Sukusho needs input monitoring permission to show key press captions while recording.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Screendrop captures your microphone so recordings can include narration.</string>
+	<string>Sukusho captures your microphone so recordings can include narration.</string>
 	<key>NSQuitAlwaysKeepsWindows</key>
 	<false/>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Screendrop needs screen recording permission to capture screenshots.</string>
+	<string>Sukusho needs screen recording permission to capture screenshots.</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
@@ -41,7 +41,7 @@
 				<string>public.json</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Screendrop Screenshot Preset</string>
+			<string>Sukusho Screenshot Preset</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.fayazahmed.screendrop.preset</string>
 			<key>UTTypeTagSpecification</key>

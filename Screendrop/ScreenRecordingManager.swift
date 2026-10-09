@@ -598,9 +598,9 @@ final class ScreenRecordingManager {
         alert.alertStyle = .warning
         alert.messageText = "Screen Recording permission needed"
         alert.informativeText = """
-        Screendrop can't record until it's allowed under Privacy & Security > \
+        Sukusho can't record until it's allowed under Privacy & Security > \
         Screen & System Audio Recording. After turning it on, quit and reopen \
-        Screendrop - macOS applies the permission on relaunch.
+        Sukusho - macOS applies the permission on relaunch.
         """
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
