@@ -34,6 +34,9 @@ struct AnnotationCanvas: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(PixelProbe.self) private var probe: PixelProbe?
     @State private var hasActiveInteraction = false
+    /// A click made while an arrow key measures, which imprints the ruler
+    /// and is kept from the drawing tools until the mouse comes up.
+    @State private var isImprinting = false
     @State private var hoveredLocation: CGPoint?
     @State private var currentCursor: AnnotationCanvasCursor = .arrow
     @State private var progressivelyBlurredImage: NSImage?
@@ -677,8 +680,13 @@ struct AnnotationCanvas: View {
                 guard hasActiveInteraction || visibleCanvasFrame?.contains(value.startLocation) != false else {
                     return
                 }
+                guard !isImprinting else { return }
                 let startLocation = projection.unproject(value.startLocation)
                 let location = projection.unproject(value.location)
+                if !hasActiveInteraction, imprintMeasurement(at: startLocation, imageFrame: imageFrame) {
+                    isImprinting = true
+                    return
+                }
                 if !hasActiveInteraction {
                     hasActiveInteraction = true
                     onEditorInteraction()
@@ -689,12 +697,29 @@ struct AnnotationCanvas: View {
                 updateCursor(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
             }
             .onEnded { value in
+                if isImprinting {
+                    isImprinting = false
+                    return
+                }
                 guard hasActiveInteraction else { return }
                 let location = projection.unproject(value.location)
                 model.endInteraction(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                 hasActiveInteraction = false
                 updateCursor(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
             }
+    }
+
+    /// While an arrow key measures, a click imprints that ruler as an
+    /// annotation instead of drawing. False when nothing is measuring.
+    private func imprintMeasurement(at location: CGPoint, imageFrame: CGRect) -> Bool {
+        guard !model.isCropping, let probe, let axis = probe.measuring, let buffer = probe.buffer,
+              let ruler = PixelRuler(buffer: buffer, imageFrame: imageFrame, pointer: location, axis: axis,
+                                     includingBorder: NSEvent.modifierFlags.contains(.shift),
+                                     pixelsPerPoint: probe.pixelsPerPoint)
+        else { return false }
+        onEditorInteraction()
+        model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd))
+        return true
     }
 
     private func viewRect(_ rect: CGRect, in imageFrame: CGRect) -> CGRect {
