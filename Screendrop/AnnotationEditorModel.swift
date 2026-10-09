@@ -68,6 +68,7 @@ final class AnnotationEditorModel {
     var selectedTool: AnnotationTool = .rectangle
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
+    var geoFill: AnnoFillStyle = .none
     var redactionDensity: CGFloat = 0.55
     var backgroundSettings = AnnotationBackgroundSettings() {
         willSet {
@@ -193,17 +194,20 @@ final class AnnotationEditorModel {
     }
 
     var inspectedTool: AnnotationTool? {
-        selectedShape?.tool
-            ?? engine.selectedShapes.first?.tool
+        selectedShape?.tool.paletteTool
+            ?? engine.selectedShapes.first?.tool.paletteTool
             ?? (selectedTool.createsAnnotation ? selectedTool : nil)
     }
 
     var isColorStyleAvailable: Bool { isStyleAvailable { $0.supportsColorStyle } }
     var isStrokeStyleAvailable: Bool { isStyleAvailable { $0.supportsStrokeStyle } }
     var isRedactionStyleAvailable: Bool { isStyleAvailable { $0.supportsRedactionDensityStyle } }
+    var isFillStyleAvailable: Bool {
+        isStyleAvailable { $0.paletteTool == .rectangle || $0 == .ellipse }
+    }
 
     var hasInspectorStyleControls: Bool {
-        isTextStyleAvailable || isColorStyleAvailable || isStrokeStyleAvailable || isRedactionStyleAvailable
+        isTextStyleAvailable || isColorStyleAvailable || isStrokeStyleAvailable || isRedactionStyleAvailable || isFillStyleAvailable
     }
 
     private func isStyleAvailable(_ supportsStyle: (AnnotationTool) -> Bool) -> Bool {
@@ -545,9 +549,22 @@ final class AnnotationEditorModel {
     // MARK: - Tools and style
 
     func selectTool(_ tool: AnnotationTool) {
-        selectedTool = tool
-        engine.tool = tool
+        if tool == .filledRectangle { geoFill = .solid; engine.currentGeoFill = .solid }
+        selectedTool = tool.paletteTool
+        engine.tool = selectedTool
         saveAnnotationPreset()
+    }
+
+    func setGeoFill(_ fill: AnnoFillStyle) {
+        geoFill = fill
+        engine.currentGeoFill = fill
+        saveAnnotationPreset()
+        engine.applyStyleToSelection { shape in
+            if case var .geo(props) = shape.kind {
+                props.fill = fill
+                shape.kind = .geo(props)
+            }
+        }
     }
 
     func setSwatch(_ swatch: AnnotationSwatch) {
@@ -599,6 +616,10 @@ final class AnnotationEditorModel {
     /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
         guard let shape = selectedShape else { return }
+        if case let .geo(props) = shape.kind {
+            geoFill = props.fill
+            engine.currentGeoFill = props.fill
+        }
         if let swatch = shape.swatch, shape.tool.supportsColorStyle {
             selectedSwatch = swatch
             engine.currentSwatch = swatch
@@ -762,6 +783,7 @@ final class AnnotationEditorModel {
         selectedTool = preset.selectedTool
         selectedSwatch = preset.swatch
         strokeWidth = CGFloat(preset.strokeWidth)
+        geoFill = preset.geoFill
         redactionDensity = CGFloat(preset.redactionDensity)
         textFontFamily = AnnoFontFamily(rawValue: preset.textFontName) ?? .pro
         textFontFace = preset.textFontFace
@@ -776,6 +798,7 @@ final class AnnotationEditorModel {
         engine.tool = selectedTool
         engine.currentSwatch = selectedSwatch
         engine.currentStrokeWidth = Double(strokeWidth)
+        engine.currentGeoFill = geoFill
         engine.currentRedactionDensity = Double(redactionDensity)
         engine.currentFontFamily = textFontFamily
         engine.currentFontFace = textFontFace
@@ -802,7 +825,8 @@ final class AnnotationEditorModel {
             textIsItalic: textIsItalic,
             textIsUnderline: textIsUnderline,
             textAlignmentRawValue: textAlignment.rawValue,
-            textBoxStyleRawValue: textBoxStyle.rawValue
+            textBoxStyleRawValue: textBoxStyle.rawValue,
+            geoFillRawValue: geoFill.rawValue
         )
         AnnotationPresetStore.save(preset)
     }

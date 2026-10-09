@@ -48,9 +48,15 @@ struct AnnotationStylePreset: Codable, Equatable {
     // Optional, unlike the fields above: synthesized decoding requires every non-optional key, so
     // a required new field would fail every preset saved before it and silently reset them all.
     var textBoxStyleRawValue: String?
+    var geoFillRawValue: String?
 
     var selectedTool: AnnotationTool {
-        AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle
+        (AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle).paletteTool
+    }
+
+    var geoFill: AnnoFillStyle {
+        geoFillRawValue.flatMap(AnnoFillStyle.init(rawValue:))
+            ?? (selectedToolRawValue == AnnotationTool.filledRectangle.rawValue ? .solid : .none)
     }
 
     var swatch: AnnotationSwatch {

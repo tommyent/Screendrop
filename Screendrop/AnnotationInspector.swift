@@ -360,6 +360,21 @@ struct AnnotationEditorInspector: View {
             if model.isTextStyleAvailable {
                 AnnotationTextStyleControls(model: model)
             } else {
+                if model.isFillStyleAvailable {
+                    InspectorRow("Fill") {
+                        InspectorSegmented(
+                            options: AnnoFillStyle.allCases,
+                            isSelected: { $0 == model.geoFill },
+                            onTap: {
+                                onEditorAction()
+                                model.setGeoFill($0)
+                            },
+                            label: { Text($0.label) },
+                            height: InspectorMetrics.controlHeight
+                        )
+                    }
+                }
+
                 if model.isColorStyleAvailable {
                     InspectorRow("Color") {
                         AnnotationSwatchStrip(selectedSwatch: model.selectedSwatch) { swatch in
@@ -477,7 +492,7 @@ private struct AnnotationInspectorToolGrid: View {
         )
 
         LazyVGrid(columns: columns, spacing: 4) {
-            ForEach(AnnotationTool.allCases) { tool in
+            ForEach(AnnotationTool.paletteTools) { tool in
                 AnnotationToolCell(
                     tool: tool,
                     isSelected: selectedTool == tool,

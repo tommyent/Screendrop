@@ -136,7 +136,7 @@ extension AnnoEditor {
         case .rectangle, .filledRectangle, .ellipse:
             var props = GeoProps()
             props.geo = tool == .ellipse ? .ellipse : .rectangle
-            props.fill = tool == .filledRectangle ? .solid : .none
+            props.fill = tool == .filledRectangle ? .solid : currentGeoFill
             props.swatch = currentSwatch
             props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
             props.w = 1

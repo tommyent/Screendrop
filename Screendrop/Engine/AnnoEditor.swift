@@ -134,6 +134,7 @@ final class AnnoEditor {
     var currentSwatch: AnnotationSwatch = .red
     /// Stroke width as the inspector's slider value; converted to page units on creation.
     var currentStrokeWidth: Double = 4
+    var currentGeoFill: AnnoFillStyle = .none
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
     var currentFontFamily: AnnoFontFamily = .pro
