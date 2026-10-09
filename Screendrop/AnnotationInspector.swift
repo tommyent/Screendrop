@@ -481,8 +481,10 @@ private struct AnnotationInspectorToolGrid: View {
     let selectedTool: AnnotationTool
     let onSelect: (AnnotationTool) -> Void
 
+    // Six columns that grow to the panel's edge, up to 40 pt, so the tray
+    // lines up with the rows below it (design pass choice 11).
     private let columns: [GridItem] = Array(
-        repeating: GridItem(.fixed(30), spacing: 4), count: 6
+        repeating: GridItem(.flexible(minimum: 30, maximum: 40), spacing: 4), count: 6
     )
     @Environment(\.colorScheme) private var colorScheme
 
@@ -502,7 +504,7 @@ private struct AnnotationInspectorToolGrid: View {
                 )
             }
         }
-        .frame(width: 6 * 30 + 5 * 4)
+        .frame(maxWidth: 6 * 40 + 5 * 4)
         .padding(InspectorMetrics.controlInset)
         .background(shape.fill(InspectorControlPalette.trackFill(for: colorScheme)))
         .clipShape(shape)
@@ -526,7 +528,7 @@ private struct AnnotationToolCell: View {
                 Image(systemName: tool.systemImage)
                     .font(.system(size: 13, weight: .medium))
             }
-            .frame(width: 30, height: 30)
+            .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
             .contentShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
         }
         .buttonStyle(.plain)
