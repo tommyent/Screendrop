@@ -26,6 +26,10 @@ final class AnnotationEditorModel {
     }
     /// Bumped on every engine change. Views read this to pick up edits the engine made.
     private(set) var revision = 0
+    /// Bumped by File › Save As… (⇧⌘S); the editor window opens its save panel.
+    private(set) var saveAsRequest = 0
+
+    func requestSaveAs() { saveAsRequest += 1 }
 
     /// The display/history image being edited. Used to match the preview item
     /// and to locate the sidecar document.
@@ -706,8 +710,21 @@ final class AnnotationEditorModel {
         selectedTool = engine.tool
     }
 
-    func nudgeSelection(dx: CGFloat, dy: CGFloat) {
-        engine.nudgeSelected(dx: Double(dx), dy: Double(dy))
+    @ObservationIgnored private var nudgeRun: (revision: Int, at: Date)?
+
+    /// The arrow keys with annotations selected: moves them by `dx`, `dy`
+    /// image pixels. Nudges less than 0.8 s apart, held repeats included,
+    /// are one undo step, unless anything else touched the history between
+    /// them. Returns false with nothing selected, so the arrows measure.
+    func nudgeSelection(dx: CGFloat, dy: CGFloat) -> Bool {
+        guard !engine.selectedIds.isEmpty else { return false }
+        let now = Date()
+        let continuing = nudgeRun.map {
+            $0.revision == engine.historyRevision && now.timeIntervalSince($0.at) < 0.8
+        } ?? false
+        engine.nudgeSelected(dx: Double(dx), dy: Double(dy), recordingUndo: !continuing)
+        nudgeRun = (engine.historyRevision, now)
+        return true
     }
 
     func commitTextEditing() {

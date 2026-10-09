@@ -78,7 +78,7 @@ enum OverlayCardAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .copy: "Copy the capture to the clipboard"
         case .compress: "Copy a smaller JPG to the clipboard"
-        case .save: "Save the capture to your export folder"
+        case .save: "Save the capture to your save folder"
         case .pin: "Pin the screenshot as a floating window"
         case .annotate: "Open the annotation / video editor"
         case .view: "Open a Quick Look preview"
@@ -120,15 +120,16 @@ struct OverlayCardLayout: Codable, Equatable {
     /// Actions that are not shown on the card.
     var hidden: [OverlayCardAction]
 
-    /// Matches the original hard-coded card layout, with the new `view` action
-    /// tucked away in the hidden tray so existing behaviour is unchanged.
+    /// Dismiss sits top-left, where macOS puts Close, so reaching for it
+    /// never hits delete; delete waits in the hidden tray (design pass).
+    /// A layout the user saved is kept as it is.
     static let `default` = OverlayCardLayout(
-        topLeading: .delete,
-        topTrailing: .close,
+        topLeading: .close,
+        topTrailing: nil,
         bottomLeading: .annotate,
         bottomTrailing: .upload,
         center: [.copy, .save, .pin],
-        hidden: [.view, .compress]
+        hidden: [.delete, .view, .compress]
     )
 
     // MARK: - Reads

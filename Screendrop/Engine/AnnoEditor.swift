@@ -170,6 +170,9 @@ final class AnnoEditor {
     private(set) var snapGuides: [AnnoSnapGuide] = []
 
     private var undoStack: [AnnoDocument.Snapshot] = []
+    /// Bumped by every undo mark, undo and redo, so a caller can tell
+    /// whether anything else touched the history since its own mark.
+    private(set) var historyRevision = 0
     private var redoStack: [AnnoDocument.Snapshot] = []
 
     /// Called after every change, for the canvas to redraw itself.
@@ -236,6 +239,7 @@ final class AnnoEditor {
     // MARK: - Undo
 
     func markUndo() {
+        historyRevision += 1
         undoStack.append(document.snapshot())
         if undoStack.count > 200 { undoStack.removeFirst() }
         redoStack.removeAll()
@@ -246,6 +250,7 @@ final class AnnoEditor {
 
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
+        historyRevision += 1
         snapGuides = []
         redoStack.append(document.snapshot())
         document.restore(snapshot)
@@ -256,6 +261,7 @@ final class AnnoEditor {
 
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
+        historyRevision += 1
         snapGuides = []
         undoStack.append(document.snapshot())
         document.restore(snapshot)
@@ -338,9 +344,11 @@ final class AnnoEditor {
         notifyChanged()
     }
 
-    func nudgeSelected(dx: Double, dy: Double) {
+    /// Moves the selection by `dx`, `dy` page units; `recordingUndo` false
+    /// adds the move to the step the previous nudge marked.
+    func nudgeSelected(dx: Double, dy: Double, recordingUndo: Bool = true) {
         guard !selectedIds.isEmpty else { return }
-        markUndo()
+        if recordingUndo { markUndo() }
         for id in selectedIds {
             document.update(id) { shape in
                 shape.x += dx

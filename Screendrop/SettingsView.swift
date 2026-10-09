@@ -33,7 +33,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .screenshots: "photo.on.rectangle.angled"
         case .video: "video"
         case .overlay: "square.on.square"
-        case .cloud: "icloud.and.arrow.up"
+        case .cloud: "cloud"
         case .about: "info.circle"
         }
     }
@@ -105,6 +105,8 @@ struct SettingsView: View {
                 .help("Go Forward")
                 .accessibilityLabel("Go Forward")
             }
+            // Bare icons, as in the Library and the editor: no glass capsule.
+            .sharedBackgroundVisibility(.hidden)
         }
         .onAppear {
             navigationHistory = [activeTab]

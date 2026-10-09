@@ -55,17 +55,17 @@ struct SettingsAboutPane: View {
                     Text("Automatically check for updates")
                 }
 
-                Button("Check for Updates...") {
+                Button("Check for Updates…") {
                     updaterManager.checkForUpdates()
                 }
                 .disabled(!updaterManager.canCheckForUpdates)
             }
 
             Section("Project") {
-                Text("Screendrop is a lightweight opensource app for capturing screenshots and screen recordings on macOS.")
+                Text("Screendrop is a lightweight open-source app for capturing screenshots and screen recordings on macOS.")
                     .foregroundStyle(.secondary)
 
-                Link("GitHub", destination: URL(string: "https://github.com/fayazara/screendrop")!)
+                Link("Source Code", destination: URL(string: "https://github.com/fayazara/screendrop")!)
             }
 
             Section("Credits") {
@@ -74,7 +74,7 @@ struct SettingsAboutPane: View {
 
                 Link("GitHub", destination: URL(string: "https://github.com/fayazara")!)
 
-                Link("Follow on Twitter", destination: URL(string: "https://x.com/fayazara")!)
+                Link("Follow on X", destination: URL(string: "https://x.com/fayazara")!)
             }
         }
         .formStyle(.grouped)

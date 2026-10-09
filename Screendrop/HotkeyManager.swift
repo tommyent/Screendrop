@@ -20,6 +20,8 @@ final class HotkeyManager {
     private var eventHandlerRef: EventHandlerRef?
     private var hotKeyRefs: [CaptureHotkeyAction: EventHotKeyRef] = [:]
     private(set) var registrationErrors: [CaptureHotkeyAction: String] = [:]
+    /// Bumped whenever a shortcut changes, so the menu shows the current ones.
+    private(set) var revision = 0
     
     private init() {}
 
@@ -37,12 +39,13 @@ final class HotkeyManager {
     }
 
     func reloadHotkeys() {
+        defer { revision += 1 }
         unregisterHotkeys()
         registrationErrors.removeAll()
 
         var registeredShortcuts: Set<HotkeyShortcut> = []
         for action in CaptureHotkeyAction.allCases {
-            let shortcut = CaptureHotkeyPreferences.shortcut(for: action)
+            guard let shortcut = CaptureHotkeyPreferences.shortcut(for: action) else { continue }
             guard registeredShortcuts.insert(shortcut).inserted else {
                 registrationErrors[action] = "\(shortcut.displayString) is already used by another action."
                 continue
@@ -83,7 +86,22 @@ final class HotkeyManager {
     
     /// Register the replacement before releasing the working shortcut. A
     /// rejected shortcut never changes either the preference or old binding.
-    func setShortcut(_ shortcut: HotkeyShortcut, for action: CaptureHotkeyAction) throws {
+    /// Puts every given action back on its default and registers again,
+    /// all at once, so defaults never collide with each other mid-way.
+    func restoreDefaults(for actions: [CaptureHotkeyAction]) {
+        actions.forEach { CaptureHotkeyPreferences.resetToDefault($0) }
+        reloadHotkeys()
+    }
+
+    /// Nil clears the action's shortcut and releases its binding.
+    func setShortcut(_ shortcut: HotkeyShortcut?, for action: CaptureHotkeyAction) throws {
+        defer { revision += 1 }
+        guard let shortcut else {
+            if let oldRef = hotKeyRefs.removeValue(forKey: action) { UnregisterEventHotKey(oldRef) }
+            CaptureHotkeyPreferences.saveShortcut(nil, for: action)
+            registrationErrors[action] = nil
+            return
+        }
         if shortcut == CaptureHotkeyPreferences.shortcut(for: action), hotKeyRefs[action] != nil { return }
         installEventHandlerIfNeeded()
         let newRef = try registerHotKey(action: action, shortcut: shortcut)

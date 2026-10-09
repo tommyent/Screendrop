@@ -42,7 +42,7 @@ enum AfterCaptureAction: String, CaseIterable, Identifiable {
         switch self {
         case .showOverlay: "Show the floating preview card after capturing."
         case .copy: "Copy the capture to the clipboard."
-        case .save: "Automatically save the capture to the export folder."
+        case .save: "Automatically save the capture to the save folder."
         case .upload: "Upload to your cloud and copy the share link."
         case .annotate: "Jump straight into the annotation editor."
         case .pin: "Pin the screenshot on top of everything for reference."

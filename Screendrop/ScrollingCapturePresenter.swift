@@ -363,7 +363,7 @@ private struct ScrollingCaptureBar: View {
     /// The finish shortcut, when it registered, so the keyboard exit is
     /// discoverable while another app has the keyboard.
     private let finishShortcut: String? = HotkeyManager.shared.registrationErrors[.scrollingCapture] == nil
-        ? CaptureHotkeyPreferences.shortcut(for: .scrollingCapture).displayString
+        ? CaptureHotkeyPreferences.shortcut(for: .scrollingCapture)?.displayString
         : nil
 
     var body: some View {

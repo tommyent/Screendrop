@@ -24,6 +24,10 @@ struct CloudSettingsPane: View {
     @State private var tokenRevealed = false
     @State private var tokenCopied = false
     @State private var setupGuideExpanded = true
+    /// The guide leads until a Worker is set up: decided when the pane
+    /// opens and on a successful Verify, never while typing, so the
+    /// sections don't jump about mid-edit.
+    @State private var showsSetupFirst = true
 
     // Worker version signalling (non-blocking "update available" notice).
     @State private var deployedWorkerVersion: String?
@@ -39,6 +43,73 @@ struct CloudSettingsPane: View {
         return Self.isVersion(deployed, olderThan: latest)
     }
 
+    // MARK: - Setup Guide
+
+    /// Where the connection fields sit relative to the guide.
+    private var connectionPlace: String { showsSetupFirst ? "below" : "above" }
+
+    private var setupGuide: some View {
+        Section {
+            Button {
+                if let url = URL(string: "https://deploy.workers.cloudflare.com/?url=https://github.com/fayazara/screendrop-worker") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Label("Deploy to Cloudflare", systemImage: "cloud.fill")
+            }
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    setupGuideExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(setupGuideExpanded ? 90 : 0))
+                    Text("Setup steps & demo")
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if setupGuideExpanded {
+                VStack(alignment: .leading, spacing: 14) {
+                    SetupStepView(
+                        number: 1,
+                        text: "Copy the upload token \(connectionPlace) - you'll paste it into Cloudflare in the next step."
+                    )
+                    SetupStepView(
+                        number: 2,
+                        text: "Click \"Deploy to Cloudflare\". It clones the worker, provisions R2 + D1, and asks for the UPLOAD_TOKEN secret - paste the token you copied."
+                    )
+                    SetupStepView(
+                        number: 3,
+                        text: "Paste your worker URL \(connectionPlace), then click \"Verify Connection\" to finish setup and confirm."
+                    )
+
+                    SetupVideoPlayer()
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .padding(.top, 4)
+            }
+        } header: {
+            HStack {
+                Text("Setup Guide")
+                Spacer()
+                Button("View on GitHub") {
+                    if let url = URL(string: "https://github.com/fayazara/screendrop-worker") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+
     private var isWorkerConfigured: Bool {
         !workerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && !uploadToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -46,6 +117,10 @@ struct CloudSettingsPane: View {
 
     var body: some View {
         Form {
+            if showsSetupFirst {
+                setupGuide
+            }
+
             // MARK: - Connection
 
             Section {
@@ -165,74 +240,14 @@ struct CloudSettingsPane: View {
                 }
             }
 
-            CloudShareDefaultsSection()
+            // Sharing and branding only once a Worker is set up; until then
+            // the guide leads (design pass choice 14).
+            if !showsSetupFirst {
+                CloudShareDefaultsSection()
 
-            CloudBrandingSettingsGroup(workerURL: store.workerURL)
+                CloudBrandingSettingsGroup(workerURL: store.workerURL)
 
-            // MARK: - Setup Guide
-
-            Section {
-                Button {
-                    if let url = URL(string: "https://deploy.workers.cloudflare.com/?url=https://github.com/fayazara/screendrop-worker") {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
-                    Label("Deploy to Cloudflare", systemImage: "cloud.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        setupGuideExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .rotationEffect(.degrees(setupGuideExpanded ? 90 : 0))
-                        Text("Setup steps & demo")
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if setupGuideExpanded {
-                    VStack(alignment: .leading, spacing: 14) {
-                        SetupStepView(
-                            number: 1,
-                            text: "Copy the upload token above - you'll paste it into Cloudflare in the next step."
-                        )
-                        SetupStepView(
-                            number: 2,
-                            text: "Click \"Deploy to Cloudflare\". It clones the worker, provisions R2 + D1, and asks for the UPLOAD_TOKEN secret - paste the token you copied."
-                        )
-                        SetupStepView(
-                            number: 3,
-                            text: "Paste your worker URL above, then click \"Verify Connection\" to finish setup and confirm."
-                        )
-
-                        SetupVideoPlayer()
-                            .frame(height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .padding(.top, 4)
-                }
-            } header: {
-                HStack {
-                    Text("Setup Guide")
-                    Spacer()
-                    Button("View on GitHub") {
-                        if let url = URL(string: "https://github.com/fayazara/screendrop-worker") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .controlSize(.small)
-                }
+                setupGuide
             }
         }
         .formStyle(.grouped)
@@ -272,6 +287,7 @@ struct CloudSettingsPane: View {
 
         // Collapse the setup guide for users who already have a worker URL.
         setupGuideExpanded = workerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        showsSetupFirst = !isWorkerConfigured
 
         // Auto-generate a strong token on first visit so the user has one ready
         // to paste into Cloudflare during the deploy flow.
@@ -390,6 +406,7 @@ struct CloudSettingsPane: View {
             switch http.statusCode {
             case 200:
                 workerStatus = .connected
+                showsSetupFirst = false
                 deployedWorkerVersion = Self.decodeVersion(from: data)
                 await fetchLatestWorkerInfo()
             case 401, 403:

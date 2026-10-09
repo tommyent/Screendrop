@@ -493,13 +493,13 @@ final class ScreenshotPreviewStack {
         guard let item = items.first(where: { $0.id == id }) else { return }
 
         if ScreenshotHistoryStore.shared.delete(url: item.url) {
-            // The history store owns this file and has already removed it.
+            // The history store owns this file and has moved it to the Trash.
         } else {
-            deleteFile(at: item.url)
+            discard(item.url)
         }
 
         if let autoSavedURL = item.autoSavedURL, autoSavedURL != item.url {
-            deleteFile(at: autoSavedURL)
+            discard(autoSavedURL)
         }
 
         dismiss(id: id)
@@ -776,6 +776,21 @@ final class ScreenshotPreviewStack {
         draggingItemID = nil
         isCollapsed = false
         isExiting = false
+    }
+
+    /// A capture the user deleted: a temporary file goes, anything else
+    /// moves to the Trash so it can be put back (design pass).
+    private func discard(_ url: URL) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        if url.path.hasPrefix(URL(fileURLWithPath: NSTemporaryDirectory()).path) {
+            deleteFile(at: url)
+        } else {
+            do {
+                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            } catch {
+                print("Failed to move screenshot to the Trash: \(error)")
+            }
+        }
     }
 
     private func deleteFile(at url: URL) {

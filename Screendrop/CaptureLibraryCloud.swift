@@ -296,7 +296,7 @@ struct CloudLibraryPage: View {
         Group {
             if !CloudUploader.shared.isConfigured {
                 ContentUnavailableView {
-                    Label("Cloud Isn’t Set Up", systemImage: "icloud.slash")
+                    Label("Cloud Isn’t Set Up", systemImage: "cloud")
                 } description: {
                     Text("Add your Worker in Settings to share captures and manage your uploads here.")
                 } actions: {
@@ -308,7 +308,7 @@ struct CloudLibraryPage: View {
                 ProgressView("Loading Uploads…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = cloud.loadError, cloud.uploads.isEmpty {
                 ContentUnavailableView {
-                    Label("Couldn’t Load Uploads", systemImage: "exclamationmark.icloud")
+                    Label("Couldn’t Load Uploads", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
                 } actions: {
@@ -320,7 +320,7 @@ struct CloudLibraryPage: View {
                 let search = CaptureLibraryModel.shared.searchText
                 ContentUnavailableView {
                     if search.isEmpty {
-                        Label("No Uploads", systemImage: "icloud")
+                        Label("No Uploads", systemImage: "cloud")
                     } else {
                         Label("No Results for “\(search)”", systemImage: "magnifyingglass")
                     }
@@ -433,11 +433,11 @@ private struct CloudUploadCard: View {
         .padding(6)
         .background(
             Color.primary.opacity(selected ? 0.075 : isHovering ? 0.035 : 0.012),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
         )
-        .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .strokeBorder(
                     Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
                     lineWidth: selected ? 1 : 0.5
@@ -483,9 +483,10 @@ private struct CloudUploadCard: View {
     private var thumbnail: some View {
         CloudUploadThumbnail(upload: upload, local: local)
             .overlay { CloudFetchOverlay(uploadID: upload.id) }
-            .clipShape(.rect(cornerRadius: 10))
+            // Concentric inside the card: its radius minus its 6 pt padding.
+            .clipShape(.rect(cornerRadius: DS.Radius.m, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
             // Bottom left, clear of the pills above. Side by side when they fit
@@ -838,25 +839,17 @@ struct CloudUploadInspector: View {
                 HStack(spacing: 0) {
                     action("Open Link", symbol: "arrow.up.right") { cloud.open(upload) }
                     action("Copy Link", symbol: "link") { cloud.copyLinks([upload]) }
-                    action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = [upload] }
+                    action("Delete from Cloud…", symbol: "trash") { cloud.pendingDelete = [upload] }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .disabled(cloud.deletingIDs.contains(upload.id))
             }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "icloud")
-                    .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(.tertiary)
-                Text("Upload details")
-                    .font(.headline)
-                Text("Select an upload to see its link\nand whether it’s still in the Library.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
+            LibraryInspectorPlaceholder(
+                symbol: "cloud", title: "Upload details",
+                message: "Select an upload to see its link\nand whether it’s still in the Library."
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -961,7 +954,7 @@ struct CloudUploadInspector: View {
             HStack(spacing: 0) {
                 action("Quick Look", symbol: "eye") { cloud.quickLook(toggling: false) }
                 action("Copy Links", symbol: "link") { cloud.copyLinks(uploads) }
-                action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = uploads }
+                action("Delete from Cloud…", symbol: "trash") { cloud.pendingDelete = uploads }
                     .disabled(cloud.isBusy)
             }
             .padding(.horizontal, 14)
@@ -986,7 +979,7 @@ struct CloudUploadInspector: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.inspectorSectionHeader)
             .foregroundStyle(.secondary)
     }
 

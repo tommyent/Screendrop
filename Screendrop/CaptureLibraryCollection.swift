@@ -430,12 +430,12 @@ struct LibraryCellContent: View {
                 .padding(6)
                 .background(
                     Color.primary.opacity(selected ? 0.075 : isHovering ? 0.035 : 0.012),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 )
                 // A solid backing in the chrome colour, so titles never sit on the grid's dots.
-                .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                         .strokeBorder(
                             Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
                             lineWidth: selected ? 1 : 0.5
@@ -481,9 +481,10 @@ struct LibraryCellContent: View {
 
     private func thumbnail(_ item: CaptureLibraryItem) -> some View {
         CaptureLibraryThumbnail(item: item)
-            .clipShape(.rect(cornerRadius: 10))
+            // Concentric inside the card: its radius minus its 6 pt padding.
+            .clipShape(.rect(cornerRadius: DS.Radius.m, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
             .overlay(alignment: .topLeading) {

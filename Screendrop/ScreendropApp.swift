@@ -43,6 +43,9 @@ struct ScreendropApp: App {
         WindowGroup("Screendrop Annotate", id: "ANNOTATION_EDITOR", for: URL.self) { value in
             AnnotationEditorWindow(url: value)
         }
+        .commands {
+            CommandGroup(after: .saveItem) { AnnotationEditorSaveAsCommand() }
+        }
         .windowResizability(.contentSize)
         .defaultSize(width: 1100, height: 760)
 

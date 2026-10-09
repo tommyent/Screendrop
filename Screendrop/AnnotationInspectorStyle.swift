@@ -14,38 +14,40 @@ import SwiftUI
 
 // MARK: - Tokens
 
+/// The inspector's layout, built on the app-wide `DS` scale.
 enum InspectorMetrics {
     /// Horizontal inset applied to every section's content.
-    static let horizontalPadding: CGFloat = 12
+    static let horizontalPadding: CGFloat = DS.Space.l
     /// Vertical padding above/below each section's content. Sections are
     /// separated by this whitespace alone - no rules - so it stays generous.
+    /// Off the `DS` scale on purpose: the user tuned the editor's air (sd-yec).
     static let sectionVerticalPadding: CGFloat = 14
     /// Gap between a section header and its content.
-    static let headerSpacing: CGFloat = 10
+    static let headerSpacing: CGFloat = DS.Space.ml
     /// Gap between stacked rows inside a section.
-    static let rowSpacing: CGFloat = 8
+    static let rowSpacing: CGFloat = DS.Space.m
     /// Gap between a group sub-label and its content.
-    static let groupLabelSpacing: CGFloat = 7
+    static let groupLabelSpacing: CGFloat = DS.Space.s
     /// Gap between labelled groups inside one section.
-    static let groupSpacing: CGFloat = 16
+    static let groupSpacing: CGFloat = DS.Space.xl
 
     /// The one true height for every interactive field (scrub fields, menus,
     /// steppers, pickers, segmented controls).
     static let controlHeight: CGFloat = 28
     static let sliderHeight: CGFloat = controlHeight
     /// Corner radius for fields and segmented tracks.
-    static let fieldRadius: CGFloat = 7
+    static let fieldRadius: CGFloat = DS.Radius.s
     static let sliderRadius: CGFloat = fieldRadius
     /// Shared inner inset for compound controls such as segmented pickers,
     /// tool grids, and placement surfaces.
     static let controlInset: CGFloat = 2
     /// Corner radius for square tiles (swatches, tool cells, wallpapers).
-    static let tileRadius: CGFloat = 6
+    static let tileRadius: CGFloat = DS.Radius.s
 
     /// Fixed width for left-aligned row labels so values line up.
     static let labelColumnWidth: CGFloat = 58
     /// Radius for inset list surfaces (subtitle list, transcript).
-    static let listRadius: CGFloat = 8
+    static let listRadius: CGFloat = DS.Radius.m
 
     /// Inspector column widths shared by every editor.
     static let columnMinWidth: CGFloat = 260
@@ -81,6 +83,16 @@ enum InspectorControlPalette {
         colorScheme == .dark ? .clear : Color.black.opacity(0.14)
     }
 
+    /// Every inspector label, header and hint. macOS's secondary label in
+    /// dark mode (6.9:1 on the panel); in light mode that measures 3.1:1
+    /// against white, under AA's 4.5:1, so it's darker there (5.4:1).
+    /// Measured off-screen, design pass choice 10.
+    static let label = Color(nsColor: NSColor(name: "InspectorLabel") { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .secondaryLabelColor
+            : NSColor.black.withAlphaComponent(0.66)
+    })
+
     static var hoverFill: Color { Color.primary.opacity(0.04) }
     static var border: Color { Color.primary.opacity(0.10) }
     static var selectedForeground: Color { Color.primary.opacity(0.92) }
@@ -90,15 +102,15 @@ enum InspectorControlPalette {
 
 extension Font {
     /// Section title, e.g. "Background". Title-case, quietly prominent.
-    static let inspectorSectionHeader = Font.system(size: 11, weight: .semibold)
+    static let inspectorSectionHeader = DS.TypeScale.labelSemibold
     /// Field / row label, e.g. "Color".
-    static let inspectorLabel = Font.system(size: 11, weight: .regular)
+    static let inspectorLabel = DS.TypeScale.label
     /// Value text rendered inside or beside a field.
-    static let inspectorValue = Font.system(size: 11, weight: .medium)
+    static let inspectorValue = DS.TypeScale.labelMedium
     /// Numeric readout for sliders/steppers.
-    static let inspectorNumeric = Font.system(size: 11, weight: .medium).monospacedDigit()
+    static let inspectorNumeric = DS.TypeScale.labelMedium.monospacedDigit()
     /// Text labels inside segmented controls.
-    static let inspectorSegment = Font.system(size: 11, weight: .medium)
+    static let inspectorSegment = DS.TypeScale.labelMedium
 }
 
 // MARK: - Field chrome
@@ -151,7 +163,7 @@ struct InspectorSection<Content: View, Accessory: View>: View {
                 HStack(spacing: 6) {
                     Text(title)
                         .font(.inspectorSectionHeader)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InspectorControlPalette.label)
 
                     Spacer(minLength: 0)
 
@@ -222,13 +234,13 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
                                 .font(.inspectorSectionHeader)
                                 // Stay the lighter grey when expanded. Hover is the
                                 // clickable cue, so it still darkens.
-                                .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : Color.secondary)
+                                .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : InspectorControlPalette.label)
                                 .fixedSize()
 
                             if let summary, !isExpanded {
                                 Text(summary)
                                     .font(.inspectorLabel)
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(InspectorControlPalette.label)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .transition(.opacity)
@@ -408,7 +420,7 @@ struct InspectorToggleRow: View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.inspectorLabel)
-                .foregroundStyle(.primary.opacity(0.82))
+                .foregroundStyle(InspectorControlPalette.label)
 
             Spacer(minLength: 8)
 
@@ -484,7 +496,7 @@ struct InspectorHint: View {
     var body: some View {
         Text(text)
             .font(.inspectorLabel)
-            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(InspectorControlPalette.label))
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -555,7 +567,7 @@ struct InspectorGroupLabel: View {
     var body: some View {
         Text(title)
             .font(.inspectorLabel)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(InspectorControlPalette.label)
     }
 }
 
@@ -575,7 +587,7 @@ struct InspectorRow<Content: View>: View {
         HStack(alignment: .top, spacing: 10) {
             Text(title)
                 .font(.inspectorLabel)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InspectorControlPalette.label)
                 .frame(width: InspectorMetrics.labelColumnWidth, height: InspectorMetrics.controlHeight, alignment: .leading)
 
             content()

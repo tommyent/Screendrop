@@ -28,6 +28,9 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     /// A held arrow key measures (an axis); its release, or the window
     /// losing focus, ends that (nil). Returns whether the key was used.
     let onMeasure: (PixelMeasureAxis?) -> Bool
+    /// An arrow key with annotations selected: moves them by this many
+    /// points. Returns false with nothing selected.
+    let onNudge: (CGVector) -> Bool
     let onEscape: () -> Void
 
     func makeNSView(context: Context) -> AnnotationKeyCommandHandlerView {
@@ -59,6 +62,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.isCropping = isCropping
         view.onCopyColor = onCopyColor
         view.onMeasure = onMeasure
+        view.onNudge = onNudge
         view.onEscape = onEscape
     }
 }
@@ -82,6 +86,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var isCropping: (() -> Bool)?
     var onCopyColor: (() -> Bool)?
     var onMeasure: ((PixelMeasureAxis?) -> Bool)?
+    var onNudge: ((CGVector) -> Bool)?
     var onEscape: (() -> Void)?
 
     private var localKeyMonitor: Any?
@@ -158,6 +163,12 @@ final class AnnotationKeyCommandHandlerView: NSView {
             // Tab copies the colour under the pointer, as in Shottr. Off the
             // image it keeps moving the keyboard focus.
             if nothingFocused, Self.isPlainTab(event), self.onCopyColor?() == true {
+                return nil
+            }
+
+            // With annotations selected the arrows nudge them, 1 pt or 10
+            // with Shift. Otherwise they measure, below.
+            if nothingFocused, let step = Self.nudgeStep(event), self.onNudge?(step) == true {
                 return nil
             }
 
@@ -243,6 +254,20 @@ final class AnnotationKeyCommandHandlerView: NSView {
 
     private static func isArrow(_ event: NSEvent) -> Bool {
         (123...126).contains(event.keyCode)
+    }
+
+    /// An arrow's nudge in points: 1, or 10 with Shift; nil for other keys
+    /// or with Command, Option or Control held.
+    private static func nudgeStep(_ event: NSEvent) -> CGVector? {
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return nil }
+        let distance: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+        switch event.keyCode {
+        case 123: return CGVector(dx: -distance, dy: 0)
+        case 124: return CGVector(dx: distance, dy: 0)
+        case 125: return CGVector(dx: 0, dy: distance)
+        case 126: return CGVector(dx: 0, dy: -distance)
+        default: return nil
+        }
     }
 
     /// ←/→ measure across, ↑/↓ down; with Command, Option or Control they
