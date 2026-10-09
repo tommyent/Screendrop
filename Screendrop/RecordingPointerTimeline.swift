@@ -317,18 +317,8 @@ nonisolated struct PointerTimeline: Sendable {
         at time: TimeInterval,
         samples: [PointerStreamEvent]
     ) -> PointerStreamEvent? {
-        guard let first = samples.first else { return nil }
-        var low = 0
-        var high = samples.count
-        while low < high {
-            let middle = (low + high) / 2
-            if samples[middle].time <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        return low > 0 ? samples[low - 1] : first
+        guard !samples.isEmpty else { return nil }
+        return samples[samples.lastIndex(atOrBefore: time, by: \.time) ?? 0]
     }
 
     private static func pressIntervals(

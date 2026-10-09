@@ -498,18 +498,7 @@ nonisolated struct ViewportTimeline: Sendable {
         // Hold its captured fallback point until the planned handoff instead
         // of revealing a future target early.
         guard time >= first.activationTime else { return nil }
-
-        var low = 0
-        var high = targets.count
-        while low < high {
-            let middle = (low + high) / 2
-            if targets[middle].activationTime <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        return targets[max(0, low - 1)].point
+        return targets[targets.lastIndex(atOrBefore: time, by: \.activationTime) ?? 0].point
     }
 
     private static func trackedPointerPosition(
@@ -518,18 +507,7 @@ nonisolated struct ViewportTimeline: Sendable {
     ) -> CGPoint? {
         guard let first = samples.first else { return nil }
         guard time >= first.time else { return first.point }
-
-        var low = 0
-        var high = samples.count
-        while low < high {
-            let middle = (low + high) / 2
-            if samples[middle].time <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        return samples[max(0, low - 1)].point
+        return samples[samples.lastIndex(atOrBefore: time, by: \.time) ?? 0].point
     }
 
     /// Match the pointer timeline's half-open event-boundary contract so an

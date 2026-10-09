@@ -126,18 +126,7 @@ nonisolated struct SubtitleTimeline: Sendable, Equatable {
         guard !cues.isEmpty, time.isFinite else { return nil }
 
         // Last cue that has already started.
-        var low = 0
-        var high = cues.count
-        while low < high {
-            let middle = (low + high) / 2
-            if cues[middle].start <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        let index = low - 1
-        guard index >= 0 else { return nil }
+        guard let index = cues.lastIndex(atOrBefore: time, by: \.start) else { return nil }
 
         let cue = cues[index]
         return time < cue.end ? cue : nil
@@ -224,19 +213,10 @@ nonisolated struct KaraokeTimeline: Sendable {
     /// The karaoke line covering a source time; nil when nobody is
     /// speaking or the cue carries no word timings.
     func line(at time: TimeInterval) -> Line? {
-        guard !cues.isEmpty, time.isFinite else { return nil }
-        var low = 0
-        var high = cues.count
-        while low < high {
-            let middle = (low + high) / 2
-            if cues[middle].start <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        let index = low - 1
-        guard index >= 0, time < cues[index].end else { return nil }
+        guard !cues.isEmpty, time.isFinite,
+              let index = cues.lastIndex(atOrBefore: time, by: \.start),
+              time < cues[index].end
+        else { return nil }
 
         let cue = cues[index]
         var activeIndex: Int?
