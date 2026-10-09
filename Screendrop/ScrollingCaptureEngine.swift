@@ -378,8 +378,8 @@ actor ScrollingCaptureEngine {
             pixels: Array(pixels.prefix(outputHeight * selection.columns.count)))?.image(in: colorSpace)
     }
 
-    func recoveryRows(_ count: Int) -> CGImage? {
-        recoveryRaster(count)?.image(in: colorSpace)
+    func recoveryRows(_ count: Int, newest: Bool = true) -> CGImage? {
+        recoveryRaster(count, newest: newest)?.image(in: colorSpace)
     }
 
     private func recoveryRaster(_ count: Int, newest: Bool = true) -> ScrollingCaptureRaster? {

@@ -13,6 +13,8 @@ struct ScrollingCaptureRecoveryStrip: View {
     let isPausedForVideo: Bool
     let onContinue: () -> Void
 
+    @Environment(\.displayScale) private var displayScale
+
     private var tint: Color { Color(nsColor: hasRecovered ? .systemGreen : .systemOrange) }
 
     var body: some View {
@@ -52,15 +54,24 @@ struct ScrollingCaptureRecoveryStrip: View {
                     : "Scroll back to the last captured rows shown in the preview.")
             Group {
                 if let target {
-                    Image(decorative: target, scale: 1).resizable().aspectRatio(contentMode: .fill)
+                    // Pixel for pixel, newest rows at the bottom. The presenter never
+                    // makes them wider than the box; stretching a thin patch to fill
+                    // it smeared it into grey (user-163).
+                    Image(decorative: target, scale: displayScale)
+                        .frame(width: min(CGFloat(target.width) / displayScale, Self.imageSize.width),
+                               height: min(CGFloat(target.height) / displayScale, Self.imageSize.height),
+                               alignment: .bottom)
+                        .clipped()
                 } else {
-                    Color(nsColor: .quaternaryLabelColor)
+                    Text("No preview of the last captured rows")
+                        .font(.caption)
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+                        .frame(width: Self.imageSize.width, height: 32)
                 }
             }
-            .frame(width: Self.imageSize.width, height: Self.imageSize.height, alignment: .bottom)
             .clipShape(.rect(cornerRadius: 6))
             .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(tint, lineWidth: 1.5) }
-            .accessibilityLabel("Preview of the last captured rows")
+            .accessibilityLabel(target == nil ? "No preview of the last captured rows" : "Preview of the last captured rows")
         }
         .padding(.horizontal, 12)
         .frame(width: Self.stripSize.width, height: Self.stripSize.height)

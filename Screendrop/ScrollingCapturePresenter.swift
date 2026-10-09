@@ -135,10 +135,11 @@ final class ScrollingCapturePresenter {
         hasLostTrack = false
         hasReachedLimit = false
         recoveryTarget = nil
-        // Rows of the last frame that fill the strip's image at full width.
-        let recoveryRows = Int((CGFloat(output.columns.count) * ScrollingCaptureRecoveryStrip.imageSize.height
-            / ScrollingCaptureRecoveryStrip.imageSize.width).rounded())
         let recoveryPixelWidth = Int((ScrollingCaptureRecoveryStrip.imageSize.width * scale).rounded())
+        // Rows that fill the strip's image: downscaled to its width, or at
+        // native size when the selection is narrower than the strip.
+        let recoveryRows = Int((CGFloat(max(output.columns.count, recoveryPixelWidth))
+            * ScrollingCaptureRecoveryStrip.imageSize.height / ScrollingCaptureRecoveryStrip.imageSize.width).rounded())
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
         showPanel(below: rect, on: screen)
         defer {
@@ -176,14 +177,23 @@ final class ScrollingCapturePresenter {
             stitchedHeight = update.height
             hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
             if hasLostTrack, !wasLost, session.outcome == nil {
-                if let rows = await stitcher.recoveryRows(recoveryRows) {
-                    // The strip shows a few hundred points of the rows; a full-resolution
-                    // copy would hold megabytes for as long as track stays lost.
-                    recoveryTarget = rows.width > recoveryPixelWidth
-                        ? try? AnnotationScenePreviewRenderer.downscaled(
-                            rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
-                            colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
-                        : rows
+                // The strip shows a few hundred points of the rows; a full-resolution
+                // copy would hold megabytes for as long as track stays lost.
+                func fitted(_ rows: CGImage?) -> CGImage? {
+                    guard let rows, rows.width > recoveryPixelWidth else { return rows }
+                    return try? AnnotationScenePreviewRenderer.downscaled(
+                        rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
+                        colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
+                }
+                // The newest rows are the closest match, but a run of still rows
+                // between moving media can be a few pixels tall: unreadable. The
+                // last confirmed rows, which recovery also matches, stand in then.
+                let newest = fitted(await stitcher.recoveryRows(recoveryRows))
+                if let newest, CGFloat(newest.height) >= ScrollingCaptureRecoveryStrip.imageSize.height * scale / 3 {
+                    recoveryTarget = newest
+                } else {
+                    let confirmed = fitted(await stitcher.recoveryRows(recoveryRows, newest: false))
+                    recoveryTarget = (confirmed?.height ?? 0) > (newest?.height ?? 0) ? confirmed : newest
                 }
                 showRecoveryStrip()
                 if let recoveryPanel {
@@ -290,7 +300,8 @@ final class ScrollingCapturePresenter {
         hasRecovered = false
         let size = ScrollingCaptureRecoveryStrip.panelSize
         let strip = recoveryPanel ?? Self.makePanel(ScrollingCaptureRecoveryContent(), size: size, origin: .zero)
-        strip.setFrameOrigin(Self.recoveryStripOrigin(size: size, besideBar: panel.frame, region: region, on: panel.screen))
+        strip.setFrameOrigin(ScrollingCaptureRegion.recoveryPanelOrigin(size: size, bar: panel.frame, region: region,
+            visible: panel.screen?.visibleFrame ?? panel.frame, margin: ScrollingCaptureBar.margin))
         strip.orderFrontRegardless()
         recoveryPanel = strip
     }
@@ -311,22 +322,6 @@ final class ScrollingCapturePresenter {
         recoveryHideTask = nil
         recoveryPanel?.orderOut(nil)
         hasRecovered = false
-    }
-
-    /// On the far side of the bar from the region, so it never covers what
-    /// is being scrolled; the near side when the far side is off screen.
-    private static func recoveryStripOrigin(size: CGSize, besideBar bar: CGRect, region: CGRect, on screen: NSScreen?) -> CGPoint {
-        let visible = screen?.visibleFrame ?? bar
-        // The two panels' transparent margins overlap so the glass edges sit
-        // 8 pt apart.
-        let overlap = ScrollingCaptureBar.margin * 2 - 8
-        let below = bar.minY + overlap - size.height
-        let above = bar.maxY - overlap
-        let barIsAboveRegion = bar.minY >= region.maxY
-        let preferred = barIsAboveRegion ? above : below
-        let fits = preferred >= visible.minY && preferred + size.height <= visible.maxY
-        let y = fits ? preferred : (preferred == above ? below : above)
-        return CGPoint(x: bar.midX - size.width / 2, y: y)
     }
 
     /// Centered under the region, else above it, else inside its bottom edge.
