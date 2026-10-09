@@ -256,7 +256,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         }
     }
 
-    /// Whether a click anywhere inside the shape grabs it, as opposed to only its outline.
+    /// Whether ordinary geometry hit tests include the shape's interior.
     var isFilled: Bool {
         switch kind {
         case let .geo(p): p.fill != .none

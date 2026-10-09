@@ -291,7 +291,11 @@ final class AnnoEditor {
         for shape in document.shapes.reversed() {
             let localPoint = document.pointInShapeSpace(shape, pagePoint)
             let geometry = document.geometry(shape)
-            if geometry.hitTestPoint(localPoint, margin: margin, hitInside: shape.isFilled) {
+            // Region geometry stays filled for marquee selection; only its edge is a grab target.
+            let hit = shape.isRedaction || shape.isHighlight
+                ? abs(geometry.distanceToPoint(localPoint)) <= margin
+                : geometry.hitTestPoint(localPoint, margin: margin, hitInside: shape.isFilled)
+            if hit {
                 return shape
             }
         }

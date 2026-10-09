@@ -18,6 +18,7 @@ struct EditorInteractionChecks {
     }
 
     static func main() {
+        regionGrabChecks()
         // Every armed tool can grab the stroke; pressing Command later cannot turn it into a draw.
         for tool in AnnotationTool.paletteTools {
             let engine = editor()
@@ -91,5 +92,49 @@ struct EditorInteractionChecks {
         text.setHoveredShape(nil)
         precondition(text.hoveredShapeId == nil && hoverChanges == 2)
         print("PASS: every tool grabs; hollow interiors draw; Command and intent latch; handles, two-stage Escape, marquee, armed text and hover updates")
+    }
+
+    static func regionGrabChecks() {
+        for regionTool in [AnnotationTool.pixelate, .blur, .highlight] {
+            let kind: AnnoShapeKind
+            if regionTool == .highlight {
+                kind = .highlight(HighlightProps(w: 200, h: 160))
+            } else {
+                var props = RedactionProps(); props.kind = regionTool == .blur ? .blur : .pixelate
+                props.w = 200; props.h = 160; kind = .redaction(props)
+            }
+            let region = AnnoShape(x: 100, y: 100, kind: kind)
+            for drawingTool in [AnnotationTool.arrow, .magnifier] {
+                let engine = editor()
+                engine.replaceDocument(shapes: [region]); engine.selectedIds = [region.id]
+                engine.tool = drawingTool
+                precondition(engine.hitShape(at: Vec(180, 170)) == nil, "\(regionTool) interior must not grab")
+                engine.pointerDown(pointer(180, 170))
+                switch (drawingTool, engine.interaction) {
+                case (.arrow, .creatingArrow), (.magnifier, .creatingMagnifier): break
+                default: preconditionFailure("\(drawingTool) must draw inside \(regionTool) without Command")
+                }
+                engine.pointerMove(pointer(250, 230)); engine.pointerUp(pointer(250, 230))
+                precondition(engine.shapes.count == 2 && engine.shapes[0] == region && engine.tool == drawingTool)
+            }
+            let edge = editor(); edge.replaceDocument(shapes: [region]); edge.tool = .magnifier
+            precondition(edge.hitShape(at: Vec(95, 135))?.id == region.id && edge.hitShape(at: Vec(110, 135)) == nil)
+            precondition(edge.shapes(in: Box(150, 150, 10, 10)).map(\.id) == [region.id], "Marquee overlap stays filled")
+            edge.pointerDown(pointer(100, 135))
+            guard case .translating = edge.interaction else { preconditionFailure("Region edge must move") }
+            edge.pointerMove(pointer(120, 155, command: true)); edge.pointerUp(pointer(120, 155))
+            precondition(edge.shapes[0].x == 120 && edge.shapes[0].y == 120)
+            edge.undo(); precondition(edge.shapes == [region])
+            edge.selectedIds = [region.id]
+            edge.pointerDown(pointer(100, 100))
+            guard case .resizing = edge.interaction else { preconditionFailure("Selected region handle must resize") }
+            edge.pointerUp(pointer(100, 100))
+
+            var rotated = region; rotated.rotation = .pi / 4
+            let rotation = editor(); rotation.replaceDocument(shapes: [rotated])
+            precondition(rotation.hitShape(at: rotated.pageTransform.applyToPoint(Vec(0, 35)))?.id == region.id)
+            precondition(rotation.hitShape(at: rotated.pageTransform.applyToPoint(Vec(80, 70))) == nil)
+        }
+        print("PASS: pixelate/blur/highlight interiors draw arrows and magnifiers; edges move, handles resize, rotated hits, marquee and undo preserved")
     }
 }
