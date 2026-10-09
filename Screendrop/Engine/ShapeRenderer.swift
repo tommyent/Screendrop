@@ -218,6 +218,22 @@ enum AnnoShapeRenderer {
             ))
         }
 
+        if let label = ArrowLabel.layout(props, midpoint: info.middle, rotation: shape.rotation) {
+            var transform = label.transform.cgAffineTransform
+            for var element in textElements(label.text) {
+                switch element.content {
+                case let .path(path):
+                    guard let positioned = path.copy(using: &transform) else { continue }
+                    element.content = .path(positioned)
+                case let .glyphs(path):
+                    guard let positioned = path.copy(using: &transform) else { continue }
+                    element.content = .glyphs(positioned)
+                default: continue
+                }
+                elements.append(element)
+            }
+        }
+
         return elements
     }
 }
