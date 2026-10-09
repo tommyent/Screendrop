@@ -840,6 +840,7 @@ struct CloudUploadInspector: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .disabled(cloud.deletingIDs.contains(upload.id))
+                .modifier(LibraryInspectorBarSurface())
             }
         } else {
             LibraryInspectorPlaceholder(
@@ -956,6 +957,7 @@ struct CloudUploadInspector: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+            .modifier(LibraryInspectorBarSurface())
         }
     }
 

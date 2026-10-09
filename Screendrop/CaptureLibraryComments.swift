@@ -414,6 +414,7 @@ struct CommentInspector: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
+                .modifier(LibraryInspectorBarSurface())
             }
         } else if let comment = selected.first {
             single(comment)
@@ -472,6 +473,7 @@ struct CommentInspector: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+            .modifier(LibraryInspectorBarSurface())
         }
     }
 
