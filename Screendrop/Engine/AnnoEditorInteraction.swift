@@ -35,6 +35,8 @@ extension AnnoEditor {
             createNumberedCircle(at: pointer.pagePoint)
         case .line, .arrow:
             beginArrow(pointer)
+        case .magnifier:
+            beginMagnifier(pointer)
         }
         notifyChanged()
     }
@@ -43,6 +45,9 @@ extension AnnoEditor {
         // A selection handle takes priority over the shapes under it.
         if let handle = handle(at: pointer.screenPoint), let bounds = selectionBounds {
             switch handle {
+            case .magnifierRing, .magnifierLoupe, .magnifierRingResize, .magnifierLoupeResize:
+                guard let shape = selectedShapes.first else { return }
+                beginMagnifierDrag(shape, handle: handle, pointer: pointer)
             case .arrowStart, .arrowMiddle, .arrowEnd:
                 guard let shape = selectedShapes.first else { return }
                 markUndo()
@@ -71,6 +76,16 @@ extension AnnoEditor {
         }
 
         if let shape = hitShape(at: pointer.pagePoint) {
+            if !pointer.shift, case let .magnifier(props) = shape.kind {
+                let local = document.pointInShapeSpace(shape, pointer.pagePoint)
+                let handle: AnnoSelectionHandle? = MagnifierProps.path(props.loupeRect).contains(local.cgPoint) ? .magnifierLoupe
+                    : MagnifierProps.path(props.ringRect).contains(local.cgPoint) ? .magnifierRing : nil
+                if let handle {
+                    selectedIds = [shape.id]
+                    beginMagnifierDrag(shape, handle: handle, pointer: pointer)
+                    return
+                }
+            }
             if pointer.shift {
                 if selectedIds.contains(shape.id) {
                     selectedIds.remove(shape.id)
@@ -192,6 +207,8 @@ extension AnnoEditor {
             resizeBoxWhileCreating(id: id, origin: origin, pointer: pointer)
         case let .creatingArrow(id):
             updateArrowEnd(id: id, pointer: pointer)
+        case let .creatingMagnifier(id, origin):
+            updateMagnifierCreation(id: id, origin: origin, pointer: pointer)
         case let .brushing(origin):
             setBrush(Box.fromPoints([origin, pointer.pagePoint]))
         case let .translating(origin, initial):
@@ -202,6 +219,8 @@ extension AnnoEditor {
             rotate(center: center, startAngle: startAngle, initial: initial, pointer: pointer)
         case let .draggingArrowHandle(id, handle):
             dragArrowHandle(id: id, handle: handle, pointer: pointer)
+        case let .draggingMagnifier(id, handle, origin, initial):
+            dragMagnifier(id: id, handle: handle, origin: origin, initial: initial, pointer: pointer)
         }
         notifyChanged()
     }
@@ -210,6 +229,8 @@ extension AnnoEditor {
 
     func pointerUp(_ pointer: PointerInfo) {
         switch interaction {
+        case let .creatingMagnifier(id, _):
+            selectedIds = [id]
         case let .drawing(id, _):
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
@@ -526,6 +547,13 @@ extension AnnoEditor {
                 // A callout stays a circle, so it takes the average of the two scales.
                 props.diameter = Swift.max(8, abs(props.diameter * (abs(sx) + abs(sy)) / 2))
                 shape.kind = .numbered(props)
+            case var .magnifier(props):
+                props.ring = Vec(props.ring.x * sx, props.ring.y * sy)
+                props.loupe = Vec(props.loupe.x * sx, props.loupe.y * sy)
+                let uniform = (abs(sx) + abs(sy)) / 2
+                props.ringSize = Swift.max(8, props.ringSize * uniform)
+                props.loupeSize = Swift.max(8, props.loupeSize * uniform)
+                shape.kind = .magnifier(props)
             case var .draw(props):
                 props.points = props.points.map { Vec($0.x * sx, $0.y * sy, $0.z) }
                 shape.kind = .draw(props)

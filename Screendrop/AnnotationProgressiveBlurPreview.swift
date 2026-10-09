@@ -266,6 +266,7 @@ nonisolated enum AnnotationScenePreviewRenderer {
                     pageSize: CGSize(width: source.width, height: source.height),
                     canvasSize: layout.canvasSize,
                     context: context,
+                    sourceImage: source,
                     colorSpace: colorSpace,
                     highlightClipPath: imageClipPath
                 )

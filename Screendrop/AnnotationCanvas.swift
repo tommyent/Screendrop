@@ -457,6 +457,7 @@ struct AnnotationCanvas: View {
             AnnoCanvasLayer(
                 editor: model.engine,
                 sourceImage: model.previewCGImage,
+                fullResolutionSource: probe?.image(for: model.baseImageURL),
                 imageFrame: imageFrame,
                 imageSize: model.imageSize,
                 spotlightClip: nil,

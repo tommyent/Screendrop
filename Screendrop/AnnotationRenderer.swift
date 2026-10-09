@@ -129,6 +129,7 @@ enum AnnotationRenderer {
                             pageSize: CGSize(width: sourceImage.width, height: sourceImage.height),
                             canvasSize: layout.canvasSize,
                             context: context,
+                            sourceImage: sourceImage,
                             colorSpace: colorSpace,
                             highlightClipPath: imageClipPath
                         )
@@ -241,6 +242,7 @@ enum AnnotationRenderer {
             pageSize: fullRect.size,
             canvasSize: fullRect.size,
             context: context,
+            sourceImage: cgImage,
             colorSpace: colorSpace,
             highlightClipPath: nil
         )
@@ -263,6 +265,7 @@ enum AnnotationRenderer {
         pageSize: CGSize,
         canvasSize: CGSize,
         context: CGContext,
+        sourceImage: CGImage,
         colorSpace: CGColorSpace,
         highlightClipPath: CGPath?
     ) {
@@ -308,7 +311,8 @@ enum AnnotationRenderer {
             },
             spotlightClip: highlightClipPath,
             isFlippedContext: false,
-            sampleScale: scale
+            sampleScale: scale,
+            fullResolutionSource: sourceImage
         )
 
         _ = canvasSize

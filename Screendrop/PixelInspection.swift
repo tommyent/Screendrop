@@ -21,6 +21,15 @@ nonisolated struct PixelBuffer: Sendable {
     let height: Int
     private let bytes: [UInt8]
 
+    /// Force ImageIO's lazy source through one bitmap before a loupe draws it repeatedly.
+    static func decodedImage(_ image: CGImage) -> CGImage? {
+        guard let context = CGContext(data: nil, width: image.width, height: image.height,
+            bitsPerComponent: 8, bytesPerRow: 0, space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return context.makeImage()
+    }
+
     /// Draws `image` into an sRGB buffer of its own pixel size. Colours from
     /// a Display P3 capture come out as their sRGB values, as CSS hex expects.
     init?(image: CGImage) {

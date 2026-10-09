@@ -40,6 +40,9 @@ enum AnnoShapeDrawing {
         /// smaller than one sampled pixel, so on extremely downscaled previews (1200x57600 at a
         /// 0.05 scale) the canvas shows coarser blocks than the export.
         var sampleScale: CGFloat = 1
+        /// Decoded base pixels, never the composed canvas or another annotation.
+        var fullResolutionSource: CGImage? = nil
+        var magnifierPreviewCache: AnnoMagnifierPreviewCache? = nil
 
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
@@ -55,6 +58,8 @@ enum AnnoShapeDrawing {
         skipping skipped: Set<AnnoShapeID> = []
     ) {
         let shapes = document.shapes.filter { !skipped.contains($0.id) }
+        let magnifierSource = shapes.contains { if case .magnifier = $0.kind { return true }; return false }
+            ? redactedMagnifierSource(document, target: target) : nil
 
         for shape in shapes where shape.isRedaction {
             drawRedaction(shape, document: document, in: context, target: target)
@@ -63,7 +68,7 @@ enum AnnoShapeDrawing {
         drawSpotlight(shapes.filter { $0.isHighlight }, in: context, target: target)
 
         for shape in shapes where !shape.isRedaction && !shape.isHighlight {
-            drawShape(shape, document: document, in: context, target: target)
+            drawShape(shape, document: document, in: context, target: target, magnifierSource: magnifierSource)
         }
     }
 
@@ -73,7 +78,8 @@ enum AnnoShapeDrawing {
         _ shape: AnnoShape,
         document: AnnoDocument,
         in context: CGContext,
-        target: Target
+        target: Target,
+        magnifierSource: CGImage? = nil
     ) {
         let elements = document.renderElements(shape.id)
         guard !elements.isEmpty else { return }
@@ -106,6 +112,8 @@ enum AnnoShapeDrawing {
                 }
             case let .numbered(props):
                 drawNumbered(props, in: context)
+            case let .magnifier(props):
+                drawMagnifier(props, shape: shape, source: magnifierSource, in: context, pageSize: target.pageSize)
             case .redaction, .spotlight:
                 // Handled by their own passes, which need the screenshot underneath.
                 break
@@ -115,6 +123,66 @@ enum AnnoShapeDrawing {
     }
 
     // MARK: - Numbered callout
+
+    /// Use the existing redaction pass on the base alone, before any vector marks or loupes.
+    private static func redactedMagnifierSource(_ document: AnnoDocument, target: Target) -> CGImage? {
+        guard let source = target.fullResolutionSource,
+              CGFloat(source.width) == target.pageSize.width,
+              CGFloat(source.height) == target.pageSize.height else { return nil }
+        let redactions = document.shapes.filter { $0.isRedaction }
+        guard !redactions.isEmpty else { return source }
+        let render = { () -> CGImage? in
+            guard let clean = CGContext(data: nil, width: source.width, height: source.height,
+                bitsPerComponent: 8, bytesPerRow: 0, space: source.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            clean.draw(source, in: target.pageRect)
+            let cleanTarget = Target(
+                transform: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: target.pageSize.height),
+                pageSize: target.pageSize,
+                sample: { rect in
+                    clean.makeImage()?.cropping(to: CGRect(x: rect.minX, y: target.pageSize.height - rect.maxY,
+                        width: rect.width, height: rect.height).integral)
+                }, spotlightClip: nil
+            )
+            for shape in redactions { drawRedaction(shape, document: document, in: clean, target: cleanTarget) }
+            return clean.makeImage()
+        }
+        if let cache = target.magnifierPreviewCache { return cache.image(source: source, redactions: redactions, render: render) }
+        return render()
+    }
+
+    private static func drawMagnifier(_ props: MagnifierProps, shape: AnnoShape, source: CGImage?,
+        in context: CGContext, pageSize: CGSize) {
+        guard props.isValid else { return }
+        let ring = MagnifierProps.path(props.ringRect), loupe = MagnifierProps.path(props.loupeRect)
+        context.setStrokeColor(props.swatch.nsColor.cgColor)
+        context.setLineWidth(props.strokeWidth)
+        context.setLineCap(.round)
+        context.saveGState()
+        let outside = CGMutablePath()
+        outside.addRect(props.ringRect.union(props.loupeRect).insetBy(dx: -props.strokeWidth, dy: -props.strokeWidth))
+        outside.addPath(ring); outside.addPath(loupe)
+        context.addPath(outside); context.clip(using: .evenOdd)
+        context.move(to: props.ring.cgPoint); context.addLine(to: props.loupe.cgPoint); context.strokePath()
+        context.restoreGState()
+
+        context.saveGState()
+        context.addPath(loupe); context.clip()
+        // Missing pixels, including a source being reloaded after crop/undo, fail closed.
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1)); context.fill(props.loupeRect)
+        if let source {
+            let mapping = CGAffineTransform(translationX: props.loupe.x, y: props.loupe.y)
+                .scaledBy(x: props.zoom, y: props.zoom).translatedBy(x: -props.ring.x, y: -props.ring.y)
+            context.concatenate(mapping)
+            context.concatenate(shape.pageTransform.inverse.cgAffineTransform)
+            context.translateBy(x: 0, y: pageSize.height); context.scaleBy(x: 1, y: -1)
+            context.interpolationQuality = .none
+            context.draw(source, in: CGRect(origin: .zero, size: pageSize))
+        }
+        context.restoreGState()
+        context.addPath(ring); context.strokePath()
+        context.addPath(loupe); context.strokePath()
+    }
 
     private static func drawNumbered(_ props: NumberedProps, in context: CGContext) {
         let rect = CGRect(x: 0, y: 0, width: props.diameter, height: props.diameter)

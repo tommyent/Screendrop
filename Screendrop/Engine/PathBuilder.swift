@@ -30,6 +30,27 @@ final class PathBuilder {
     private(set) var commands: [Command] = []
     private var lastMoveToIdx: Int?
 
+    init() {}
+
+    /// Keep hit geometry on the same native squircle path as the renderer.
+    init(cgPath: CGPath) {
+        cgPath.applyWithBlock { element in
+            let e = element.pointee
+            func point(_ index: Int) -> Vec { Vec(e.points[index].x, e.points[index].y) }
+            switch e.type {
+            case .moveToPoint: self.move(to: point(0))
+            case .addLineToPoint: self.line(to: point(0))
+            case .addCurveToPoint: self.cubic(to: point(2), cp1: point(0), cp2: point(1))
+            case .addQuadCurveToPoint:
+                guard let start = self.commands.last?.point else { return }
+                let control = point(0), end = point(1)
+                self.cubic(to: end, cp1: Vec.lrp(start, control, 2 / 3), cp2: Vec.lrp(end, control, 2 / 3))
+            case .closeSubpath: self.close()
+            @unknown default: break
+            }
+        }
+    }
+
     @discardableResult
     func move(to p: Vec, opts: CommandOpts = CommandOpts()) -> PathBuilder {
         commands.append(Command(kind: .move, point: p, opts: opts))

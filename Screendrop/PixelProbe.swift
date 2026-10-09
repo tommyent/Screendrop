@@ -10,6 +10,8 @@ import Observation
 final class PixelProbe {
     /// The base image at full resolution; nil until it's decoded.
     private(set) var buffer: PixelBuffer?
+    // ponytail: a second decoded copy (~4 B/px) for full-colour loupes; share bitmap storage if memory becomes a problem.
+    private(set) var fullResolutionImage: CGImage?
     /// Pixels per point, from the image's DPI.
     private(set) var pixelsPerPoint: CGFloat = 1
     /// The colour under the pointer; nil off the image.
@@ -22,6 +24,10 @@ final class PixelProbe {
     @ObservationIgnored private var url: URL?
     @ObservationIgnored private var clearCopied: Task<Void, Never>?
 
+    func image(for url: URL?) -> CGImage? {
+        self.url == url ? fullResolutionImage : nil
+    }
+
     /// Reads the base image at full resolution, off the main thread. Run
     /// whenever the base image changes: on open, and after a crop or its undo.
     // ponytail: one RGBA copy per open editor (4 bytes a pixel, ~59 MB for
@@ -29,16 +35,19 @@ final class PixelProbe {
     func load(_ url: URL?) async {
         self.url = url
         buffer = nil
+        fullResolutionImage = nil
         hovered = nil
         measuring = nil
         guard let url else { return }
         pixelsPerPoint = CGImageSourceCreateWithURL(url as CFURL, nil)
             .map(AnnotationCanvasExpansion.pixelsPerPoint(of:)) ?? 1
         let decoded = await Task.detached(priority: .userInitiated) {
-            ScreenshotImageLoader.uprightImage(at: url).flatMap(PixelBuffer.init(image:))
+            let image = ScreenshotImageLoader.uprightImage(at: url).flatMap(PixelBuffer.decodedImage)
+            return (image.flatMap(PixelBuffer.init(image:)), image)
         }.value
         guard !Task.isCancelled, self.url == url else { return }
-        buffer = decoded
+        buffer = decoded.0
+        fullResolutionImage = decoded.1
     }
 
     /// Follows the pointer, in canvas points after the camera's unproject;

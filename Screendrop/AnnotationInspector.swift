@@ -342,6 +342,12 @@ struct AnnotationEditorInspector: View {
             if model.isTextStyleAvailable {
                 AnnotationTextStyleControls(model: model)
             } else {
+                if model.inspectedTool == .magnifier {
+                    InspectorSlider("Zoom", value: Binding(
+                        get: { model.magnifierZoom },
+                        set: { onEditorAction(); model.setMagnifierZoom($0) }
+                    ), range: 1...8, format: .magnification(fractionDigits: 1))
+                }
                 if model.isFillStyleAvailable {
                     InspectorRow("Fill") {
                         InspectorSegmented(

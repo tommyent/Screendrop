@@ -181,6 +181,7 @@ enum AnnoShapeKind: Codable, Equatable {
     case redaction(RedactionProps)
     case highlight(HighlightProps)
     case numbered(NumberedProps)
+    case magnifier(MagnifierProps)
 }
 
 struct AnnoShape: Codable, Equatable, Identifiable {
@@ -218,6 +219,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .geo(p): p.strokeWidth
         case let .draw(p): p.strokeWidth
         case let .arrow(p): p.strokeWidth
+        case let .magnifier(p): p.strokeWidth
         case .text, .redaction, .highlight, .numbered: 0
         }
     }
@@ -238,6 +240,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .redaction(p): p.kind == .blur ? .blur : .pixelate
         case .highlight: .highlight
         case .numbered: .numberedCircle
+        case .magnifier: .magnifier
         }
     }
 
@@ -248,6 +251,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .arrow(p): p.swatch
         case let .text(p): p.swatch
         case let .numbered(p): p.swatch
+        case let .magnifier(p): p.swatch
         case .redaction, .highlight: nil
         }
     }
@@ -259,7 +263,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .draw(p): p.isClosed
         case .arrow: false
         // Text, redactions, the highlight and numbered callouts are solid objects.
-        case .text, .redaction, .highlight, .numbered: true
+        case .text, .redaction, .highlight, .numbered, .magnifier: true
         }
     }
 

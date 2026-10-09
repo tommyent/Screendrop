@@ -12,6 +12,7 @@ import SwiftUI
 struct AnnoCanvasLayer: NSViewRepresentable {
     let editor: AnnoEditor
     let sourceImage: CGImage?
+    let fullResolutionSource: CGImage?
     let imageFrame: CGRect
     let imageSize: CGSize
     let spotlightClip: CGPath?
@@ -23,6 +24,7 @@ struct AnnoCanvasLayer: NSViewRepresentable {
         view.configure(
             editor: editor,
             sourceImage: sourceImage,
+            fullResolutionSource: fullResolutionSource,
             imageFrame: imageFrame,
             imageSize: imageSize,
             spotlightClip: spotlightClip
@@ -34,6 +36,7 @@ struct AnnoCanvasLayer: NSViewRepresentable {
         view.configure(
             editor: editor,
             sourceImage: sourceImage,
+            fullResolutionSource: fullResolutionSource,
             imageFrame: imageFrame,
             imageSize: imageSize,
             spotlightClip: spotlightClip
@@ -49,20 +52,24 @@ struct AnnoCanvasLayer: NSViewRepresentable {
 final class AnnoCanvasNSView: NSView {
     private var editor: AnnoEditor?
     private var sourceImage: CGImage?
+    private var fullResolutionSource: CGImage?
     private var imageFrame: CGRect = .zero
     private var imageSize: CGSize = .zero
     private var spotlightClip: CGPath?
 
     private var textOverlay: AnnoTextEditorOverlay?
     private let redactionCache = AnnoRedactionPreviewCache()
+    private let magnifierCache = AnnoMagnifierPreviewCache()
 
     func releaseResources() {
         textOverlay?.removeFromSuperview()
         textOverlay = nil
         editor = nil
         sourceImage = nil
+        fullResolutionSource = nil
         spotlightClip = nil
         redactionCache.releaseResources()
+        magnifierCache.clear()
         AnnoShapeDrawing.clearCaches()
     }
 
@@ -79,6 +86,7 @@ final class AnnoCanvasNSView: NSView {
     func configure(
         editor: AnnoEditor,
         sourceImage: CGImage?,
+        fullResolutionSource: CGImage?,
         imageFrame: CGRect,
         imageSize: CGSize,
         spotlightClip: CGPath?
@@ -90,6 +98,10 @@ final class AnnoCanvasNSView: NSView {
             }
         }
         self.sourceImage = sourceImage
+        if self.fullResolutionSource !== fullResolutionSource || !editor.shapes.contains(where: {
+            if case .magnifier = $0.kind { return true }; return false
+        }) { magnifierCache.clear() }
+        self.fullResolutionSource = fullResolutionSource
         redactionCache.configure(source: sourceImage, imageFrame: imageFrame)
         self.spotlightClip = spotlightClip
         self.imageFrame = imageFrame
@@ -168,7 +180,9 @@ final class AnnoCanvasNSView: NSView {
             isFlippedContext: true,
             redactionPreviewCache: redactionCache,
             // The preview can be downscaled from the full-resolution image the export samples.
-            sampleScale: sourceImage.map { CGFloat($0.width) / imageSize.width } ?? 1
+            sampleScale: sourceImage.map { CGFloat($0.width) / imageSize.width } ?? 1,
+            fullResolutionSource: fullResolutionSource,
+            magnifierPreviewCache: magnifierCache
         )
 
         // The shape being typed into is drawn by its text overlay instead, so the two don't double
@@ -225,6 +239,23 @@ final class AnnoCanvasNSView: NSView {
         // While text is being typed the selection frame stays hidden - the text view is the only
         // affordance.
         guard editor.editingTextId == nil, !editor.selectedIds.isEmpty else { return }
+
+        if editor.selectedIds.count == 1, let shape = editor.selectedShapes.first, case let .magnifier(props) = shape.kind {
+            var transform = shape.pageTransform.cgAffineTransform.concatenating(pageToView)
+            for rect in [props.ringRect, props.loupeRect] {
+                if let path = MagnifierProps.path(rect).copy(using: &transform) {
+                    context.addPath(path); context.setStrokeColor(accent.cgColor)
+                    context.setLineWidth(lineWidth); context.strokePath()
+                }
+            }
+            for (handle, point) in props.handles {
+                // The bodies drag directly; keep their source pixels visible at the centres.
+                if handle == .magnifierRingResize || handle == .magnifierLoupeResize {
+                    drawRoundHandle(at: editor.pageToScreen(shape.pageTransform.applyToPoint(point)), in: context)
+                }
+            }
+            return
+        }
 
         // A lone arrow shows its own handles, since resizing it as a box makes no sense.
         if editor.selectedIds.count == 1, let shape = editor.selectedShapes.first, shape.isArrow,

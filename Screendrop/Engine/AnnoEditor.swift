@@ -15,6 +15,7 @@ enum AnnoSelectionHandle: Equatable {
     case rotate(corner: Int)
     /// An arrow's own handles.
     case arrowStart, arrowMiddle, arrowEnd
+    case magnifierRing, magnifierLoupe, magnifierRingResize, magnifierLoupeResize
 
     var isCorner: Bool {
         switch self {
@@ -81,11 +82,13 @@ enum AnnoInteraction {
     case drawing(id: AnnoShapeID, origin: Vec)
     case creatingGeo(id: AnnoShapeID, origin: Vec)
     case creatingArrow(id: AnnoShapeID)
+    case creatingMagnifier(id: AnnoShapeID, origin: Vec)
     case brushing(origin: Vec)
     case translating(origin: Vec, initial: [AnnoShapeID: Vec])
     case resizing(handle: AnnoSelectionHandle, bounds: AnnoSelectionBounds, initial: AnnoDocument.Snapshot)
     case rotating(center: Vec, startAngle: Double, initial: AnnoDocument.Snapshot)
     case draggingArrowHandle(id: AnnoShapeID, handle: AnnoSelectionHandle)
+    case draggingMagnifier(id: AnnoShapeID, handle: AnnoSelectionHandle, origin: Vec, initial: MagnifierProps)
 }
 
 /// What the canvas view knows about a pointer event.
@@ -134,6 +137,7 @@ final class AnnoEditor {
     var currentSwatch: AnnotationSwatch = .red
     /// Stroke width as the inspector's slider value; converted to page units on creation.
     var currentStrokeWidth: Double = 4
+    var currentMagnifierZoom: Double = 3
     var currentGeoFill: AnnoFillStyle = .none
     var currentRedactionDensity: Double = 0.55
     var currentTextFontSize: Double = 48
@@ -338,6 +342,13 @@ final class AnnoEditor {
     func handle(at screenPoint: Vec) -> AnnoSelectionHandle? {
         guard let bounds = selectionBounds else { return nil }
         let hitRadius = 9.0
+
+        if selectedIds.count == 1, let shape = selectedShapes.first, case let .magnifier(props) = shape.kind {
+            for (handle, point) in props.handles {
+                if Vec.dist(pageToScreen(shape.pageTransform.applyToPoint(point)), screenPoint) <= hitRadius { return handle }
+            }
+            return nil
+        }
 
         // A lone arrow gets its own three handles instead of a resize frame.
         if selectedIds.count == 1, let shape = selectedShapes.first, shape.isArrow,

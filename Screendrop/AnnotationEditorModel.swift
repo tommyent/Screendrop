@@ -69,6 +69,7 @@ final class AnnotationEditorModel {
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
     var geoFill: AnnoFillStyle = .none
+    var magnifierZoom: CGFloat = 3
     var redactionDensity: CGFloat = 0.55
     var backgroundSettings = AnnotationBackgroundSettings() {
         willSet {
@@ -184,7 +185,7 @@ final class AnnotationEditorModel {
 
     var isTransformingExistingAnnotation: Bool {
         switch engine.interaction {
-        case .translating, .resizing, .rotating, .draggingArrowHandle: true
+        case .translating, .resizing, .rotating, .draggingArrowHandle, .draggingMagnifier: true
         default: false
         }
     }
@@ -575,6 +576,18 @@ final class AnnotationEditorModel {
         }
     }
 
+    func setMagnifierZoom(_ zoom: CGFloat) {
+        guard zoom.isFinite, (1...8).contains(zoom) else { return }
+        magnifierZoom = zoom
+        engine.currentMagnifierZoom = Double(zoom)
+        engine.applyStyleToSelection { shape in
+            if case var .magnifier(props) = shape.kind {
+                props.loupeSize = props.ringSize * Double(zoom)
+                shape.kind = .magnifier(props)
+            }
+        }
+    }
+
     func setSwatch(_ swatch: AnnotationSwatch) {
         selectedSwatch = swatch
         engine.currentSwatch = swatch
@@ -587,6 +600,7 @@ final class AnnotationEditorModel {
             case var .arrow(p): p.swatch = swatch; shape.kind = .arrow(p)
             case var .text(p): p.swatch = swatch; shape.kind = .text(p)
             case var .numbered(p): p.swatch = swatch; shape.kind = .numbered(p)
+            case var .magnifier(p): p.swatch = swatch; shape.kind = .magnifier(p)
             case .redaction, .highlight: break
             }
         }
@@ -603,6 +617,7 @@ final class AnnotationEditorModel {
             case var .geo(p): p.strokeWidth = pageWidth; shape.kind = .geo(p)
             case var .draw(p): p.strokeWidth = pageWidth; shape.kind = .draw(p)
             case var .arrow(p): p.strokeWidth = pageWidth; shape.kind = .arrow(p)
+            case var .magnifier(p): p.strokeWidth = pageWidth; shape.kind = .magnifier(p)
             default: break
             }
         }
@@ -624,6 +639,10 @@ final class AnnotationEditorModel {
     /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
         guard let shape = selectedShape else { return }
+        if case let .magnifier(props) = shape.kind {
+            magnifierZoom = CGFloat(props.zoom)
+            engine.currentMagnifierZoom = props.zoom
+        }
         if case let .geo(props) = shape.kind {
             geoFill = props.fill
             engine.currentGeoFill = props.fill
@@ -1015,6 +1034,11 @@ extension AnnotationEditorModel {
         case var .numbered(p):
             p.diameter *= uniform
             shape.kind = .numbered(p)
+        case var .magnifier(p):
+            p.ring = Vec(p.ring.x * sx, p.ring.y * sy)
+            p.loupe = Vec(p.loupe.x * sx, p.loupe.y * sy)
+            p.ringSize *= uniform; p.loupeSize *= uniform; p.strokeWidth *= uniform
+            shape.kind = .magnifier(p)
         case var .draw(p):
             p.points = p.points.map { Vec($0.x * sx, $0.y * sy, $0.z) }
             p.strokeWidth *= uniform

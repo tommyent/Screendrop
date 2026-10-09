@@ -16,6 +16,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     case highlight
     case pixelate
     case blur
+    case magnifier
 
     var id: String { rawValue }
 
@@ -50,6 +51,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
             "Text"
         case .highlight:
             "Highlight"
+        case .magnifier:
+            "Magnifier"
         }
     }
 
@@ -79,6 +82,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
             "textformat"
         case .highlight:
             "square.dashed.inset.filled"
+        case .magnifier:
+            "plus.magnifyingglass"
         }
     }
 
@@ -95,6 +100,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         case .highlight: return "Highlight: keep this area visible and dim everything outside"
         case .pixelate: shortcut = "P"
         case .blur: shortcut = "B"
+        case .magnifier: shortcut = "M"
         }
         return "\(title) (\(shortcut))"
     }
@@ -113,7 +119,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsColorStyle: Bool {
         switch self {
-        case .rectangle, .filledRectangle, .ellipse, .line, .arrow, .freehand, .numberedCircle, .text:
+        case .rectangle, .filledRectangle, .ellipse, .line, .arrow, .freehand, .numberedCircle, .text, .magnifier:
             true
         case .select, .pixelate, .blur, .highlight:
             false
@@ -122,7 +128,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsStrokeStyle: Bool {
         switch self {
-        case .rectangle, .ellipse, .line, .arrow, .freehand:
+        case .rectangle, .ellipse, .line, .arrow, .freehand, .magnifier:
             true
         case .select, .filledRectangle, .numberedCircle, .pixelate, .blur, .text, .highlight:
             false
@@ -137,7 +143,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .rectangle, .filledRectangle, .ellipse, .highlight:
             true
-        case .select, .line, .arrow, .freehand, .numberedCircle, .pixelate, .blur, .text:
+        case .select, .line, .arrow, .freehand, .numberedCircle, .pixelate, .blur, .text, .magnifier:
             false
         }
     }

@@ -21,6 +21,7 @@ struct RenderElement {
         case spotlight(CGSize)
         /// A numbered callout: filled disc, outline, and centred digits.
         case numbered(NumberedProps)
+        case magnifier(MagnifierProps)
         /// Glyph outlines, already positioned in the shape's local space.
         case glyphs(CGPath)
     }
@@ -38,7 +39,7 @@ struct RenderElement {
     var cgPath: CGPath? {
         switch content {
         case let .path(path), let .glyphs(path): path
-        case .redaction, .spotlight, .numbered: nil
+        case .redaction, .spotlight, .numbered, .magnifier: nil
         }
     }
 
@@ -73,6 +74,8 @@ enum AnnoShapeRenderer {
             [RenderElement(content: .spotlight(CGSize(width: props.w, height: props.h)))]
         case let .numbered(props):
             [RenderElement(content: .numbered(props))]
+        case let .magnifier(props):
+            props.isValid ? [RenderElement(content: .magnifier(props))] : []
         }
     }
 

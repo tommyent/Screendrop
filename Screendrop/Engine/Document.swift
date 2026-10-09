@@ -76,6 +76,10 @@ final class AnnoDocument {
                 case let .numbered(props):
                     let disc = CGRect(x: 0, y: 0, width: props.diameter, height: props.diameter)
                     page = CGPath(ellipseIn: disc, transform: &toPage).boundingBoxOfPath
+                case let .magnifier(props):
+                    page = props.ringRect.union(props.loupeRect)
+                        .insetBy(dx: -props.strokeWidth / 2, dy: -props.strokeWidth / 2)
+                        .applying(toPage)
                 case .redaction, .spotlight:
                     continue
                 }
@@ -286,6 +290,11 @@ extension AnnoDocument.Snapshot {
                 props.bend = -props.bend
                 shape.kind = .arrow(props)
                 return shape
+            case var .magnifier(props):
+                props.ring.x = -props.ring.x
+                props.loupe.x = -props.loupe.x
+                shape.kind = .magnifier(props)
+                return shape
             case let .geo(props): boxWidth = props.w
             case let .redaction(props): boxWidth = props.w
             case let .highlight(props): boxWidth = props.w
@@ -355,6 +364,8 @@ enum AnnoShapeGeometry {
             return Rectangle2d(width: props.w, height: props.h, isFilled: true)
         case let .numbered(props):
             return Ellipse2d(width: props.diameter, height: props.diameter, isFilled: true)
+        case let .magnifier(props):
+            return props.geometry
         }
     }
 
