@@ -5,6 +5,7 @@ struct CaptureLibraryView: View {
     @State private var model = CaptureLibraryModel.shared
     @State private var cloud = CloudLibraryModel.shared
     @State private var comments = CommentsLibraryModel.shared
+    @State private var likes = LikesLibraryModel.shared
     @State private var history = ScreenshotHistoryStore.shared
     @State private var projects = RecordingProjectStore.shared
     @State private var libraryWindow: NSWindow?
@@ -22,14 +23,16 @@ struct CaptureLibraryView: View {
     private var sidebarSelection: Binding<CaptureLibrarySidebarSelection?> {
         Binding {
             if comments.isShown { return .comments }
+            if likes.isShown { return .likes }
             if cloud.isShown { return .cloud }
             if let tag = model.tagFilter { return .tag(tag) }
             return model.filter.map { .kind($0) }
         } set: { selection in
             cloud.isShown = selection == .cloud
             comments.setShown(selection == .comments)
+            likes.setShown(selection == .likes)
             switch selection {
-            case .cloud, .comments:
+            case .cloud, .comments, .likes:
                 // The toolbar's capture actions mustn't act on captures out of sight.
                 model.selection = []
             case .tag(let tag):
@@ -94,6 +97,20 @@ struct CaptureLibraryView: View {
                             }
                         } icon: { Image(systemName: "bubble.left.and.bubble.right") }
                         .tag(CaptureLibrarySidebarSelection.comments)
+                        Label {
+                            HStack {
+                                Text("Likes")
+                                Spacer()
+                                // New since the page was last opened, as Comments counts them.
+                                if likes.unreadCount > 0 {
+                                    Text(likes.unreadCount > 99 ? "99+" : likes.unreadCount.formatted())
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption.monospacedDigit().weight(.semibold))
+                                        .accessibilityLabel("\(likes.unreadCount) new")
+                                }
+                            }
+                        } icon: { Image(systemName: "heart") }
+                        .tag(CaptureLibrarySidebarSelection.likes)
                     } else {
                         Label("Set Up Cloud", systemImage: "cloud")
                             .tag(CaptureLibrarySidebarSelection.cloud)
@@ -137,7 +154,8 @@ struct CaptureLibraryView: View {
                 // Empty pages are only as tall as their message; fill the column anyway.
                 browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .modifier(LibraryBrowserSurface(
-                        showsDots: comments.isShown ? comments.visibleComments.isEmpty : layout == .grid || (cloud.isShown
+                        showsDots: comments.isShown ? comments.visibleComments.isEmpty
+                            : likes.isShown ? likes.visibleLikes.isEmpty : layout == .grid || (cloud.isShown
                             ? cloud.visibleUploads.isEmpty
                             : !model.hasLoaded || model.visibleItems.isEmpty)
                     ))
@@ -154,6 +172,8 @@ struct CaptureLibraryView: View {
                 Group {
                     if comments.isShown {
                         CommentInspector(comments: comments)
+                    } else if likes.isShown {
+                        LikeInspector(likes: likes)
                     } else if cloud.isShown {
                         CloudUploadInspector(cloud: cloud)
                     } else {
@@ -166,12 +186,12 @@ struct CaptureLibraryView: View {
                 .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
             }
             .modifier(LibraryWindowSurface())
-            .navigationTitle(comments.isShown ? "Comments" : cloud.isShown ? (CloudUploader.shared.isConfigured ? "Uploads" : "Cloud") : model.tagFilter ?? activeFilter.title)
+            .navigationTitle(comments.isShown ? "Comments" : likes.isShown ? "Likes" : cloud.isShown ? (CloudUploader.shared.isConfigured ? "Uploads" : "Cloud") : model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
         .modifier(LibraryToolbarSeparator())
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: comments.isShown ? "Search comments" : cloud.isShown ? "Search uploads" : "Search captures")
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: comments.isShown ? "Search comments" : likes.isShown ? "Search likes" : cloud.isShown ? "Search uploads" : "Search captures")
         .toolbar { toolbar }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
@@ -180,6 +200,7 @@ struct CaptureLibraryView: View {
             model.refresh()
             cloud.refresh()
             comments.refresh()
+            likes.refresh()
         }
         .onDisappear { AppActivationPolicy.leave() }
         .onWindowChange { window in
@@ -190,8 +211,9 @@ struct CaptureLibraryView: View {
             if let window = notification.object as? NSWindow, window === libraryWindow {
                 model.refresh()
                 if cloud.isShown { cloud.refresh() }
-                // The sidebar's unread count, whichever page is open. No timer: only here, on open and on ⌘R.
+                // The sidebar's unread counts, whichever page is open. No timer: only here, on open and on ⌘R.
                 comments.refresh()
+                likes.refresh()
             }
         }
         .onChange(of: history.items) { _, _ in model.refresh() }
@@ -217,6 +239,8 @@ struct CaptureLibraryView: View {
     @ViewBuilder private var browser: some View {
         if comments.isShown {
             CommentsLibraryPage(comments: comments)
+        } else if likes.isShown {
+            LikesLibraryPage(likes: likes)
         } else if cloud.isShown {
             CloudLibraryPage(cloud: cloud, layout: layout, cardWidth: cardWidth)
         } else if !model.hasLoaded {
@@ -346,6 +370,10 @@ struct CaptureLibraryView: View {
                 Text("\(count) \(count == 1 ? "comment" : "comments")")
                 if !comments.selection.isEmpty { Text("· \(comments.selection.count) selected") }
                 if !comments.deletingIDs.isEmpty { Text("· Deleting…") }
+            } else if likes.isShown {
+                let count = likes.visibleLikes.count
+                Text("\(count) \(count == 1 ? "like" : "likes")")
+                if !likes.selection.isEmpty { Text("· \(likes.selection.count) selected") }
             } else if cloud.isShown, let fetch = cloud.previewFetch {
                 ProgressView(value: fetch.total).controlSize(.mini).frame(width: 60)
                 Text(fetch.title)
@@ -363,11 +391,12 @@ struct CaptureLibraryView: View {
                 if !model.selection.isEmpty { Text("· \(model.selection.count) selected") }
             }
             Spacer()
-            if comments.isShown ? comments.isLoading : cloud.isShown ? cloud.isLoading : model.isLoading {
+            if comments.isShown ? comments.isLoading : likes.isShown ? likes.isLoading : cloud.isShown ? cloud.isLoading : model.isLoading {
                 ProgressView().controlSize(.mini)
-                    .help(comments.isShown ? "Refreshing comments" : cloud.isShown ? "Refreshing uploads" : "Refreshing Library")
+                    .help(comments.isShown ? "Refreshing comments" : likes.isShown ? "Refreshing likes"
+                          : cloud.isShown ? "Refreshing uploads" : "Refreshing Library")
             }
-            if layout == .grid, !comments.isShown {
+            if layout == .grid, !comments.isShown, !likes.isShown {
                 // Capped where the 640 px thumbnails stay sharp on Retina.
                 Slider(value: $cardWidth, in: 140...320) {
                     EmptyView()
@@ -409,13 +438,13 @@ struct CaptureLibraryView: View {
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             // Comments are always a list, so the picker says so there.
-            Picker("View", selection: Binding(get: { comments.isShown ? .list : layout }, set: { layout = $0 })) {
+            Picker("View", selection: Binding(get: { comments.isShown || likes.isShown ? .list : layout }, set: { layout = $0 })) {
                 Label("Grid View", systemImage: "square.grid.2x2").tag(CaptureLibraryLayout.grid).help("Grid view")
                 Label("List View", systemImage: "list.bullet").tag(CaptureLibraryLayout.list).help("List view")
             }
             .labelStyle(.iconOnly)
             .pickerStyle(.segmented)
-            .disabled(comments.isShown)
+            .disabled(comments.isShown || likes.isShown)
             .help("Switch between grid and list")
         }
         .sharedBackgroundVisibility(.hidden)
@@ -426,7 +455,8 @@ struct CaptureLibraryView: View {
                 }
                 Divider()
                 Button("Refresh", systemImage: "arrow.clockwise") {
-                    if comments.isShown { comments.refresh() } else if cloud.isShown { cloud.refresh() } else { model.refresh() }
+                    if comments.isShown { comments.refresh() } else if likes.isShown { likes.refresh() }
+                    else if cloud.isShown { cloud.refresh() } else { model.refresh() }
                 }
                     .keyboardShortcut("r", modifiers: .command)
             } label: { Label("Sort", systemImage: "arrow.up.arrow.down") }
@@ -470,14 +500,15 @@ struct CaptureLibraryView: View {
         Button {
             if cloud.isShown { cloud.quickLook() } else { model.perform(.preview) }
         } label: { Label("Quick Look", systemImage: "eye") }
-            .disabled(comments.isShown || (cloud.isShown ? cloud.selection.isEmpty : model.selection.count != 1 || model.isBusy))
+            .disabled(comments.isShown || likes.isShown
+                      || (cloud.isShown ? cloud.selection.isEmpty : model.selection.count != 1 || model.isBusy))
             .help("Quick Look (Space)")
         Button { model.perform(.edit) } label: { Label("Edit", systemImage: "pencil.tip.crop.circle") }
-            .disabled(cloud.isShown || comments.isShown || model.selection.count != 1 || model.isBusy)
-            .help(cloud.isShown || comments.isShown
+            .disabled(cloud.isShown || comments.isShown || likes.isShown || model.selection.count != 1 || model.isBusy)
+            .help(cloud.isShown || comments.isShown || likes.isShown
                   ? "Uploads can't be edited; edit the capture in the Library"
                   : "Open in the screenshot or recording editor")
-        if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
+        if comments.isShown { commentActions } else if likes.isShown { likeActions } else if cloud.isShown { cloudActions } else { captureActions }
     }
 
     /// One place to share from, on every page (design pass choice 6):
@@ -505,13 +536,25 @@ struct CaptureLibraryView: View {
                     .disabled(model.isBusy)
             }
         } label: { Label("Share", systemImage: "square.and.arrow.up") }
-        .disabled(comments.isShown || (cloud.isShown ? uploads.isEmpty : items.isEmpty))
+        .disabled(comments.isShown || likes.isShown || (cloud.isShown ? uploads.isEmpty : items.isEmpty))
         .help("Share")
         .popover(item: $pendingCloudUpload, arrowEdge: .bottom) { item in
             CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
                 model.upload(item, options: options)
             }
         }
+    }
+
+    /// Likes open on their share page; there's nothing to preview, edit or delete.
+    @ViewBuilder private var likeActions: some View {
+        Menu {
+            ForEach(Array(likes.menuItems().enumerated()), id: \.offset) { _, item in
+                if item.startsGroup { Divider() }
+                Button(item.title, action: item.perform).disabled(!item.isEnabled)
+            }
+        } label: { Label("Actions", systemImage: "ellipsis.circle") }
+        .disabled(likes.selection.isEmpty)
+        .help("Like actions")
     }
 
     /// Uploads are final, so the Cloud page has no Edit.
@@ -644,5 +687,6 @@ enum CaptureLibrarySidebarSelection: Hashable {
     case kind(CaptureLibraryFilter)
     case cloud
     case comments
+    case likes
     case tag(String)
 }

@@ -213,6 +213,7 @@ final class CloudLibraryModel {
     func showUpload(id: String) {
         CaptureLibraryModel.shared.searchText = ""
         CommentsLibraryModel.shared.setShown(false)
+        LikesLibraryModel.shared.setShown(false)
         isShown = true
         selection = [id]
     }
