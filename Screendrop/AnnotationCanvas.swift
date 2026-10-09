@@ -737,7 +737,8 @@ struct AnnotationCanvas: View {
                                      pixelsPerPoint: probe.pixelsPerPoint)
         else { return false }
         onEditorInteraction()
-        model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd), label: ruler.label)
+        model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd), label: ruler.label,
+                                        clickCount: NSApp.currentEvent?.clickCount ?? 1)
         return true
     }
 

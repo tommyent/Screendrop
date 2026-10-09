@@ -292,7 +292,8 @@ final class AnnoCanvasNSView: NSView {
                 context.setLineDash(phase: 0, lengths: [])
             }
 
-            for point in [info.start.handle, info.middle, info.end.handle] {
+            // A measurement shows only the guide: it has no handles to offer.
+            for point in [info.start.handle, info.middle, info.end.handle] where !shape.isMeasurement {
                 drawRoundHandle(at: editor.pageToScreen(transform.applyToPoint(point)), in: context)
             }
             return
