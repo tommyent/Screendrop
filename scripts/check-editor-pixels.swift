@@ -66,6 +66,38 @@ enum AnnotationCanvasExpansion {
         probe.release()
         await reload.value
         precondition(probe.buffer == nil)
-        print("PASS: sRGB/P3 readout and profile; image lifetime, rows, stride and ruler; probe load/release/cancellation")
+        try checkPreviewOrientation()
+        print("PASS: sRGB/P3 readout and profile; image lifetime, rows, stride and ruler; probe load/release/cancellation; preview EXIF 1–8")
+    }
+
+    static func checkPreviewOrientation() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("preview-check-\(UUID())")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let context = CGContext(data: nil, width: 96, height: 64, bitsPerComponent: 8,
+            bytesPerRow: 384, space: CGColorSpace(name: CGColorSpace.displayP3)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 48, height: 64))
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 48, y: 0, width: 48, height: 64))
+        for orientation in 1...8 {
+            let url = folder.appendingPathComponent("\(orientation).tiff")
+            let writer = CGImageDestinationCreateWithURL(url as CFURL, "public.tiff" as CFString, 1, nil)!
+            CGImageDestinationAddImage(writer, context.makeImage()!, [kCGImagePropertyOrientation: orientation] as CFDictionary)
+            precondition(CGImageDestinationFinalize(writer))
+            let upright = ScreenshotImageLoader.uprightImage(at: url)!
+            let original = PixelBuffer(image: upright)!
+            let preview = ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: 48)!
+                .cgImage(forProposedRect: nil, context: nil, hints: nil)!
+            let pixels = PixelBuffer(image: preview)!
+            precondition(preview.width == (orientation >= 5 ? 32 : 48)
+                && preview.height == (orientation >= 5 ? 48 : 32) && CFEqual(preview.colorSpace, upright.colorSpace))
+            for (x, y) in [(0.2, 0.2), (0.8, 0.2), (0.2, 0.8), (0.8, 0.8)] {
+                let a = original.color(x: Int(Double(original.width) * x), y: Int(Double(original.height) * y))!
+                let b = pixels.color(x: Int(Double(pixels.width) * x), y: Int(Double(pixels.height) * y))!
+                precondition(abs(Int(a.red) - Int(b.red)) <= 1 && abs(Int(a.blue) - Int(b.blue)) <= 1 && a.alpha == b.alpha)
+            }
+        }
     }
 }

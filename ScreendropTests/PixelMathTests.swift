@@ -3,6 +3,86 @@ import Foundation
 import Testing
 
 struct PixelMathTests {
+    @Test func resizedPixelsKeepProfileTransparencyAndAspect() throws {
+        for name in [CGColorSpace.sRGB, CGColorSpace.displayP3] {
+            let space = try #require(CGColorSpace(name: name))
+            for (width, height, expectedWidth, expectedHeight) in [(9, 6, 3, 2), (6, 9, 2, 3)] {
+                let bytes = Data(Array(repeating: [UInt8(64), 32, 16, 128], count: width * height).flatMap { $0 })
+                let source = try #require(CGImage(width: width, height: height, bitsPerComponent: 8,
+                    bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                    provider: CGDataProvider(data: bytes as CFData)!, decode: nil,
+                    shouldInterpolate: false, intent: .defaultIntent))
+                let buffer = try #require(PixelBuffer(image: source))
+                #expect(buffer.resized(maxPixelSize: 100) === buffer.image)
+                let resized = try #require(buffer.resized(maxPixelSize: 3))
+                #expect(resized.width == expectedWidth && resized.height == expectedHeight)
+                #expect(CFEqual(resized.colorSpace, space))
+                let pixels = try #require(PixelBuffer(image: resized))
+                for y in 0..<resized.height {
+                    for x in 0..<resized.width {
+                        #expect(pixels.color(x: x, y: y) == buffer.color(x: 0, y: 0))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func decodedPixelsKeepTheirProfileAlphaAndRowOrder() throws {
+        for name in [CGColorSpace.sRGB, CGColorSpace.displayP3] {
+            let space = try #require(CGColorSpace(name: name))
+            // Odd width and padding: vImage must write the tightly packed destination stride.
+            let bytes = Data([64,32,16,128, 255,0,0,255, 0,255,0,255, 0,0,0,0,
+                              0,0,255,255, 255,255,255,255, 0,0,0,0, 0,0,0,0])
+            let source = try #require(CGImage(width: 3, height: 2, bitsPerComponent: 8,
+                bitsPerPixel: 32, bytesPerRow: 16, space: space,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: CGDataProvider(data: bytes as CFData)!, decode: nil,
+                shouldInterpolate: false, intent: .defaultIntent))
+            let buffer = try #require(PixelBuffer(image: source))
+            #expect(CFEqual(buffer.image.colorSpace, space))
+            #expect(buffer.image.bytesPerRow == 12)
+            #expect(buffer.color(x: 0, y: 0)?.alpha == 128)
+            #expect(buffer.color(x: 2, y: 1) == PixelColor(red: 0, green: 0, blue: 0, alpha: 0))
+            let reference = try #require(CGContext(data: nil, width: 3, height: 2,
+                bitsPerComponent: 8, bytesPerRow: 12, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            reference.draw(source, in: CGRect(x: 0, y: 0, width: 3, height: 2))
+            let pixels = reference.data!.assumingMemoryBound(to: UInt8.self)
+            for (x, y) in [(1, 0), (2, 0), (0, 1), (1, 1)] {
+                let color = try #require(buffer.color(x: x, y: y))
+                let i = (y * 3 + x) * 4
+                #expect(abs(Int(color.red) - Int(pixels[i])) <= 1)
+                #expect(abs(Int(color.green) - Int(pixels[i + 1])) <= 1)
+                #expect(abs(Int(color.blue) - Int(pixels[i + 2])) <= 1)
+            }
+        }
+    }
+
+    @Test func decodedGrayscalePixelsRemainReadable() throws {
+        let bytes = Data([20, 80, 140, 0, 200, 240, 255, 0])
+        let source = try #require(CGImage(width: 3, height: 2, bitsPerComponent: 8,
+            bitsPerPixel: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: CGDataProvider(data: bytes as CFData)!, decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent))
+        let buffer = try #require(PixelBuffer(image: source))
+        #expect(buffer.width == 3 && buffer.height == 2)
+        #expect(buffer.color(x: 2, y: 1) == PixelColor(red: 255, green: 255, blue: 255))
+        let reference = try #require(CGContext(data: nil, width: 3, height: 2,
+            bitsPerComponent: 8, bytesPerRow: 12, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        reference.draw(source, in: CGRect(x: 0, y: 0, width: 3, height: 2))
+        let pixels = reference.data!.assumingMemoryBound(to: UInt8.self)
+        for y in 0..<2 {
+            for x in 0..<3 {
+                let color = try #require(buffer.color(x: x, y: y))
+                #expect(abs(Int(color.red) - Int(pixels[(y * 3 + x) * 4])) <= 1)
+                #expect(color.red == color.green && color.green == color.blue && color.alpha == 255)
+            }
+        }
+    }
+
     @Test func syntheticFaintHeaderEdges() throws {
         // Flat surfaces differ by only 6–8 levels: the faint-edge path must find them.
         let source = SyntheticFixtures.faintHeaderEdges()
