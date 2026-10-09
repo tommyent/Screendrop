@@ -34,8 +34,11 @@ struct GeneralSettingsPane: View {
     var body: some View {
         Form {
             Section("Save Location") {
-                LabeledContent("Export folder") {
-                    HStack(spacing: 8) {
+                // One row and one name, "Save folder", as in the menu bar
+                // menu; "Use Default" only once a custom folder is set
+                // (design pass choice 15).
+                LabeledContent("Save folder") {
+                    HStack(spacing: DS.Space.m) {
                         Image(systemName: "folder.fill")
                             .foregroundStyle(.blue)
                             .font(.system(size: 14))
@@ -46,26 +49,25 @@ struct GeneralSettingsPane: View {
                             .truncationMode(.middle)
                             .foregroundStyle(.primary)
                             .help(ScreendropPreferences.exportDirectory.path)
-                    }
-                }
 
-                HStack(spacing: 8) {
-                    Button("Choose Folder…") {
-                        chooseExportDirectory()
-                    }
-                    .controlSize(.small)
+                        if !exportDirectoryPath.isEmpty {
+                            Button("Use Default") {
+                                exportDirectoryPath = ""
+                            }
+                            .controlSize(.small)
+                        }
 
-                    Button("Use Default") {
-                        exportDirectoryPath = ""
+                        Button("Choose…") {
+                            chooseExportDirectory()
+                        }
+                        .controlSize(.small)
                     }
-                    .controlSize(.small)
-                    .disabled(exportDirectoryPath.isEmpty)
                 }
 
                 Toggle(isOn: saveButtonUsesFolderBinding) {
                     SettingsControlLabel(
                         "Save without choosing a location",
-                        detail: "When you click Save, write straight to the export folder instead of asking where to put it."
+                        detail: "When you click Save, write straight to the save folder instead of asking where to put it."
                     )
                 }
                 .toggleStyle(.switch)

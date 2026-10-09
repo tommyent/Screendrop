@@ -84,7 +84,7 @@ struct MenuBarView: View {
             Button {
                 openScreenshotsFolder()
             } label: {
-                Label("Open Screenshots Folder", systemImage: "folder")
+                Label("Open Save Folder", systemImage: "folder")
             }
 
             Divider()

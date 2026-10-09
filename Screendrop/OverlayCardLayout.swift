@@ -78,7 +78,7 @@ enum OverlayCardAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .copy: "Copy the capture to the clipboard"
         case .compress: "Copy a smaller JPG to the clipboard"
-        case .save: "Save the capture to your export folder"
+        case .save: "Save the capture to your save folder"
         case .pin: "Pin the screenshot as a floating window"
         case .annotate: "Open the annotation / video editor"
         case .view: "Open a Quick Look preview"
