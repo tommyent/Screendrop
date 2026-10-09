@@ -112,6 +112,10 @@ struct AnnotationEditorWindow: View {
                 isCropping: { model.isCropping },
                 onCopyColor: probe.copyHovered,
                 onMeasure: probe.measure,
+                // Points of the image, as the ruler measures them.
+                onNudge: { step in
+                    model.nudgeSelection(dx: step.dx * probe.pixelsPerPoint, dy: step.dy * probe.pixelsPerPoint)
+                },
                 onEscape: model.escapeSelectionOrDisarm
             ))
             .inspector(isPresented: $isInspectorPresented) {
