@@ -36,22 +36,10 @@ struct RenderElement {
     var dashes: [CGFloat] = []
     var dashPhase: CGFloat = 0
 
-    var cgPath: CGPath? {
-        switch content {
-        case let .path(path), let .glyphs(path): path
-        case .redaction, .spotlight, .numbered, .magnifier: nil
-        }
-    }
-
     /// Whether this element transforms the screenshot underneath it rather than painting over it.
     /// Those are drawn in a first pass, below the spotlight.
     var isRedaction: Bool {
         if case .redaction = content { return true }
-        return false
-    }
-
-    var isSpotlight: Bool {
-        if case .spotlight = content { return true }
         return false
     }
 }

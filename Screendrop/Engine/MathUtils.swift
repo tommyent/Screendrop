@@ -56,14 +56,6 @@ func shortAngleDist(_ a0: Double, _ a1: Double) -> Double {
     return (2 * da).truncatingRemainder(dividingBy: PI2) - da
 }
 
-func snapAngle(_ r: Double, _ segments: Int) -> Double {
-    let seg = PI2 / Double(segments)
-    var ang = (floor((canonicalizeRotation(r) + seg / 2) / seg) * seg).truncatingRemainder(dividingBy: PI2)
-    if ang < PI { ang += PI2 }
-    if ang > PI { ang -= PI2 }
-    return ang
-}
-
 func getPointOnCircle(_ center: Vec, _ r: Double, _ a: Double) -> Vec {
     Vec.add(center, Vec.fromAngle(a, r))
 }
@@ -167,9 +159,6 @@ enum Easings {
     static let easeOutCubic: (Double) -> Double = { t in
         let u = t - 1
         return u * u * u + 1
-    }
-    static let easeInOutCubic: (Double) -> Double = { t in
-        t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1
     }
     static let easeOutSine: (Double) -> Double = { sin(($0 * PI) / 2) }
 }

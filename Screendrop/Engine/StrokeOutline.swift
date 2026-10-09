@@ -414,17 +414,6 @@ enum StrokeOutline {
         return result
     }
 
-    /// The complete pipeline: raw points in, outline polygon out.
-    static func getStroke(_ points: [Vec], _ options: StrokeOptions) -> [Vec] {
-        let pipeline = StrokePipeline()
-        pipeline.ingest(points, options)
-        guard pipeline.pointCount > 0 else { return [] }
-        pipeline.computeRadii(options)
-        var src = TrackSource()
-        src.load(from: pipeline)
-        return outline(src, options)
-    }
-
     /// The streamlined centerline for raw points, used for geometry.
     static func getStrokePoints(_ points: [Vec], _ options: StrokeOptions) -> [StrokePoint] {
         let pipeline = StrokePipeline()

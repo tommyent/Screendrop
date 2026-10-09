@@ -15,9 +15,6 @@ enum AnnoTheme {
         }
     }
 
-    /// The ground the hatch tile is drawn over.
-    static let neutralSolid = dynamic(light: "#fcfffe", dark: "#010403")
-
     /// `--tl-color-selection-stroke`, `hsl(214, 84%, 56%)` in both themes.
     static let selectionStroke = dynamic(light: "#3182ed", dark: "#3182ed")
 

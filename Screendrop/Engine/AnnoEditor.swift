@@ -24,11 +24,6 @@ enum AnnoSelectionHandle: Equatable {
         }
     }
 
-    var isRotate: Bool {
-        if case .rotate = self { return true }
-        return false
-    }
-
     /// The point of the selection box that stays put while this handle is dragged, in 0...1.
     var anchor: Vec? {
         switch self {
