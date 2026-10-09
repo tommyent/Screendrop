@@ -124,6 +124,74 @@ private func animatedRun(fraction: Double, inPage: Bool, videoRows: Range<Int> =
 @MainActor
 @Suite(.serialized)
 struct StitcherTests {
+    @Test("Persistent local change refuses without replacing the accepted overlap")
+    func persistentLocalChange() async throws {
+        let original = idFrame(Array(0..<180), width: 128)
+        func changing(_ phase: Int) -> CGImage {
+            var b = bytes(original)
+            var rng = RNG(s: UInt64(phase))
+            for y in 40..<140 { for x in 0..<128 {
+                let i = (y * 128 + x) * 4
+                for c in 0..<3 { b[i + c] = rng.next() }
+            } }
+            return CGImage(width: 128, height: 180, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: 128 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil,
+                shouldInterpolate: false, intent: .defaultIntent)!
+        }
+        let s = try #require(ScrollingCaptureStitcher(firstFrame: original, ignoredTrailingColumns: 0))
+        for phase in 1...8 {
+            #expect(await s.add(changing(phase)) == .noMatch)
+        }
+        #expect(await s.hasPersistentLocalChange)
+        #expect(await s.stitchedHeight == 180)
+        #expect(bytes(try #require(await s.makeImage())) == bytes(original))
+        await s.resetMotionDetection()
+        #expect(await !s.hasPersistentLocalChange)
+        #expect(await s.add(original) == .unchanged)
+        #expect(await s.add(idFrame(Array(20..<200), width: 128)) == .appended)
+        #expect(await s.stitchedHeight == 200)
+    }
+
+    @Test("Caret and small spinner never trigger the video hint", arguments: [false, true])
+    func smallLocalChange(spinner: Bool) async throws {
+        func view(_ phase: Int) -> CGImage {
+            var b = [UInt8](repeating: 255, count: 128 * 180 * 4)
+            let size = spinner ? 12 : 2
+            let endX = 60 + size
+            for y in 80..<92 { for x in 60..<endX {
+                let value = UInt8((phase * 31 + y * 17 + x * 11) % 220)
+                let i = (y * 128 + x) * 4
+                for c in 0..<3 { b[i + c] = value }
+            } }
+            return CGImage(width: 128, height: 180, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: 128 * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil,
+                shouldInterpolate: false, intent: .defaultIntent)!
+        }
+        let s = try #require(ScrollingCaptureStitcher(firstFrame: view(0), ignoredTrailingColumns: 0))
+        for phase in 1...12 {
+            let update = await s.add(view(phase))
+            #expect(update != .appended)
+            #expect(await !s.hasPersistentLocalChange)
+        }
+    }
+
+    @Test("Done and Cancel work while video sampling is paused", arguments: [false, true])
+    func pausedExit(cancel: Bool) async throws {
+        var session = ScrollingCaptureSession()
+        session.pauseForVideo()
+        #expect(session.isPausedForVideo)
+        if cancel { session.cancel() } else { session.finish() }
+        #expect(session.outcome == (cancel ? .cancelled : .done))
+        // Neither action needs Continue or another frame to end the sampling loop.
+        #expect(session.isPausedForVideo)
+        session.finish()
+        #expect(session.outcome == (cancel ? .cancelled : .done))
+    }
+
     @Test("01: Sticky chrome, idle, overshoot and recovery") func scenario01() async throws {
         // 1. Plain scroll with sticky header/footer, an idle frame, an overshoot, and recovery.
         do {
