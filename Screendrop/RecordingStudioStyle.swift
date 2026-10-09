@@ -99,7 +99,6 @@ struct RecordingEditDocument: Codable, Equatable {
         zoomEnabled: Bool,
         zoomCues: [ZoomCue],
         clipTimeline: RecordingClipTimeline? = nil,
-        trimSelection: VideoTrimSelection? = nil,
         exportSettings: VideoCompressionSettings? = nil,
         showsClickEffects: Bool? = nil,
         showsKeystrokes: Bool? = nil,
@@ -124,9 +123,6 @@ struct RecordingEditDocument: Codable, Equatable {
             // Keep the legacy envelope populated for older Screendrop builds.
             trimStart = clip.sourceStart
             trimEnd = clip.sourceEnd
-        } else {
-            trimStart = trimSelection?.start
-            trimEnd = trimSelection?.end
         }
         self.exportSettings = exportSettings
         self.showsClickEffects = showsClickEffects
