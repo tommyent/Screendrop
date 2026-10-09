@@ -23,9 +23,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
 - If there is more than one scheme, ask the user which one to build/run
   (via AskUserQuestion) before proceeding, unless the user already named a
   scheme in their request (e.g. "run the Dev scheme"). Don't assume - the
-  schemes can point at different configurations, bundle IDs, and even
-  different launch arguments (e.g. `Screendrop Demo` builds the same
-  `Screendrop.app` as the plain scheme but launches it with `--demo-mode`).
+  schemes can point at different configurations and bundle IDs (e.g.
+  `Screendrop Dev` builds `Screendrop Dev.app` with its own bundle ID).
 
 2. **Resolve build settings for the chosen scheme** - don't hardcode the
    configuration or output path, since it varies per scheme:
@@ -79,14 +78,6 @@ line here too - check with `EXECUTABLE_NAME` from step 2.)
 open "<BUILT_PRODUCTS_DIR>/<FULL_PRODUCT_NAME>"
 ```
 
-For the `Screendrop Demo` scheme specifically, pass the demo launch argument
-(the scheme's `LaunchAction` sets `--demo-mode`, but `open` won't pass it
-automatically):
-
-```bash
-open "<BUILT_PRODUCTS_DIR>/Screendrop.app" --args --demo-mode
-```
-
 ## When to Use
 
 - User says "run it", "build and run", "try it out", "relaunch the app"
@@ -99,6 +90,3 @@ open "<BUILT_PRODUCTS_DIR>/Screendrop.app" --args --demo-mode
 - DerivedData paths are specific to this machine/checkout and can change
   between clean builds - always resolve `BUILT_PRODUCTS_DIR` via
   `-showBuildSettings` (step 2) rather than assuming a fixed path.
-- `Screendrop Demo` and plain `Screendrop` share the same `Screendrop.app`
-  bundle and `Screendrop` executable name - they're only distinguished by the
-  `--demo-mode` launch argument, not by build output.
