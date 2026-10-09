@@ -135,10 +135,11 @@ final class ScrollingCapturePresenter {
         hasLostTrack = false
         hasReachedLimit = false
         recoveryTarget = nil
-        // Rows of the last frame that fill the strip's image at full width.
-        let recoveryRows = Int((CGFloat(output.columns.count) * ScrollingCaptureRecoveryStrip.imageSize.height
-            / ScrollingCaptureRecoveryStrip.imageSize.width).rounded())
         let recoveryPixelWidth = Int((ScrollingCaptureRecoveryStrip.imageSize.width * scale).rounded())
+        // Rows that fill the strip's image: downscaled to its width, or at
+        // native size when the selection is narrower than the strip.
+        let recoveryRows = Int((CGFloat(max(output.columns.count, recoveryPixelWidth))
+            * ScrollingCaptureRecoveryStrip.imageSize.height / ScrollingCaptureRecoveryStrip.imageSize.width).rounded())
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
         showPanel(below: rect, on: screen)
         defer {
@@ -176,14 +177,23 @@ final class ScrollingCapturePresenter {
             stitchedHeight = update.height
             hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
             if hasLostTrack, !wasLost, session.outcome == nil {
-                if let rows = await stitcher.recoveryRows(recoveryRows) {
-                    // The strip shows a few hundred points of the rows; a full-resolution
-                    // copy would hold megabytes for as long as track stays lost.
-                    recoveryTarget = rows.width > recoveryPixelWidth
-                        ? try? AnnotationScenePreviewRenderer.downscaled(
-                            rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
-                            colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
-                        : rows
+                // The strip shows a few hundred points of the rows; a full-resolution
+                // copy would hold megabytes for as long as track stays lost.
+                func fitted(_ rows: CGImage?) -> CGImage? {
+                    guard let rows, rows.width > recoveryPixelWidth else { return rows }
+                    return try? AnnotationScenePreviewRenderer.downscaled(
+                        rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
+                        colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
+                }
+                // The newest rows are the closest match, but a run of still rows
+                // between moving media can be a few pixels tall: unreadable. The
+                // last confirmed rows, which recovery also matches, stand in then.
+                let newest = fitted(await stitcher.recoveryRows(recoveryRows))
+                if let newest, CGFloat(newest.height) >= ScrollingCaptureRecoveryStrip.imageSize.height * scale / 3 {
+                    recoveryTarget = newest
+                } else {
+                    let confirmed = fitted(await stitcher.recoveryRows(recoveryRows, newest: false))
+                    recoveryTarget = (confirmed?.height ?? 0) > (newest?.height ?? 0) ? confirmed : newest
                 }
                 showRecoveryStrip()
                 if let recoveryPanel {
