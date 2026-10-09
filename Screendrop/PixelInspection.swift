@@ -64,10 +64,13 @@ nonisolated struct PixelBuffer: Sendable {
         return PixelColor(red: straight(bytes[i]), green: straight(bytes[i + 1]), blue: straight(bytes[i + 2]), alpha: alpha)
     }
 
-    /// How much two neighbouring pixels may differ, per channel, and still
-    /// count as one surface. Like Shottr's ruler: steps of 8 out of 255 are
-    /// ignored, steps of 16 stop it.
+    /// A step between neighbouring pixels larger than this, in any channel,
+    /// is always an edge.
     static let edgeTolerance = 12
+    /// A smaller step of at least this is an edge too, when it's between
+    /// flat surfaces: dark UIs draw cards and headers 6–8 levels off their
+    /// background (sd-p31 feedback, the Inbox's "Quiet" header).
+    static let faintEdgeStep = 3
 
     /// The run of pixels around `x`, `y` with no edge between them, along
     /// each axis. With `includingBorder`, each end also takes the pixel that
@@ -75,13 +78,17 @@ nonisolated struct PixelBuffer: Sendable {
     func span(x: Int, y: Int, includingBorder: Bool = false) -> (horizontal: ClosedRange<Int>, vertical: ClosedRange<Int>)? {
         guard color(x: x, y: y) != nil else { return nil }
         func run(_ step: (Int) -> (x: Int, y: Int), limit: Int, from start: Int) -> ClosedRange<Int> {
+            func pixel(_ i: Int) -> PixelColor? {
+                guard (0..<limit).contains(i) else { return nil }
+                let p = step(i)
+                return color(x: p.x, y: p.y)
+            }
             func end(_ direction: Int) -> Int {
                 var position = start
                 while true {
                     let next = position + direction
                     guard (0..<limit).contains(next) else { return position }
-                    let a = step(position), b = step(next)
-                    if isEdge(color(x: a.x, y: a.y)!, color(x: b.x, y: b.y)!) {
+                    if Self.isEdge({ pixel(position + $0 * direction) }) {
                         return includingBorder ? next : position
                     }
                     position = next
@@ -95,10 +102,31 @@ nonisolated struct PixelBuffer: Sendable {
         )
     }
 
-    private func isEdge(_ a: PixelColor, _ b: PixelColor) -> Bool {
+    /// Whether an edge follows `pixel(0)`, the last pixel walked; `pixel(n)`
+    /// is n further on, or back for negative n, and nil past the image. A
+    /// faint step counts only between flat surfaces: flat up to `pixel(0)`,
+    /// then a change within 1 or 2 px (an antialiased edge), then flat
+    /// again, or back as before for a 1 px line. Flat means identical
+    /// neighbours, as UI surfaces are in a screenshot; gradients and soft
+    /// shadows steep enough to step 3 levels never repeat a value, so the
+    /// ruler runs through them.
+    static func isEdge(_ pixel: (Int) -> PixelColor?) -> Bool {
+        guard let a = pixel(0), let b = pixel(1) else { return false }
+        if difference(a, b) > edgeTolerance { return true }
+        func flat(_ i: Int, _ j: Int) -> Bool {
+            guard let p = pixel(i), let q = pixel(j) else { return true }
+            return p == q
+        }
+        func faint(_ i: Int) -> Bool { pixel(i).map { difference(a, $0) >= faintEdgeStep } ?? false }
+        guard flat(-1, 0) else { return false }
+        return faint(1) && (flat(1, 2) || flat(0, 2))
+            || !flat(0, 1) && faint(2) && flat(2, 3)
+    }
+
+    /// The largest per-channel difference, alpha included.
+    private static func difference(_ a: PixelColor, _ b: PixelColor) -> Int {
         func delta(_ p: UInt8, _ q: UInt8) -> Int { abs(Int(p) - Int(q)) }
         return max(delta(a.red, b.red), delta(a.green, b.green), delta(a.blue, b.blue), delta(a.alpha, b.alpha))
-            > Self.edgeTolerance
     }
 }
 
