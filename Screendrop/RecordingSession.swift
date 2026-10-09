@@ -501,5 +501,6 @@ nonisolated enum RecordingSessionStore {
 
     static func deleteSession(_ session: RecordingSession) throws {
         try FileManager.default.trashItem(at: session.directoryURL, resultingItemURL: nil)
+        Task { await CaptureLibraryThumbnails.shared.remove(for: [session.directoryURL]) }
     }
 }

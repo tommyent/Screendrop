@@ -152,8 +152,16 @@ final class ScreenshotManager {
     /// scrolling capture, to a temp PNG alongside the `screencapture` ones.
     /// Records the display scale as DPI, as `screencapture` does, so a Retina
     /// capture keeps its real size.
-    func writeCapture(_ image: CGImage, scale: CGFloat) -> URL? {
-        let url = URL(fileURLWithPath: generateTempPath(extension: "png"))
+    func writeCapture(_ image: CGImage, scale: CGFloat) async -> URL? {
+        // Encoding suspends the caller, so reserve a unique name before another capture starts.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Screendrop_\(UUID()).png")
+        return await Task.detached(priority: .userInitiated) {
+            autoreleasepool { Self.writePNG(image, to: url, scale: scale) }
+        }.value
+    }
+
+    nonisolated private static func writePNG(_ image: CGImage, to url: URL, scale: CGFloat) -> URL? {
         guard let destination = CGImageDestinationCreateWithURL(
             url as CFURL,
             "public.png" as CFString,

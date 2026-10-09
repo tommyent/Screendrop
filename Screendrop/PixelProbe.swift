@@ -10,8 +10,6 @@ import Observation
 final class PixelProbe {
     /// The base image at full resolution; nil until it's decoded.
     private(set) var buffer: PixelBuffer?
-    // ponytail: a second decoded copy (~4 B/px) for full-colour loupes; share bitmap storage if memory becomes a problem.
-    private(set) var fullResolutionImage: CGImage?
     /// Pixels per point, from the image's DPI.
     private(set) var pixelsPerPoint: CGFloat = 1
     /// The colour under the pointer; nil off the image.
@@ -21,33 +19,53 @@ final class PixelProbe {
     /// Set while an arrow key is held over the image.
     private(set) var measuring: PixelMeasureAxis?
 
-    @ObservationIgnored private var url: URL?
+    @ObservationIgnored private var previewID: ObjectIdentifier?
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var decodeTask: Task<PixelBuffer?, Never>?
     @ObservationIgnored private var clearCopied: Task<Void, Never>?
 
-    func image(for url: URL?) -> CGImage? {
-        self.url == url ? fullResolutionImage : nil
+    func image(for preview: CGImage?) -> CGImage? {
+        previewID == preview.map(ObjectIdentifier.init) ? buffer?.image : nil
     }
 
     /// Reads the base image at full resolution, off the main thread. Run
     /// whenever the base image changes: on open, and after a crop or its undo.
-    // ponytail: one RGBA copy per open editor (4 bytes a pixel, ~59 MB for
-    // 5K); read rows from the image on demand if that ever matters.
-    func load(_ url: URL?) async {
-        self.url = url
-        buffer = nil
-        fullResolutionImage = nil
-        hovered = nil
-        measuring = nil
-        guard let url else { return }
+    func load(_ url: URL?, preview: CGImage?) async {
+        let previous = decodeTask
+        release()
+        previewID = preview.map(ObjectIdentifier.init)
+        let expectedGeneration = generation
+        guard let url, preview != nil else { return }
         pixelsPerPoint = CGImageSourceCreateWithURL(url as CFURL, nil)
             .map(AnnotationCanvasExpansion.pixelsPerPoint(of:)) ?? 1
-        let decoded = await Task.detached(priority: .userInitiated) {
-            let image = ScreenshotImageLoader.uprightImage(at: url).flatMap(PixelBuffer.decodedImage)
-            return (image.flatMap(PixelBuffer.init(image:)), image)
-        }.value
-        guard !Task.isCancelled, self.url == url else { return }
-        buffer = decoded.0
-        fullResolutionImage = decoded.1
+        let task = Task.detached(priority: .userInitiated) {
+            // ImageIO cannot interrupt a draw. Don't overlap it with a crop/undo reload.
+            _ = await previous?.value
+            guard !Task.isCancelled else { return nil as PixelBuffer? }
+            return autoreleasepool {
+                ScreenshotImageLoader.uprightImage(at: url).flatMap(PixelBuffer.init(image:))
+            }
+        }
+        decodeTask = task
+        let decoded = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: { task.cancel() }
+        guard !Task.isCancelled, generation == expectedGeneration else { return }
+        decodeTask = nil
+        buffer = decoded
+    }
+
+    func release() {
+        generation = UUID()
+        decodeTask?.cancel()
+        decodeTask = nil
+        clearCopied?.cancel()
+        clearCopied = nil
+        copiedHex = nil
+        previewID = nil
+        buffer = nil
+        hovered = nil
+        measuring = nil
     }
 
     /// Follows the pointer, in canvas points after the camera's unproject;

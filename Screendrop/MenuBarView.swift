@@ -185,12 +185,14 @@ struct MenuBarView: View {
     }
 
     private func showHistoryPreview(_ item: ScreenshotHistoryItem) {
-        if item.isVideo {
-            ScreenshotPreviewStack.shared.previewExistingVideo(url: item.url)
-        } else {
-            ScreenshotPreviewStack.shared.previewExistingImage(url: item.url)
+        Task {
+            if item.isVideo {
+                ScreenshotPreviewStack.shared.previewExistingVideo(url: item.url)
+            } else {
+                await ScreenshotPreviewStack.shared.previewExistingImage(url: item.url)
+            }
+            PreviewPanelPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: false))
         }
-        PreviewPanelPresenter.shared.show(displayID: ActiveDisplayResolver.activeDisplayID(preferPointer: false))
     }
 
     private func openSettings(tab: SettingsTab) {
