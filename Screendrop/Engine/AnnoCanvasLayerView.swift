@@ -201,6 +201,27 @@ final class AnnoCanvasNSView: NSView {
         let accent = AnnoTheme.selectionStroke
         let lineWidth = 1.5
 
+        context.saveGState()
+        context.setStrokeColor(NSColor.systemPink.cgColor)
+        context.setLineWidth(1)
+        context.setLineDash(phase: 0, lengths: [4, 4])
+        for guide in editor.snapGuides {
+            let start = editor.pageToScreen(guide.start)
+            let end = editor.pageToScreen(guide.end)
+            if guide.start == guide.end {
+                context.move(to: Vec(start.x - 4, start.y).cgPoint)
+                context.addLine(to: Vec(start.x + 4, start.y).cgPoint)
+                context.move(to: Vec(start.x, start.y - 4).cgPoint)
+                context.addLine(to: Vec(start.x, start.y + 4).cgPoint)
+            } else {
+                let padding = Vec.mul(Vec.sub(end, start).uni, 4)
+                context.move(to: Vec.sub(start, padding).cgPoint)
+                context.addLine(to: Vec.add(end, padding).cgPoint)
+            }
+        }
+        context.strokePath()
+        context.restoreGState()
+
         if let id = editor.hoveredShapeId, !editor.selectedIds.contains(id),
            let corners = editor.document.pageCorners(id) {
             let path = CGMutablePath()

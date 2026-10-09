@@ -84,7 +84,7 @@ enum AnnoInteraction {
     case creatingArrow(id: AnnoShapeID)
     case creatingMagnifier(id: AnnoShapeID, origin: Vec)
     case brushing(origin: Vec)
-    case translating(origin: Vec, initial: [AnnoShapeID: Vec])
+    case translating(origin: Vec, initial: [AnnoShapeID: Vec], anchors: [AnnoSnapAnchor])
     case resizing(handle: AnnoSelectionHandle, bounds: AnnoSelectionBounds, initial: AnnoDocument.Snapshot)
     case rotating(center: Vec, startAngle: Double, initial: AnnoDocument.Snapshot)
     case draggingArrowHandle(id: AnnoShapeID, handle: AnnoSelectionHandle)
@@ -167,6 +167,7 @@ final class AnnoEditor {
     /// The shape an arrow terminal would bind to if the pointer were released now.
     private(set) var hintedBindingId: AnnoShapeID?
     private(set) var hoveredShapeId: AnnoShapeID?
+    private(set) var snapGuides: [AnnoSnapGuide] = []
 
     private var undoStack: [AnnoDocument.Snapshot] = []
     private var redoStack: [AnnoDocument.Snapshot] = []
@@ -176,7 +177,11 @@ final class AnnoEditor {
 
     func notifyChanged() { onChange?() }
 
-    func setInteraction(_ interaction: AnnoInteraction) { self.interaction = interaction }
+    func setInteraction(_ interaction: AnnoInteraction) {
+        self.interaction = interaction
+        if case .idle = interaction { snapGuides = [] }
+    }
+    func setSnapGuides(_ guides: [AnnoSnapGuide]) { snapGuides = guides }
     func setBrush(_ brush: Box?) { self.brush = brush }
     func setHintedBinding(_ id: AnnoShapeID?) { hintedBindingId = id }
 
@@ -220,6 +225,7 @@ final class AnnoEditor {
         editingTextId = nil
         interaction = .idle
         hoveredShapeId = nil
+        snapGuides = []
         undoStack.removeAll()
         redoStack.removeAll()
         notifyChanged()
@@ -240,6 +246,7 @@ final class AnnoEditor {
 
     func undo() {
         guard let snapshot = undoStack.popLast() else { return }
+        snapGuides = []
         redoStack.append(document.snapshot())
         document.restore(snapshot)
         selectedIds = selectedIds.filter { document.shape($0) != nil }
@@ -249,6 +256,7 @@ final class AnnoEditor {
 
     func redo() {
         guard let snapshot = redoStack.popLast() else { return }
+        snapGuides = []
         undoStack.append(document.snapshot())
         document.restore(snapshot)
         selectedIds = selectedIds.filter { document.shape($0) != nil }
