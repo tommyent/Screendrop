@@ -103,7 +103,7 @@ private func animatedRun(fraction: Double, inPage: Bool, videoRows: Range<Int> =
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                        provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
     }
-    let s = ScrollingCaptureStitcher(firstFrame: view(0), ignoredTrailingColumns: 40)!
+    let s = CanonicalStitchReplay(firstFrame: view(0), ignoredTrailingColumns: 40)!
     var updates: [ScrollingCaptureStitcher.Update] = []
     for top in positions { updates.append(await s.add(view(top))) }
     let height = await s.stitchedHeight
@@ -140,7 +140,7 @@ struct StitcherTests {
                 provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil,
                 shouldInterpolate: false, intent: .defaultIntent)!
         }
-        let s = try #require(ScrollingCaptureStitcher(firstFrame: original, ignoredTrailingColumns: 0))
+        let s = try #require(CanonicalStitchReplay(firstFrame: original, ignoredTrailingColumns: 0))
         for phase in 1...8 {
             #expect(await s.add(changing(phase)) == .noMatch)
         }
@@ -171,7 +171,7 @@ struct StitcherTests {
                 provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil,
                 shouldInterpolate: false, intent: .defaultIntent)!
         }
-        let s = try #require(ScrollingCaptureStitcher(firstFrame: view(0), ignoredTrailingColumns: 0))
+        let s = try #require(CanonicalStitchReplay(firstFrame: view(0), ignoredTrailingColumns: 0))
         for phase in 1...12 {
             let update = await s.add(view(phase))
             #expect(update != .appended)
@@ -195,7 +195,7 @@ struct StitcherTests {
     @Test("01: Sticky chrome, idle, overshoot and recovery") func scenario01() async throws {
         // 1. Plain scroll with sticky header/footer, an idle frame, an overshoot, and recovery.
         do {
-            let s = ScrollingCaptureStitcher(firstFrame: image(frame(0)), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: image(frame(0)), ignoredTrailingColumns: 0)!
             var log: [ScrollingCaptureStitcher.Update] = []
             for offset in [37, 90, 90, 160, 250, 330, 420] { log.append(await s.add(image(frame(offset)))) }
             // 420 -> 700 jumps past the band: no overlap, must be rejected, then 520 overlaps 420 again.
@@ -215,7 +215,7 @@ struct StitcherTests {
     @Test("02: Changing scroll bar is ignored") func scenario02() async throws {
         // 2. Overlay scroll bar changing every frame, ignored by hashing.
         do {
-            let s = ScrollingCaptureStitcher(firstFrame: image(frame(0, scrollBar: 1)), ignoredTrailingColumns: 8)!
+            let s = CanonicalStitchReplay(firstFrame: image(frame(0, scrollBar: 1)), ignoredTrailingColumns: 8)!
             var bar: UInt8 = 1
             for offset in [50, 120, 200, 260] { bar += 40; _ = await s.add(image(frame(offset, scrollBar: bar))) }
             let result = try #require(await s.makeImage())
@@ -236,7 +236,7 @@ struct StitcherTests {
                         bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                         provider: CGDataProvider(data: Data(tall[o..<(o + h)].joined()) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: big(0), ignoredTrailingColumns: 32)!
+            let s = CanonicalStitchReplay(firstFrame: big(0), ignoredTrailingColumns: 32)!
             let frames = stride(from: 100, through: 400, by: 100).map(big)
             let start = Date()
             for f in frames { _ = await s.add(f) }
@@ -254,26 +254,26 @@ struct StitcherTests {
 
         do {
             let periodic = (0..<40).map { $0 % 8 }
-            var s = ScrollingCaptureStitcher(firstFrame: idFrame(periodic), ignoredTrailingColumns: 0)!
+            var s = CanonicalStitchReplay(firstFrame: idFrame(periodic), ignoredTrailingColumns: 0)!
             check("repeating, scroll 20", await s.add(idFrame((20..<60).map { $0 % 8 })), [.noMatch, .unchanged], height: await s.stitchedHeight, expected: 40)
 
             var blink = periodic; blink[39] = 1000
-            s = ScrollingCaptureStitcher(firstFrame: idFrame(periodic), ignoredTrailingColumns: 0)!
+            s = CanonicalStitchReplay(firstFrame: idFrame(periodic), ignoredTrailingColumns: 0)!
             check("repeating, still, one row changed", await s.add(idFrame(blink)), [.noMatch, .unchanged], height: await s.stitchedHeight, expected: 40)
 
-            s = ScrollingCaptureStitcher(firstFrame: idFrame((20..<60).map { $0 % 8 }), ignoredTrailingColumns: 0)!
+            s = CanonicalStitchReplay(firstFrame: idFrame((20..<60).map { $0 % 8 }), ignoredTrailingColumns: 0)!
             check("repeating, scroll up 4", await s.add(idFrame((16..<56).map { $0 % 8 })), [.noMatch, .unchanged], height: await s.stitchedHeight, expected: 40)
 
-            s = ScrollingCaptureStitcher(firstFrame: idFrame(Array(0..<40)), ignoredTrailingColumns: 0)!
+            s = CanonicalStitchReplay(firstFrame: idFrame(Array(0..<40)), ignoredTrailingColumns: 0)!
             check("unique, jump past overlap", await s.add(idFrame(Array(80..<120))), [.noMatch], height: await s.stitchedHeight, expected: 40)
             check("unique, back to accepted", await s.add(idFrame(Array(0..<40))), [.unchanged], height: await s.stitchedHeight, expected: 40)
 
-            s = ScrollingCaptureStitcher(firstFrame: idFrame(Array(30..<70)), ignoredTrailingColumns: 0)!
+            s = CanonicalStitchReplay(firstFrame: idFrame(Array(30..<70)), ignoredTrailingColumns: 0)!
             check("unique, scroll up 10", await s.add(idFrame(Array(20..<60))), [.unchanged], height: await s.stitchedHeight, expected: 40)
             check("unique, then down past start", await s.add(idFrame(Array(40..<80))), [.appended], height: await s.stitchedHeight, expected: 50)
 
             var still = Array(0..<40); still[39] = 1000
-            s = ScrollingCaptureStitcher(firstFrame: idFrame(Array(0..<40)), ignoredTrailingColumns: 0)!
+            s = CanonicalStitchReplay(firstFrame: idFrame(Array(0..<40)), ignoredTrailingColumns: 0)!
             check("unique, still, one row changed", await s.add(idFrame(still)), [.unchanged], height: await s.stitchedHeight, expected: 40)
             print("scenario 4 ok")
         }
@@ -283,12 +283,12 @@ struct StitcherTests {
     @Test("05: Periodic rows refuse; flat UI still stitches") func scenario05() async throws {
         // 5. Sol's round-2 probe (period 32, scroll 40) and a flat-UI page that must still stitch.
         do {
-            var s = ScrollingCaptureStitcher(firstFrame: idFrame((0..<80).map { $0 % 32 }), ignoredTrailingColumns: 0)!
+            var s = CanonicalStitchReplay(firstFrame: idFrame((0..<80).map { $0 % 32 }), ignoredTrailingColumns: 0)!
             check("period 32, scroll 40", await s.add(idFrame((40..<120).map { $0 % 32 })), [.noMatch, .unchanged], height: await s.stitchedHeight, expected: 80)
 
             // Mostly identical "card" rows (id 500) with a line of unique text rows every 16.
             let flatPage = (0..<400).map { y in y % 16 < 3 ? 1000 + y : 500 }
-            s = ScrollingCaptureStitcher(firstFrame: idFrame(Array(flatPage[0..<120])), ignoredTrailingColumns: 0)!
+            s = CanonicalStitchReplay(firstFrame: idFrame(Array(flatPage[0..<120])), ignoredTrailingColumns: 0)!
             check("flat UI, scroll 7", await s.add(idFrame(Array(flatPage[7..<127]))), [.appended], height: await s.stitchedHeight, expected: 127)
             check("flat UI, scroll 33 more", await s.add(idFrame(Array(flatPage[40..<160]))), [.appended], height: await s.stitchedHeight, expected: 160)
             let image = try #require(await s.makeImage())
@@ -303,7 +303,7 @@ struct StitcherTests {
         // 6. Sol's other round-2 periodic failures: (period, start, next start), 80-row frames.
         do {
             for (period, from, to) in [(32, 64, 104), (20, 0, 25), (20, 30, 15), (16, 0, 20)] {
-                let s = ScrollingCaptureStitcher(firstFrame: idFrame((from..<(from + 80)).map { $0 % period }), ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: idFrame((from..<(from + 80)).map { $0 % period }), ignoredTrailingColumns: 0)!
                 check("period \(period), \(from) -> \(to)", await s.add(idFrame((to..<(to + 80)).map { $0 % period })), [.noMatch, .unchanged], height: await s.stitchedHeight, expected: 80)
             }
             print("scenario 6 ok")
@@ -315,7 +315,7 @@ struct StitcherTests {
         // 7. Sol's round-3 periodic cases: rivals with little overlap but no contradictions.
         do {
             for (period, from, to) in [(64, 64, 136), (64, 64, 8), (56, 64, 128)] {
-                let s = ScrollingCaptureStitcher(firstFrame: idFrame((from..<(from + 80)).map { $0 % period }), ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: idFrame((from..<(from + 80)).map { $0 % period }), ignoredTrailingColumns: 0)!
                 check("period \(period), \(from) -> \(to)", await s.add(idFrame((to..<(to + 80)).map { $0 % period })), [.noMatch, .unchanged], height: await s.stitchedHeight, expected: 80)
             }
             print("scenario 7 ok")
@@ -338,7 +338,7 @@ struct StitcherTests {
             }
             let page = (0..<600).map { $0 < 90 ? 2000 + $0 : -1 }   // -1 = white
             let view = { (top: Int) in pageFrame(Array(page[top..<(top + 80)])) }
-            let s = ScrollingCaptureStitcher(firstFrame: view(0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: view(0), ignoredTrailingColumns: 0)!
             var log: [ScrollingCaptureStitcher.Update] = []
             for top in [40, 50, 150, 250, 150, 60, 40] { log.append(await s.add(view(top))) }
             print("gap sequence", log)
@@ -359,7 +359,7 @@ struct StitcherTests {
                 rows = rows.map { row in var r = row; for x in 10..<12 { let i = x * 4; r[i] = flip ? 200 : 40; r[i + 1] = flip ? 40 : 200; r[i + 2] = 90 }; return r }
                 return image(rows)
             }
-            let s = ScrollingCaptureStitcher(firstFrame: gutterFrame(0, flip: false), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: gutterFrame(0, flip: false), ignoredTrailingColumns: 0)!
             var log: [ScrollingCaptureStitcher.Update] = []
             var flip = true
             // Steps stay within the band above the held-back quarter (124 rows here).
@@ -394,7 +394,7 @@ struct StitcherTests {
                     return r
                 })
             }
-            let s = ScrollingCaptureStitcher(firstFrame: view(0, flip: false), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: view(0, flip: false), ignoredTrailingColumns: 0)!
             var flip = true
             var log: [ScrollingCaptureStitcher.Update] = []
             // Steps stay within the band above the held-back quarter (150 rows here).
@@ -431,7 +431,7 @@ struct StitcherTests {
                     return out
                 })
             }
-            let s = ScrollingCaptureStitcher(firstFrame: view(0, phase: 0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: view(0, phase: 0), ignoredTrailingColumns: 0)!
             var phase = 1
             var log: [ScrollingCaptureStitcher.Update] = []
             // Steps stay within the band above the held-back quarter.
@@ -467,7 +467,7 @@ struct StitcherTests {
                         bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                         provider: CGDataProvider(data: Data(data) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: gridImage(grid(0, rows: 1600), 1600), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: gridImage(grid(0, rows: 1600), 1600), ignoredTrailingColumns: 0)!
             let update = await s.add(gridImage(grid(320, rows: 1600), 1600))
             let result = try #require(await s.makeImage())
             print("status grid", update, result.height)
@@ -491,7 +491,7 @@ struct StitcherTests {
             }
             let transforms: [(String, @MainActor (CGImage) -> CGImage)] = [("clean", { $0 }), ("one red pixel", withRed)]
             for (name, transform) in transforms {
-                let s = ScrollingCaptureStitcher(firstFrame: transform(try StitcherFixtures.load("sublime-last-accepted")), ignoredTrailingColumns: 40)!
+                let s = CanonicalStitchReplay(firstFrame: transform(try StitcherFixtures.load("sublime-last-accepted")), ignoredTrailingColumns: 40)!
                 let update = await s.add(transform(try StitcherFixtures.load("sublime-stall-crop")))
                 let h = await s.stitchedHeight
                 print("real Sublime pair, \(name):", update, h)
@@ -518,7 +518,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: thin(0, rows: 1600), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: thin(0, rows: 1600), ignoredTrailingColumns: 0)!
             let update = await s.add(thin(320, rows: 1600))
             let result = try #require(await s.makeImage())
             print("thin grid", update, result.height)
@@ -533,7 +533,7 @@ struct StitcherTests {
         // Both first-frame variants must append +664, preserving the original expected height.
         do {
             for first in [0, 1] {
-                let s = ScrollingCaptureStitcher(firstFrame: SyntheticFixtures.list(offset: 0, redraw: first), ignoredTrailingColumns: 40)!
+                let s = CanonicalStitchReplay(firstFrame: SyntheticFixtures.list(offset: 0, redraw: first), ignoredTrailingColumns: 40)!
                 let update = await s.add(SyntheticFixtures.list(offset: 664, redraw: 2))
                 let h = await s.stitchedHeight
                 print("synthetic list pair \(first):", update, h)
@@ -558,7 +558,7 @@ struct StitcherTests {
                 }
             }
             // Header 20 + band row 140 -> frame rows 160..<180, inside the bottom quarter of the band.
-            let s = ScrollingCaptureStitcher(firstFrame: image(withBubble(frame(0), at: 160)), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: image(withBubble(frame(0), at: 160)), ignoredTrailingColumns: 0)!
             var log: [ScrollingCaptureStitcher.Update] = []
             for offset in [37, 90, 160] { log.append(await s.add(image(withBubble(frame(offset), at: 160)))) }
             print("bubble", log)
@@ -584,7 +584,7 @@ struct StitcherTests {
                     return r
                 }
             }
-            let s = ScrollingCaptureStitcher(firstFrame: image(withBubble(frame(0), at: 160)), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: image(withBubble(frame(0), at: 160)), ignoredTrailingColumns: 0)!
             let jump = await s.add(image(withBubble(frame(150), at: 160)))
             var log: [ScrollingCaptureStitcher.Update] = []
             for offset in [100, 200] { log.append(await s.add(image(withBubble(frame(offset), at: 160)))) }
@@ -697,7 +697,7 @@ struct StitcherTests {
                                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                    provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
                 }
-                let s = ScrollingCaptureStitcher(firstFrame: mixed(0, seed: 900), ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: mixed(0, seed: 900), ignoredTrailingColumns: 0)!
                 let update = await s.add(mixed(shift, seed: 901))
                 let h = await s.stitchedHeight
                 #expect(update != .appended && h == 160, "periodic animation guessed: \(period), \(shift), \(h)")
@@ -721,7 +721,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: columns(0, 0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: columns(0, 0), ignoredTrailingColumns: 0)!
             let update = await s.add(columns(leftShift, 20))
             let h = await s.stitchedHeight
             #expect(update == .noMatch && h == 160, "conflicting columns accepted")
@@ -748,7 +748,7 @@ struct StitcherTests {
             }
             for period in [8, 16, 32] {
                 for pageTop in [0, 20, 40] {
-                    let s = ScrollingCaptureStitcher(firstFrame: mixed(0, animationTop: 500, period: period), ignoredTrailingColumns: 0)!
+                    let s = CanonicalStitchReplay(firstFrame: mixed(0, animationTop: 500, period: period), ignoredTrailingColumns: 0)!
                     let update = await s.add(mixed(pageTop, animationTop: 560, period: period))
                     let height = await s.stitchedHeight
                     if period == 8 && pageTop == 20 {
@@ -781,7 +781,7 @@ struct StitcherTests {
             let next = SyntheticFixtures.video(offset: 300, phase: 1)
             #expect(first.width == 3000 && first.height == 1180 && next.width == 3000 && next.height == 1180)
             for ignored in [20, 40] {
-                let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: ignored)!
+                let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: ignored)!
                 let unchanged = await s.add(first)
                 #expect(unchanged == .unchanged, "identical frame warned")
                 let update = await s.add(next)
@@ -798,7 +798,7 @@ struct StitcherTests {
                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(changed) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
-            let s = ScrollingCaptureStitcher(firstFrame: original, ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: original, ignoredTrailingColumns: 0)!
             let update = await s.add(blink)
             let height = await s.stitchedHeight
             #expect(update == .unchanged && height == 160, "full-frame zero match warned")
@@ -825,7 +825,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: mixed(0, seed: 1000), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: mixed(0, seed: 1000), ignoredTrailingColumns: 0)!
             let startup = await s.add(mixed(0, seed: 1001))
             #expect(startup == .noMatch, "unproven mixed startup unexpectedly cleared")
             for top in [20, 40, 60, 80, 100] {
@@ -870,7 +870,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: scene(0, seed: 3000), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: scene(0, seed: 3000), ignoredTrailingColumns: 0)!
             for (top, seed, expected) in [(20, 3001, ScrollingCaptureStitcher.Update.appended),
                                           (500, 3002, .noMatch), (500, 3003, .noMatch),
                                           (20, 3004, .unchanged), (40, 3005, .appended), (40, 3006, .unchanged)] {
@@ -914,7 +914,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: scene(0, phase: nil), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: scene(0, phase: nil), ignoredTrailingColumns: 0)!
             let append = await s.add(scene(20, phase: 0))
             #expect(append == .appended, "ambiguous outside witness setup")
             let update = await s.add(scene(20, phase: 8))
@@ -939,7 +939,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: pane(0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: pane(0), ignoredTrailingColumns: 0)!
             let update = await s.add(pane(20))
             let height = await s.stitchedHeight
             #expect(update == .noMatch && height == 240, "startup fixed header concealed page movement")
@@ -972,7 +972,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: scene(0, phase: nil), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: scene(0, phase: nil), ignoredTrailingColumns: 0)!
             let setup = await s.add(scene(20, phase: 0))
             #expect(setup == .appended, "cached-seven setup")
             let update = await s.add(scene(20, phase: 20))
@@ -1003,7 +1003,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: pane(0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: pane(0), ignoredTrailingColumns: 0)!
             let update = await s.add(pane(500))
             let height = await s.stitchedHeight
             #expect(update == .noMatch && height == h, "startup zero concealed out-of-overlap movement")
@@ -1049,7 +1049,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(p) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: scene(0, stage: 0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: scene(0, stage: 0), ignoredTrailingColumns: 0)!
             let primer = await s.add(scene(20, stage: 0))
             let prefix = bytes(try #require(await s.makeImage()))
             let pageOnly = await s.add(scene(40, stage: 1))
@@ -1090,7 +1090,7 @@ struct StitcherTests {
                 provider:CGDataProvider(data:Data(p) as CFData)!,decode:nil,shouldInterpolate:false,intent:.defaultIntent)!
         }
         let first=view(0,seed:17701), accepted=view(20,seed:17702)
-        let s=ScrollingCaptureStitcher(firstFrame:first,ignoredTrailingColumns:0)!
+        let s=CanonicalStitchReplay(firstFrame:first,ignoredTrailingColumns:0)!
         let setup=await s.add(accepted)
         let setupHeight=await s.stitchedHeight
         FileHandle.standardOutput.write(Data("setup \(setup) height \(setupHeight)\n".utf8))
@@ -1147,7 +1147,7 @@ struct StitcherTests {
                 provider:CGDataProvider(data:Data(p) as CFData)!,decode:nil,shouldInterpolate:false,intent:.defaultIntent)!
         }
         let first=view(0,seed:17701), accepted=view(20,seed:17702)
-        let s=ScrollingCaptureStitcher(firstFrame:first,ignoredTrailingColumns:0)!
+        let s=CanonicalStitchReplay(firstFrame:first,ignoredTrailingColumns:0)!
         let setup=await s.add(accepted)
         let setupHeight=await s.stitchedHeight
         FileHandle.standardOutput.write(Data("setup \(setup) height \(setupHeight)\n".utf8))
@@ -1232,7 +1232,7 @@ struct StitcherTests {
             return image(top + Array(page[(videoTop*w*4)..<((videoTop+h-2*headerHeight)*w*4)]) + bottom, height: h)
         }
         let first = view(videoTop: 0, variation: 0)
-        let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0)!
+        let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: 0)!
         for (i, top) in [40,80].enumerated() {
             let update = await s.add(view(videoTop: top, variation: UInt8(i+1)))
             let height = await s.stitchedHeight
@@ -1275,7 +1275,7 @@ struct StitcherTests {
             return p
         }
         func view(_ top: Int) -> CGImage { image(Array(page[(top*w*4)..<((top+h)*w*4)])) }
-        let s = ScrollingCaptureStitcher(firstFrame: view(0), ignoredTrailingColumns: 0)!
+        let s = CanonicalStitchReplay(firstFrame: view(0), ignoredTrailingColumns: 0)!
         for top in [20,40] {
             let update = await s.add(view(top))
             #expect(update == .appended, "true moving-page primers must append")
@@ -1336,7 +1336,7 @@ struct StitcherTests {
 
         // Exact fixed header; only the page beneath it moves.
         let first = frame(top: 0, variation: 0)
-        let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0)!
+        let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: 0)!
         for top in [180, 210, 240] {
             let update = await s.add(frame(top: top, variation: 0))
             let height = await s.stitchedHeight
@@ -1397,7 +1397,7 @@ struct StitcherTests {
 
         for varying in [false, true] {
             let first = frame(top: 0, variation: 0)
-            let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: 0)!
             var updates: [ScrollingCaptureStitcher.Update] = []
             for (index, top) in [150, 180, 240, 300].enumerated() {
                 updates.append(await s.add(frame(top: top, variation: varying ? UInt8(index + 1) : 0)))
@@ -1413,7 +1413,7 @@ struct StitcherTests {
         // A first append before tolerant confirmation fixes the cut at 300. Later
         // header confirmation would otherwise move it to 320 and skip 20 page rows.
         do {
-            let s = ScrollingCaptureStitcher(firstFrame: frame(top: 0, variation: 0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: frame(top: 0, variation: 0), ignoredTrailingColumns: 0)!
             var updates: [ScrollingCaptureStitcher.Update] = []
             for (index, top) in [30, 60, 90].enumerated() {
                 updates.append(await s.add(frame(top: top, variation: UInt8(index + 1))))
@@ -1429,7 +1429,7 @@ struct StitcherTests {
         // exclusion would change the calculated cut from 320 to 300; assembly must
         // still append at 320, retaining every original page byte exactly once.
         do {
-            let s = ScrollingCaptureStitcher(firstFrame: frame(top: 0, variation: 0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: frame(top: 0, variation: 0), ignoredTrailingColumns: 0)!
             let first = await s.add(frame(top: 150, variation: 1))
             let accepted = frame(top: 180, variation: 2)
             let second = await s.add(accepted)
@@ -1459,7 +1459,7 @@ struct StitcherTests {
                 for i in b.indices where i % 4 != 3 { b[i] &+= variation }
                 return image(a + Array(page[(offset * w * 4)..<((offset + h - topRows - bottomRows) * w * 4)]) + b, height: h)
             }
-            let s = ScrollingCaptureStitcher(firstFrame: view(0, variation: 0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: view(0, variation: 0), ignoredTrailingColumns: 0)!
             var updates: [ScrollingCaptureStitcher.Update] = []
             for (i, offset) in [150, 180, 240, 300].enumerated() { updates.append(await s.add(view(offset, variation: UInt8(i + 1)))) }
             let result = try #require(await s.makeImage())
@@ -1479,7 +1479,7 @@ struct StitcherTests {
                 return image(a + Array(page[(offset * w * 4)..<((offset + h - 160) * w * 4)]), height: h)
             }
             let first = view(0, variation: 0)
-            let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: 0)!
             for (i, offset) in [150, 180, 240, 300].enumerated() {
                 let update = await s.add(view(offset, variation: UInt8(i + 1)))
                 let output = try #require(await s.makeImage())
@@ -1497,7 +1497,7 @@ struct StitcherTests {
                 [UInt8(120 + rng.byte() % 5), UInt8(130 + rng.byte() % 5), UInt8(140 + rng.byte() % 5), 255] as [UInt8]
             }
             func view(_ offset: Int) -> CGImage { image(Array(pale[(offset * w * 4)..<((offset + h) * w * 4)]), height: h) }
-            let s = ScrollingCaptureStitcher(firstFrame: view(0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: view(0), ignoredTrailingColumns: 0)!
             for offset in [20, 40, 60] {
                 let update = await s.add(view(offset))
                 let result = try #require(await s.makeImage())
@@ -1527,7 +1527,7 @@ struct StitcherTests {
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
             let first = scene(0, seed: 4000), accepted = scene(20, seed: 4001)
-            let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: 0)!
             let append = await s.add(accepted)
             #expect(append == .appended, "historical witness setup")
             let before = bytes(accepted)
@@ -1580,7 +1580,7 @@ struct StitcherTests {
                                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                                provider: CGDataProvider(data: Data(b) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
             }
-            let s = ScrollingCaptureStitcher(firstFrame: pane(0), ignoredTrailingColumns: 0)!
+            let s = CanonicalStitchReplay(firstFrame: pane(0), ignoredTrailingColumns: 0)!
             let update = await s.add(pane(20))
             let height = await s.stitchedHeight
             #expect(update == .noMatch && height == 240,
@@ -1635,7 +1635,7 @@ struct StitcherTests {
                 // (a) Start above the video, accept a primer, then refuse when the
                 // dominant video prevents a primary match: sidebar zero conflicts.
                 let firstTop = -220, finalTop = 320, videoRows = 250..<550
-                let s = ScrollingCaptureStitcher(firstFrame: view(top: firstTop, videoEnd: videoEnd, videoRows: videoRows, seed: 8000), ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: view(top: firstTop, videoEnd: videoEnd, videoRows: videoRows, seed: 8000), ignoredTrailingColumns: 0)!
                 var updates: [ScrollingCaptureStitcher.Update] = []
                 var acceptedTop = firstTop, refused = false
                 for top in stride(from: firstTop + 60, through: finalTop, by: 60) {
@@ -1667,7 +1667,7 @@ struct StitcherTests {
             // unknown sidebar zero still conflicts. Do not bootstrap from animation.
             for videoEnd in [300, 360, 400] {
                 let first = view(top: 0, videoEnd: videoEnd, videoRows: 0..<2000, seed: 13000)
-                let s = ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: first, ignoredTrailingColumns: 0)!
                 for top in stride(from: 60, through: 300, by: 60) {
                     let update = await s.add(view(top: top, videoEnd: videoEnd, videoRows: 0..<2000, seed: UInt64(13000 + top)))
                     #expect(update == .noMatch, "unprimed sidebar was guessed pinned")
@@ -1683,7 +1683,7 @@ struct StitcherTests {
             for videoEnd in [300, 360, 400] {
                 // (b) The video first moves with the page during the primer.
                 // Then only the video translates while the actual page stays still.
-                let s = ScrollingCaptureStitcher(firstFrame: view(top: 0, videoEnd: videoEnd, videoRows: 0..<2000, seed: 11000, videoTop: 0), ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: view(top: 0, videoEnd: videoEnd, videoRows: 0..<2000, seed: 11000, videoTop: 0), ignoredTrailingColumns: 0)!
                 let setup = await s.add(view(top: 20, videoEnd: videoEnd, videoRows: 0..<2000, seed: 11001, videoTop: 20))
                 #expect(setup == .appended, "still-page animation setup")
                 let prefix = bytes(try #require(await s.makeImage()))
@@ -1701,7 +1701,7 @@ struct StitcherTests {
             if group == 36 {
             for sideShift in [0, 40, 20] {
                 let videoEnd = 360
-                let s = ScrollingCaptureStitcher(firstFrame: view(top: 0, videoEnd: videoEnd, videoRows: nil, seed: 12000), ignoredTrailingColumns: 0)!
+                let s = CanonicalStitchReplay(firstFrame: view(top: 0, videoEnd: videoEnd, videoRows: nil, seed: 12000), ignoredTrailingColumns: 0)!
                 let setup = await s.add(view(top: 20, videoEnd: videoEnd, videoRows: nil, seed: 12001))
                 #expect(setup == .appended, "moving pinned-column setup")
                 let prefix = bytes(try #require(await s.makeImage()))

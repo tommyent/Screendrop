@@ -4,12 +4,13 @@
 //
 
 import AppKit
+import CoreGraphics
 import ScreenCaptureKit
 import SwiftUI
 
 /// Runs a scrolling capture: the user draws a region, scrolls the content
 /// under it, and clicks Done. Frames are sampled while they scroll and handed
-/// to `ScrollingCaptureStitcher`, which keeps the rows that scrolled into view.
+/// to `ScrollingCaptureEngine`, which registers wider samples and freezes motion.
 ///
 /// The region stays highlighted for the whole session, with a small bar below
 /// it showing the stitched height and Done/Cancel. The app being scrolled
@@ -51,16 +52,11 @@ final class ScrollingCapturePresenter {
     private(set) var hasRecovered = false
 
     private(set) var session = ScrollingCaptureSession()
-    @ObservationIgnored private var resumeRequested = false
     @ObservationIgnored private var isSelectingArea = false
     @ObservationIgnored private var isCapturing = false
     @ObservationIgnored private var panel: NSPanel?
     @ObservationIgnored private var recoveryPanel: NSPanel?
     @ObservationIgnored private var recoveryHideTask: Task<Void, Never>?
-    /// The stitched height `recoveryTarget` was taken at. The last accepted
-    /// frame only changes on an append, so the same height means the same
-    /// rows and no refetch.
-    @ObservationIgnored private var recoveryTargetHeight = 0
     @ObservationIgnored private var region: CGRect = .zero
 
     /// How long the strip shows that frames line up again before it goes.
@@ -80,7 +76,6 @@ final class ScrollingCapturePresenter {
         }
         isRunning = true
         session = ScrollingCaptureSession()
-        resumeRequested = false
         defer { isRunning = false }
 
         guard ScreenRecordingManager.ensureScreenCapturePermission(),
@@ -106,25 +101,42 @@ final class ScrollingCapturePresenter {
         let screen = ActiveDisplayResolver.screen(for: display.displayID)
         // Whole points, so every frame maps 1:1 onto screen pixels with no
         // resampling. Stitching relies on rows matching exactly.
-        let sourceRect = ScreenRecordingManager.sourceRect(
+        let selectionRect = ScreenRecordingManager.sourceRect(
             forAppKitSelectionRect: rect,
             screenFrame: screen?.frame,
             contentRect: filter.contentRect
         ).integral.intersection(filter.contentRect)
+        let allowed = Set(content.windows.filter {
+            $0.windowLayer == 0 && $0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier
+        }.map(\.windowID))
+        let displayBounds = CGDisplayBounds(display.displayID)
+        let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, target: Bool)? in
+                guard let id = info[kCGWindowNumber as String] as? UInt32,
+                      info[kCGWindowOwnerPID as String] as? Int32 != ProcessInfo.processInfo.processIdentifier,
+                      (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                      let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                      let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id))
+            }
+        let sourceRect = windows.first(where: { $0.frame.intersects(selectionRect) })?.target == true
+            ? ScrollingCaptureRegion.matching(selection: selectionRect,
+                display: filter.contentRect, frontToBackWindows: windows.map(\.frame))
+            : selectionRect
         let scale = max(1, CGFloat(filter.pointPixelScale))
+        let output = ScrollingCaptureRegion.output(selection: selectionRect, matching: sourceRect, scale: scale)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = sourceRect
         configuration.width = max(1, Int((sourceRect.width * scale).rounded()))
         configuration.height = max(1, Int((sourceRect.height * scale).rounded()))
         configuration.showsCursor = false
 
-        stitchedHeight = configuration.height
+        stitchedHeight = output.rows.count
         hasLostTrack = false
         hasReachedLimit = false
         recoveryTarget = nil
-        recoveryTargetHeight = 0
         // Rows of the last frame that fill the strip's image at full width.
-        let recoveryRows = Int((CGFloat(configuration.width) * ScrollingCaptureRecoveryStrip.imageSize.height
+        let recoveryRows = Int((CGFloat(output.columns.count) * ScrollingCaptureRecoveryStrip.imageSize.height
             / ScrollingCaptureRecoveryStrip.imageSize.width).rounded())
         let recoveryPixelWidth = Int((ScrollingCaptureRecoveryStrip.imageSize.width * scale).rounded())
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
@@ -134,11 +146,12 @@ final class ScrollingCapturePresenter {
             RecordingAreaHighlightPresenter.shared.hide()
         }
 
-        let stitcher: ScrollingCaptureStitcher
+        let stitcher: ScrollingCaptureEngine
         do {
             let firstFrame = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            guard let firstStitcher = ScrollingCaptureStitcher(
+            guard let firstStitcher = ScrollingCaptureEngine(
                 firstFrame: firstFrame,
+                selection: output,
                 ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())
             ) else { return nil }
             stitcher = firstStitcher
@@ -152,39 +165,18 @@ final class ScrollingCapturePresenter {
         // ponytail: a sample that fails is skipped silently; a display that
         // keeps failing leaves the height still until the user ends the session.
         while session.outcome == nil {
-            if resumeRequested {
-                resumeRequested = false
-                await stitcher.resetMotionDetection()
-                // Let hover controls settle after the user pauses the video.
-                try? await Task.sleep(for: .milliseconds(300))
-            }
             try? await Task.sleep(for: Self.sampleInterval)
-            guard session.outcome == nil, !hasReachedLimit, !isPausedForVideo,
+            guard session.outcome == nil, !hasReachedLimit,
                   let frame = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else {
                 continue
             }
             let wasLost = hasLostTrack
-            switch await stitcher.add(frame) {
-            case .appended, .unchanged: hasLostTrack = false
-            case .noMatch: hasLostTrack = true
-            }
-            if hasLostTrack, await stitcher.hasPersistentLocalChange {
-                session.pauseForVideo()
-                showRecoveryStrip()
-                if let recoveryPanel {
-                    NSAccessibility.post(element: recoveryPanel, notification: .announcementRequested, userInfo: [
-                        .announcement: ScrollingCaptureRecoveryStrip.pauseMessage,
-                        .priority: NSAccessibilityPriorityLevel.high.rawValue
-                    ])
-                }
-            }
-            let height = await stitcher.stitchedHeight
-            // The image is cropped to the cap on Done, so never show more.
-            stitchedHeight = min(height, Self.maximumHeight)
-            hasReachedLimit = stitchedHeight >= Self.maximumHeight
+            let update = await stitcher.add(frame)
+            hasLostTrack = update.state == .lost
+            stitchedHeight = update.height
+            hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
             if hasLostTrack, !wasLost, session.outcome == nil {
-                if recoveryTarget == nil || recoveryTargetHeight != height,
-                   let rows = await stitcher.lastAcceptedRows(recoveryRows) {
+                if let rows = await stitcher.recoveryRows(recoveryRows) {
                     // The strip shows a few hundred points of the rows; a full-resolution
                     // copy would hold megabytes for as long as track stays lost.
                     recoveryTarget = rows.width > recoveryPixelWidth
@@ -192,9 +184,14 @@ final class ScrollingCapturePresenter {
                             rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
                             colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
                         : rows
-                    recoveryTargetHeight = height
                 }
                 showRecoveryStrip()
+                if let recoveryPanel {
+                    NSAccessibility.post(element: recoveryPanel, notification: .announcementRequested, userInfo: [
+                        .announcement: "Scroll back to where you left off. Done keeps what’s captured.",
+                        .priority: NSAccessibilityPriorityLevel.high.rawValue
+                    ])
+                }
             } else if wasLost, !hasLostTrack {
                 showRecovered()
             }
@@ -216,12 +213,6 @@ final class ScrollingCapturePresenter {
         } else {
             cancel()
         }
-    }
-
-    func continueCapture() {
-        guard isPausedForVideo, session.outcome == nil else { return }
-        session.resume()
-        resumeRequested = true
     }
 
     func cancel() {
@@ -451,8 +442,8 @@ private struct ScrollingCaptureRecoveryContent: View {
         ScrollingCaptureRecoveryStrip(
             target: presenter.recoveryTarget,
             hasRecovered: presenter.hasRecovered,
-            isPausedForVideo: presenter.isPausedForVideo,
-            onContinue: presenter.continueCapture
+            isPausedForVideo: false,
+            onContinue: {}
         )
     }
 }
