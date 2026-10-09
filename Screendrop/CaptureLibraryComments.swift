@@ -22,14 +22,14 @@ final class CommentsLibraryModel {
     private(set) var deletingIDs: Set<String> = []
     /// Unread when the page was opened, marked with a dot until it's left.
     private(set) var freshIDs: Set<String> = []
-    private var watermark: CommentWatermark?
+    private var watermark: FeedWatermark?
     private var watermarkWorker: String?
 
     private init() {}
 
     var unreadCount: Int {
         guard let watermark else { return comments.count }
-        return comments.filter(watermark.isUnread).count
+        return comments.filter { watermark.isUnread($0) }.count
     }
 
     /// Selected comments in display order.
@@ -88,11 +88,11 @@ final class CommentsLibraryModel {
     /// while the page stays open.
     private func markRead() {
         if let watermark {
-            freshIDs.formUnion(comments.filter(watermark.isUnread).map(\.id))
+            freshIDs.formUnion(comments.filter { watermark.isUnread($0) }.map(\.id))
         } else {
             freshIDs.formUnion(comments.map(\.id))
         }
-        watermark = CommentWatermark.reading(comments, after: watermark)
+        watermark = FeedWatermark.reading(comments, after: watermark)
         guard let watermarkWorker, let watermark, let data = try? JSONEncoder().encode(watermark) else { return }
         UserDefaults.standard.set(data, forKey: Self.watermarkKey + watermarkWorker)
     }
@@ -106,7 +106,7 @@ final class CommentsLibraryModel {
         watermarkWorker = worker
         watermark = worker
             .flatMap { UserDefaults.standard.data(forKey: Self.watermarkKey + $0) }
-            .flatMap { try? JSONDecoder().decode(CommentWatermark.self, from: $0) }
+            .flatMap { try? JSONDecoder().decode(FeedWatermark.self, from: $0) }
     }
 
     func open(_ comment: CloudComment) {

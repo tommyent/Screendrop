@@ -325,35 +325,61 @@ final class CloudUploader: NSObject {
     /// Every comment on this Worker's share pages, newest first. Throws
     /// `.commentsUnavailable` when the Worker predates GET /api/comments.
     func listComments() async throws -> [CloudComment] {
+        try await listFeed(unavailable: .commentsUnavailable) { base, token, offset in
+            CloudCommentList.request(workerBase: base, token: token, offset: offset)
+        } decode: { data in
+            let page = try CloudCommentList.decode(data)
+            return (page.comments, page.next)
+        }
+    }
+
+    /// Every like on this Worker's share pages, newest first. Throws
+    /// `.likesUnavailable` when the Worker predates GET /api/likes.
+    func listLikes() async throws -> [CloudLike] {
+        try await listFeed(unavailable: .likesUnavailable) { base, token, offset in
+            CloudLikeList.request(workerBase: base, token: token, offset: offset)
+        } decode: { data in
+            let page = try CloudLikeList.decode(data)
+            return (page.likes, page.next)
+        }
+    }
+
+    /// Every page of one owner feed, newest first, without repeats. A 404
+    /// means the Worker predates the feed.
+    private func listFeed<Item: CloudFeedItem>(
+        unavailable: CloudUploadError,
+        request makeRequest: (String, String, Int) -> URLRequest?,
+        decode: (Data) throws -> (items: [Item], next: Int?)
+    ) async throws -> [Item] {
         let creds = CloudCredentialStore.shared.snapshot()
         guard creds.isConfigured else {
             throw CloudUploadError.notConfigured
         }
         let workerBase = Self.normalizeWorkerURL(creds.workerURL)
         let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        var comments: [CloudComment] = []
+        var items: [Item] = []
         var offset: Int? = 0
         while let current = offset {
-            guard let request = CloudCommentList.request(workerBase: workerBase, token: token, offset: current) else {
+            guard let request = makeRequest(workerBase, token, current) else {
                 throw CloudUploadError.invalidURL
             }
             let (responseData, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw CloudUploadError.invalidResponse
             }
-            if http.statusCode == 404 { throw CloudUploadError.commentsUnavailable }
+            if http.statusCode == 404 { throw unavailable }
             guard http.statusCode == 200 else {
                 let body = String(data: responseData, encoding: .utf8) ?? ""
                 throw CloudUploadError.serverError(http.statusCode, body)
             }
-            let page = try CloudCommentList.decode(responseData)
-            comments += page.comments
+            let page = try decode(responseData)
+            items += page.items
             // Only forward, so a confused Worker can't loop the app.
             offset = page.next.flatMap { $0 > current ? $0 : nil }
         }
-        // Offsets aren't a snapshot: a comment posted between pages repeats.
+        // Offsets aren't a snapshot: an item added between pages repeats.
         var seen: Set<String> = []
-        return comments.filter { seen.insert($0.id).inserted }
+        return items.filter { seen.insert($0.id).inserted }
     }
 
     /// Removes one comment from its share page, with the owner's route.
@@ -594,6 +620,7 @@ enum CloudUploadError: LocalizedError {
     case shareSettingsUnavailable
     case passwordUnsupported
     case commentsUnavailable
+    case likesUnavailable
     case invalidPassword
 
     var errorDescription: String? {
@@ -612,6 +639,8 @@ enum CloudUploadError: LocalizedError {
             "This Worker can't list uploads yet. Update it to manage every upload from the Library."
         case .commentsUnavailable:
             "This Worker can’t list comments yet. Update it to read your share pages’ comments in the Library."
+        case .likesUnavailable:
+            "This Worker can’t list likes yet. Update it to see your share pages’ likes in the Library."
         case .passwordUnsupported:
             "This Worker doesn’t support passwords yet, so the upload was removed instead of being shared without one. Update the Worker, or share without a password."
         case .invalidPassword:
