@@ -105,6 +105,8 @@ struct SettingsView: View {
                 .help("Go Forward")
                 .accessibilityLabel("Go Forward")
             }
+            // Bare icons, as in the Library and the editor: no glass capsule.
+            .sharedBackgroundVisibility(.hidden)
         }
         .onAppear {
             navigationHistory = [activeTab]
