@@ -355,11 +355,13 @@ final class ScreenshotHistoryStore {
             ]
         }
 
+        // To the Trash, as the Library does, so a capture deleted from its
+        // preview card can be put back (design pass).
         for url in auxiliaryURLs where FileManager.default.fileExists(atPath: url.path) {
             do {
-                try FileManager.default.removeItem(at: url)
+                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
             } catch {
-                print("Failed to delete history file: \(error)")
+                print("Failed to move history file to the Trash: \(error)")
             }
         }
 
