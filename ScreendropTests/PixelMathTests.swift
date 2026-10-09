@@ -3,6 +3,16 @@ import Foundation
 import Testing
 
 struct PixelMathTests {
+    @Test func syntheticFaintHeaderEdges() throws {
+        // Flat surfaces differ by only 6–8 levels: the faint-edge path must find them.
+        let source = SyntheticFixtures.faintHeaderEdges()
+        let buffer = try #require(PixelBuffer(image: source))
+        #expect(buffer.span(x: 0, y: 250)?.vertical == 223...290)
+        #expect(buffer.span(x: 0, y: 210)?.vertical == 199...222)
+        #expect(buffer.span(x: 0, y: 250, includingBorder: true)?.vertical == 222...291)
+        #expect(buffer.span(x: 1, y: 250)?.vertical == 223...290)
+    }
+
     private func image(_ width: Int, _ height: Int = 1, paint: (CGContext) -> Void) -> CGImage {
         let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                                 bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
