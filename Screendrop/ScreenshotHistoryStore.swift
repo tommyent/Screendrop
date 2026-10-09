@@ -102,16 +102,12 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
 final class ScreenshotHistoryStore {
     static let shared = ScreenshotHistoryStore()
 
-    static var applicationSupportDirectory: URL {
-        ScreendropStorage.applicationSupportDirectory
-    }
-
     static var historyDirectory: URL {
-        applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)
+        ScreendropStorage.applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)
     }
 
     private static var metadataURL: URL {
-        applicationSupportDirectory.appendingPathComponent("history.json")
+        ScreendropStorage.applicationSupportDirectory.appendingPathComponent("history.json")
     }
 
     /// Location of the editable annotation sidecar document for a display image,

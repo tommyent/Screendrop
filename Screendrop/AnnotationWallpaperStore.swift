@@ -40,7 +40,7 @@ final class AnnotationWallpaperStore {
     static let shared = AnnotationWallpaperStore()
 
     static var wallpapersDirectory: URL {
-        ScreenshotHistoryStore.applicationSupportDirectory.appendingPathComponent("Wallpapers", isDirectory: true)
+        ScreendropStorage.applicationSupportDirectory.appendingPathComponent("Wallpapers", isDirectory: true)
     }
 
     nonisolated private static let recentWallpaperPathsKey = "annotationBackground.recentWallpaperPaths"
