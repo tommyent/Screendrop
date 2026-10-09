@@ -278,7 +278,7 @@ private struct CommentRow: View {
                 .frame(width: 7, height: 7)
                 .opacity(fresh ? 1 : 0)
                 .accessibilityHidden(true)
-            CommentUploadThumbnail(comment: comment, upload: upload, local: local)
+            CloudFeedThumbnail(isVideo: comment.isVideo, upload: upload, local: local)
                 .frame(width: 88, height: 58)
                 .clipShape(.rect(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 3) {
@@ -325,10 +325,10 @@ private struct CommentRow: View {
     }
 }
 
-/// The upload's thumbnail from the Cloud page, or a placeholder while that
-/// upload isn't loaded there.
-private struct CommentUploadThumbnail: View {
-    let comment: CloudComment
+/// A feed item's upload thumbnail from the Cloud page, or a placeholder
+/// while that upload isn't loaded there. Shared by Comments and Likes.
+struct CloudFeedThumbnail: View {
+    let isVideo: Bool
     let upload: CloudUpload?
     let local: CaptureLibraryItem?
 
@@ -338,7 +338,7 @@ private struct CommentUploadThumbnail: View {
         } else {
             ZStack {
                 Color(nsColor: .quaternaryLabelColor).opacity(0.25)
-                Image(systemName: comment.isVideo ? "video" : "photo").foregroundStyle(.tertiary)
+                Image(systemName: isVideo ? "video" : "photo").foregroundStyle(.tertiary)
             }
             .accessibilityHidden(true)
         }
@@ -449,7 +449,7 @@ struct CommentInspector: View {
                 Divider()
                 VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                     Text("Upload").font(.inspectorSectionHeader).foregroundStyle(InspectorControlPalette.label)
-                    CommentUploadThumbnail(comment: comment, upload: upload, local: cloud.localItems[comment.uploadId])
+                    CloudFeedThumbnail(isVideo: comment.isVideo, upload: upload, local: cloud.localItems[comment.uploadId])
                         .aspectRatio(1.45, contentMode: .fit)
                         .clipShape(.rect(cornerRadius: 11))
                     Text(comment.uploadName).font(.system(size: 13, weight: .medium)).lineLimit(2).truncationMode(.middle)
