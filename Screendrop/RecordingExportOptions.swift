@@ -38,7 +38,6 @@ enum RecordingExportPreferences {
 /// container, frame rate, motion blur, and audio. Confirming hands back the settings
 /// and remembers them.
 struct RecordingExportOptionsPopover: View {
-    let initialSettings: VideoCompressionSettings
     let onConfirm: (VideoCompressionSettings) -> Void
 
     @State private var settings: VideoCompressionSettings
@@ -49,7 +48,6 @@ struct RecordingExportOptionsPopover: View {
         initialSettings: VideoCompressionSettings,
         onConfirm: @escaping (VideoCompressionSettings) -> Void
     ) {
-        self.initialSettings = initialSettings
         self.onConfirm = onConfirm
         _settings = State(initialValue: initialSettings)
     }

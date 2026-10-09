@@ -185,7 +185,13 @@ final class ScrollingCapturePresenter {
             if hasLostTrack, !wasLost, session.outcome == nil {
                 if recoveryTarget == nil || recoveryTargetHeight != height,
                    let rows = await stitcher.lastAcceptedRows(recoveryRows) {
-                    recoveryTarget = Self.downscaled(rows, toWidth: recoveryPixelWidth)
+                    // The strip shows a few hundred points of the rows; a full-resolution
+                    // copy would hold megabytes for as long as track stays lost.
+                    recoveryTarget = rows.width > recoveryPixelWidth
+                        ? try? AnnotationScenePreviewRenderer.downscaled(
+                            rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
+                            colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
+                        : rows
                     recoveryTargetHeight = height
                 }
                 showRecoveryStrip()
@@ -330,25 +336,6 @@ final class ScrollingCapturePresenter {
         let fits = preferred >= visible.minY && preferred + size.height <= visible.maxY
         let y = fits ? preferred : (preferred == above ? below : above)
         return CGPoint(x: bar.midX - size.width / 2, y: y)
-    }
-
-    /// The strip shows a few hundred points of the rows; a full-resolution
-    /// copy would hold megabytes for as long as track stays lost.
-    private static func downscaled(_ image: CGImage, toWidth width: Int) -> CGImage? {
-        guard image.width > width else { return image }
-        let height = max(1, image.height * width / image.width)
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return nil }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
     }
 
     /// Centered under the region, else above it, else inside its bottom edge.

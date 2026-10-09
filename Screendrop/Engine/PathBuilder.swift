@@ -174,14 +174,6 @@ final class PathBuilder {
         return self
     }
 
-    static func lineThroughPoints(_ points: [Vec]) -> PathBuilder {
-        let path = PathBuilder()
-        guard let first = points.first else { return path }
-        path.move(to: first)
-        for p in points.dropFirst() { path.line(to: p) }
-        return path
-    }
-
     // MARK: - Command info
 
     private struct CommandInfo {

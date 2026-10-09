@@ -98,25 +98,6 @@ nonisolated struct AnnotationCanvasExpansion: Equatable, Sendable {
         return context.makeImage()
     }
 
-    /// A composed result on `fill`, so a border's rounded corners, which
-    /// leave transparency, can't make a grown canvas see-through.
-    static func flatten(_ image: CGImage, onto fill: CGColor, colorSpace: CGColorSpace) -> CGImage? {
-        guard let context = CGContext(
-            data: nil,
-            width: image.width,
-            height: image.height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-        context.setFillColor(fill)
-        context.fill(bounds)
-        context.draw(image, in: bounds)
-        return context.makeImage()
-    }
-
     /// Shapes moved into the grown canvas's coordinates. Only for drawing:
     /// what's saved stays in the screenshot's own coordinates, and the growth
     /// is worked out again from the shapes next time.

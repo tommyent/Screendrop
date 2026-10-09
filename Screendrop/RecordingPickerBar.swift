@@ -7,7 +7,7 @@
 //  (display / window / area) and toggles the capture inputs (camera,
 //  microphone, system audio) for the next recording, then hands off to
 //  CaptureCoordinator - at which point the same bar morphs into the in-session
-//  controls (RecordingControlPresenter). Clicks and keystrokes are always
+//  controls (RecordingControlPresenter.swift). Clicks and keystrokes are always
 //  logged to the session sidecar; whether they appear is decided later in
 //  Studio.
 //
@@ -17,23 +17,6 @@
 import AppKit
 import ScreenCaptureKit
 import SwiftUI
-
-/// Retained as the entry point callers already use; the bar itself is owned
-/// by RecordingBarPresenter.
-@MainActor
-enum RecordingPickerPresenter {
-    static var shared: RecordingBarPresenter { RecordingBarPresenter.shared }
-}
-
-extension RecordingBarPresenter {
-    func toggle() {
-        togglePicker()
-    }
-
-    func show() {
-        showPicker()
-    }
-}
 
 // MARK: - Controls
 

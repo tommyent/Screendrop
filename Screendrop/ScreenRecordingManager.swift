@@ -20,36 +20,6 @@ import AVFoundation
 import Observation
 import ScreenCaptureKit
 
-enum ScreenRecordingSourceMode: String, CaseIterable, Identifiable {
-    case fullscreen
-    case window
-    case area
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .fullscreen:
-            "Full Screen"
-        case .window:
-            "Window"
-        case .area:
-            "Area"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .fullscreen:
-            "display"
-        case .window:
-            "macwindow"
-        case .area:
-            "rectangle.dashed"
-        }
-    }
-}
-
 struct ScreenRecordingSource {
     enum Kind {
         case fullscreen(SCDisplay)
@@ -160,7 +130,7 @@ final class ScreenRecordingManager {
         isStartCancelled = false
 
         PreviewWindowPlacement.shared.setTargetDisplayID(targetDisplayID)
-        RecordingControlPresenter.shared.show(displayID: targetDisplayID)
+        RecordingBarPresenter.shared.showRecording(displayID: targetDisplayID)
         if case .area(let display, let rect) = source.kind {
             RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
         }
@@ -422,7 +392,7 @@ final class ScreenRecordingManager {
             }
             errorMessage = result.error.map { "Recording failed: \($0.localizedDescription)" }
                 ?? "Failed to finish recording."
-            RecordingControlPresenter.shared.hide()
+            RecordingBarPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             if action == .terminate {
                 terminationCompletion?(nil)
@@ -450,7 +420,7 @@ final class ScreenRecordingManager {
 
         switch action {
         case .preview:
-            RecordingControlPresenter.shared.hide()
+            RecordingBarPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             if let errorMessage {
                 Self.presentRecordingResultAlert(message: errorMessage, footageWasSaved: true)
@@ -458,12 +428,12 @@ final class ScreenRecordingManager {
             onFinishRecording?(session, restartDisplayID)
         case .discard:
             let trashed = trashRecordingSession(session)
-            RecordingControlPresenter.shared.hide()
+            RecordingBarPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             if !trashed { onFinishRecording?(session, restartDisplayID) }
         case .restart:
             guard trashRecordingSession(session) else {
-                RecordingControlPresenter.shared.hide()
+                RecordingBarPresenter.shared.hide()
                 RecordingAreaHighlightPresenter.shared.hide()
                 onFinishRecording?(session, restartDisplayID)
                 return
@@ -472,7 +442,7 @@ final class ScreenRecordingManager {
                 startRecording(source: restartSource)
             }
         case .terminate:
-            RecordingControlPresenter.shared.hide()
+            RecordingBarPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             terminationCompletion?(session)
         }
@@ -527,7 +497,7 @@ final class ScreenRecordingManager {
             catch { NSLog("[Screendrop] Could not move incomplete recording to Trash: %@", error.localizedDescription) }
         }
         cleanupAfterRecording()
-        RecordingControlPresenter.shared.hide()
+        RecordingBarPresenter.shared.hide()
         RecordingAreaHighlightPresenter.shared.hide()
         // A Quit during this teardown found isStopping set and left its
         // completion for us. Answer it, or AppKit waits forever to quit.

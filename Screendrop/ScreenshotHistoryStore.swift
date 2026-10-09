@@ -102,16 +102,12 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
 final class ScreenshotHistoryStore {
     static let shared = ScreenshotHistoryStore()
 
-    static var applicationSupportDirectory: URL {
-        ScreendropStorage.applicationSupportDirectory
-    }
-
     static var historyDirectory: URL {
-        applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)
+        ScreendropStorage.applicationSupportDirectory.appendingPathComponent("History", isDirectory: true)
     }
 
     private static var metadataURL: URL {
-        applicationSupportDirectory.appendingPathComponent("history.json")
+        ScreendropStorage.applicationSupportDirectory.appendingPathComponent("history.json")
     }
 
     /// Location of the editable annotation sidecar document for a display image,
@@ -178,40 +174,6 @@ final class ScreenshotHistoryStore {
             return destinationURL
         } catch {
             print("Failed to import screenshot into history: \(error)")
-            return sourceURL
-        }
-    }
-
-    @discardableResult
-    func importVideo(from sourceURL: URL) async -> URL {
-        do {
-            try FileManager.default.createDirectory(at: Self.historyDirectory, withIntermediateDirectories: true)
-            let destinationURL = uniqueHistoryURL(for: sourceURL)
-
-            if sourceURL != destinationURL {
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-            }
-
-            let metadata = await videoMetadata(at: destinationURL)
-
-            let item = ScreenshotHistoryItem(
-                id: UUID(),
-                createdAt: Date(),
-                updatedAt: Date(),
-                fileName: destinationURL.lastPathComponent,
-                pixelWidth: metadata.width,
-                pixelHeight: metadata.height,
-                kind: .video,
-                duration: metadata.duration
-            )
-            items.insert(item, at: 0)
-            saveMetadata()
-            return destinationURL
-        } catch {
-            print("Failed to import video into history: \(error)")
             return sourceURL
         }
     }
@@ -399,14 +361,6 @@ final class ScreenshotHistoryStore {
     func setCloudURL(for fileURL: URL, cloudURL: String) {
         guard let index = index(for: fileURL) else { return }
         items[index].cloudURL = cloudURL
-        items[index].updatedAt = Date()
-        saveMetadata()
-    }
-
-    /// Clears a previously-set cloud URL, e.g. after deleting the upload from the cloud.
-    func clearCloudURL(for fileURL: URL) {
-        guard let index = index(for: fileURL) else { return }
-        items[index].cloudURL = nil
         items[index].updatedAt = Date()
         saveMetadata()
     }

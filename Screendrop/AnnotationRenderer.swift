@@ -148,7 +148,7 @@ enum AnnotationRenderer {
             // A grown canvas stays opaque, as Shottr's does, even under a
             // border with rounded corners.
             if let growthFill, backgroundSettings.hasRenderableContent,
-               let flattened = AnnotationCanvasExpansion.flatten(renderedImage, onto: growthFill, colorSpace: colorSpace) {
+               let flattened = AnnotationCanvasExpansion().apply(to: renderedImage, fill: growthFill, colorSpace: colorSpace) {
                 renderedImage = flattened
             }
 

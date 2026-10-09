@@ -50,7 +50,6 @@ struct Vec: Equatable, Codable {
     static func mul(_ a: Vec, _ s: Double) -> Vec { Vec(a.x * s, a.y * s, a.z) }
     static func mulV(_ a: Vec, _ b: Vec) -> Vec { Vec(a.x * b.x, a.y * b.y, a.z) }
     static func div(_ a: Vec, _ s: Double) -> Vec { Vec(a.x / s, a.y / s, a.z) }
-    static func neg(_ a: Vec) -> Vec { Vec(-a.x, -a.y, a.z) }
 
     static func med(_ a: Vec, _ b: Vec) -> Vec { Vec((a.x + b.x) / 2, (a.y + b.y) / 2) }
     static func lrp(_ a: Vec, _ b: Vec, _ t: Double) -> Vec {
@@ -62,14 +61,9 @@ struct Vec: Equatable, Codable {
         return dx * dx + dy * dy
     }
     static func dist(_ a: Vec, _ b: Vec) -> Double { dist2(a, b).squareRoot() }
-    static func manhattanDist(_ a: Vec, _ b: Vec) -> Double { abs(a.x - b.x) + abs(a.y - b.y) }
 
     /// True when `a` and `b` are closer together than `n`.
     static func distMin(_ a: Vec, _ b: Vec, _ n: Double) -> Bool { dist2(a, b) < n * n }
-
-    static func len(_ a: Vec) -> Double { a.len }
-    static func uni(_ a: Vec) -> Vec { a.uni }
-    static func per(_ a: Vec) -> Vec { a.per }
 
     /// The unit vector pointing from `b` towards `a`.
     static func tan(_ a: Vec, _ b: Vec) -> Vec { sub(a, b).uni }
@@ -113,13 +107,6 @@ struct Vec: Equatable, Codable {
         (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y) < 0
     }
 
-    static func average(_ points: [Vec]) -> Vec {
-        guard !points.isEmpty else { return Vec(0, 0) }
-        var x = 0.0, y = 0.0
-        for p in points { x += p.x; y += p.y }
-        return Vec(x / Double(points.count), y / Double(points.count))
-    }
-
     static func nearestPointOnLineSegment(_ a: Vec, _ b: Vec, _ p: Vec, _ shouldClamp: Bool = true) -> Vec {
         let dx = b.x - a.x, dy = b.y - a.y
         let d2 = dx * dx + dy * dy
@@ -129,17 +116,6 @@ struct Vec: Equatable, Codable {
             if t < 0 { t = 0 } else if t > 1 { t = 1 }
         }
         return Vec(a.x + t * dx, a.y + t * dy)
-    }
-
-    /// `n` points between `a` and `b`, optionally eased.
-    static func pointsBetween(_ a: Vec, _ b: Vec, _ steps: Int, easing: (Double) -> Double = { $0 }) -> [Vec] {
-        guard steps > 1 else { return [a, b] }
-        return (0..<steps).map { i in
-            let t = easing(Double(i) / Double(steps - 1))
-            var v = lrp(a, b, t)
-            v.z = a.z + (b.z - a.z) * t
-            return v
-        }
     }
 
     /// Compares with a tolerance rather than exactly. The arrow

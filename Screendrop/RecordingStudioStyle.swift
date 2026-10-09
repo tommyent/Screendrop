@@ -85,9 +85,6 @@ struct RecordingEditDocument: Codable, Equatable {
         case exportAspect
         case exportAspectMode
         case videoCropRect
-        /// Read compatibility for the initial local implementation, which
-        /// incorrectly described this as a crop of the composed canvas.
-        case canvasCropRect
         case replacementAudioFileName
         case replacementAudioDisplayName
         case audioExportFormat
@@ -99,7 +96,6 @@ struct RecordingEditDocument: Codable, Equatable {
         zoomEnabled: Bool,
         zoomCues: [ZoomCue],
         clipTimeline: RecordingClipTimeline? = nil,
-        trimSelection: VideoTrimSelection? = nil,
         exportSettings: VideoCompressionSettings? = nil,
         showsClickEffects: Bool? = nil,
         showsKeystrokes: Bool? = nil,
@@ -124,9 +120,6 @@ struct RecordingEditDocument: Codable, Equatable {
             // Keep the legacy envelope populated for older Screendrop builds.
             trimStart = clip.sourceStart
             trimEnd = clip.sourceEnd
-        } else {
-            trimStart = trimSelection?.start
-            trimEnd = trimSelection?.end
         }
         self.exportSettings = exportSettings
         self.showsClickEffects = showsClickEffects
@@ -182,6 +175,12 @@ struct RecordingEditDocument: Codable, Equatable {
         return crop
     }
 
+    /// Read compatibility for the initial local implementation, which
+    /// incorrectly described this as a crop of the composed canvas.
+    private enum LegacyCodingKeys: String, CodingKey {
+        case canvasCropRect
+    }
+
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
@@ -219,7 +218,7 @@ struct RecordingEditDocument: Codable, Equatable {
         exportAspect = try container.decodeIfPresent(String.self, forKey: .exportAspect)
         exportAspectMode = try container.decodeIfPresent(String.self, forKey: .exportAspectMode)
         videoCropRect = try container.decodeIfPresent(CGRect.self, forKey: .videoCropRect)
-            ?? container.decodeIfPresent(CGRect.self, forKey: .canvasCropRect)
+            ?? decoder.container(keyedBy: LegacyCodingKeys.self).decodeIfPresent(CGRect.self, forKey: .canvasCropRect)
         replacementAudioFileName = try container.decodeIfPresent(
             String.self,
             forKey: .replacementAudioFileName
@@ -230,37 +229,6 @@ struct RecordingEditDocument: Codable, Equatable {
         )
         audioExportFormat = try container.decodeIfPresent(String.self, forKey: .audioExportFormat)
         audioVolume = try container.decodeIfPresent(Double.self, forKey: .audioVolume)
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(formatVersion, forKey: .formatVersion)
-        try container.encode(style, forKey: .style)
-        try container.encode(zoomEnabled, forKey: .zoomEnabled)
-        try container.encode(zoomCues, forKey: .zoomCues)
-        try container.encodeIfPresent(clips, forKey: .clips)
-        try container.encodeIfPresent(trimStart, forKey: .trimStart)
-        try container.encodeIfPresent(trimEnd, forKey: .trimEnd)
-        try container.encodeIfPresent(exportSettings, forKey: .exportSettings)
-        try container.encodeIfPresent(showsClickEffects, forKey: .showsClickEffects)
-        try container.encodeIfPresent(showsKeystrokes, forKey: .showsKeystrokes)
-        try container.encodeIfPresent(keystrokePlacement, forKey: .keystrokePlacement)
-        try container.encodeIfPresent(showsSubtitles, forKey: .showsSubtitles)
-        try container.encodeIfPresent(subtitleCues, forKey: .subtitleCues)
-        try container.encodeIfPresent(subtitleWords, forKey: .subtitleWords)
-        try container.encodeIfPresent(subtitleVerticalPosition, forKey: .subtitleVerticalPosition)
-        try container.encodeIfPresent(subtitleFontScale, forKey: .subtitleFontScale)
-        try container.encodeIfPresent(subtitleWordHighlight, forKey: .subtitleWordHighlight)
-        try container.encodeIfPresent(exportAspect, forKey: .exportAspect)
-        try container.encodeIfPresent(exportAspectMode, forKey: .exportAspectMode)
-        try container.encodeIfPresent(videoCropRect, forKey: .videoCropRect)
-        try container.encodeIfPresent(replacementAudioFileName, forKey: .replacementAudioFileName)
-        try container.encodeIfPresent(
-            replacementAudioDisplayName,
-            forKey: .replacementAudioDisplayName
-        )
-        try container.encodeIfPresent(audioExportFormat, forKey: .audioExportFormat)
-        try container.encodeIfPresent(audioVolume, forKey: .audioVolume)
     }
 }
 

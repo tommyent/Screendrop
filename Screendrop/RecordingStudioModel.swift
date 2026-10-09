@@ -160,7 +160,6 @@ final class RecordingStudioModel {
     var selectedCueID: UUID?
     private(set) var clipTimeline = RecordingClipTimeline(segments: [])
     var selectedClipID: UUID?
-    var timelineHoverTime: TimeInterval?
     /// Storyboard tiles for the clip lane, sampled on demand at whatever
     /// density the lane's current zoom needs.
     let timelineThumbnails = RecordingTimelineThumbnailStore()
@@ -717,11 +716,6 @@ final class RecordingStudioModel {
         )
     }
 
-    func splitClipAtHover() {
-        guard let timelineHoverTime else { return }
-        splitClip(at: timelineHoverTime)
-    }
-
     func deleteSelectedClip() {
         guard let selectedClipID,
               let deletedRange = clipTimeline.editorRange(for: selectedClipID),
@@ -802,7 +796,6 @@ final class RecordingStudioModel {
 
         pause()
         hoverPreviewTime = nil
-        timelineHoverTime = nil
         clipTimeline = next
         duration = next.duration
         selectedClipID = selectedID.flatMap { id in
@@ -1660,19 +1653,9 @@ final class RecordingStudioModel {
         at sourceTime: TimeInterval,
         in words: [RecordingTranscriptWord]
     ) -> Int? {
-        guard sourceTime.isFinite, !words.isEmpty else { return nil }
-        var low = 0
-        var high = words.count
-        while low < high {
-            let middle = (low + high) / 2
-            if words[middle].start <= sourceTime {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        let index = low - 1
-        guard index >= 0 else { return nil }
+        guard sourceTime.isFinite,
+              let index = words.lastIndex(atOrBefore: sourceTime, by: \.start)
+        else { return nil }
         return sourceTime <= words[index].end + 0.25 ? index : nil
     }
 

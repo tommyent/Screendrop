@@ -71,7 +71,7 @@ struct MenuBarView: View {
                 .disabled(ScreenRecordingManager.shared.state == .finishing)
             } else {
                 Button {
-                    RecordingPickerPresenter.shared.show()
+                    RecordingBarPresenter.shared.showPicker()
                 } label: {
                     Label("Record Screen", systemImage: "record.circle")
                 }

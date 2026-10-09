@@ -327,11 +327,7 @@ Export and Share show progress, can be cancelled, and report completion. Renders
 
 Studio uses Metal to accelerate eligible motion-blur frames. Blur-on uses a one-frame shutter at the selected frame rate; blur-off draws the screen once at each frame's camera position. Core Graphics remains available for unsupported frames and devices. See [export performance](docs/export-performance.md) for the rendering policy, benchmarks, and comparison workflow.
 
-Screendrop also includes a lightweight trim-and-compress editor for regular video files. FFmpeg enables its conversion and compression options:
-
-```bash
-brew install ffmpeg
-```
+Screendrop also includes a lightweight trim-and-compress editor for regular video files.
 
 ## Cloud Sharing
 

@@ -761,7 +761,7 @@ struct AnnotationCanvas: View {
             setCursor(.arrow)
             return
         }
-        guard model.containsInteractionPoint(location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) else {
+        guard boundaryFrame.contains(location) else {
             setCursor(.arrow)
             return
         }
@@ -785,19 +785,5 @@ struct AnnotationCanvas: View {
         guard currentCursor != cursor else { return }
         currentCursor = cursor
         cursor.nsCursor.set()
-    }
-}
-
-private struct AnnotationMarqueeSelectionView: View {
-    var body: some View {
-        Rectangle()
-            .fill(Color.accentColor.opacity(0.08))
-            .overlay {
-                Rectangle()
-                    .stroke(
-                        Color.accentColor.opacity(0.65),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
-                    )
-            }
     }
 }

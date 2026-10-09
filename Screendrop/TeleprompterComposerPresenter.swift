@@ -73,7 +73,7 @@ final class TeleprompterComposerPresenter {
     /// falls back to the bar's usual bottom-center spot.
     private func position(_ panel: NSPanel) {
         let size = panel.frame.size
-        if let barFrame = RecordingPickerPresenter.shared.barFrame {
+        if let barFrame = RecordingBarPresenter.shared.barFrame {
             panel.setFrameOrigin(CGPoint(
                 x: barFrame.midX - size.width / 2,
                 y: barFrame.maxY + 12

@@ -11,28 +11,6 @@ enum VideoCompressionQuality: String, CaseIterable, Identifiable, Codable, Senda
     case low = "Low"
 
     var id: String { rawValue }
-
-    var crf: Int {
-        switch self {
-        case .high:
-            20
-        case .medium:
-            26
-        case .low:
-            32
-        }
-    }
-
-    var audioBitrate: String {
-        switch self {
-        case .high:
-            "192k"
-        case .medium:
-            "128k"
-        case .low:
-            "96k"
-        }
-    }
 }
 
 enum VideoCompressionSpeed: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -42,10 +20,6 @@ enum VideoCompressionSpeed: String, CaseIterable, Identifiable, Codable, Sendabl
     case slow = "Slow"
 
     var id: String { rawValue }
-
-    var ffmpegPreset: String {
-        rawValue.lowercased()
-    }
 }
 
 enum VideoCompressionCodec: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -53,15 +27,6 @@ enum VideoCompressionCodec: String, CaseIterable, Identifiable, Codable, Sendabl
     case hevc = "HEVC"
 
     var id: String { rawValue }
-
-    var encoder: String {
-        switch self {
-        case .h264:
-            "libx264"
-        case .hevc:
-            "libx265"
-        }
-    }
 }
 
 enum VideoCompressionResolution: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -71,19 +36,6 @@ enum VideoCompressionResolution: String, CaseIterable, Identifiable, Codable, Se
     case p480 = "480p"
 
     var id: String { rawValue }
-
-    var scaleFilter: String? {
-        switch self {
-        case .original:
-            nil
-        case .p1080:
-            "-2:1080"
-        case .p720:
-            "-2:720"
-        case .p480:
-            "-2:480"
-        }
-    }
 }
 
 /// Delivery container for exported recordings. The encoded video and audio
@@ -144,16 +96,5 @@ nonisolated struct VideoCompressionSettings: Codable, Equatable, Sendable {
             && lhs.container == rhs.container
             && lhs.effectiveFrameRate == rhs.effectiveFrameRate
             && lhs.effectiveMotionBlurEnabled == rhs.effectiveMotionBlurEnabled
-    }
-}
-
-struct VideoCompressionResult: Sendable {
-    let outputURL: URL
-    let inputSize: Int64
-    let outputSize: Int64
-
-    var reduction: Double? {
-        guard inputSize > 0 else { return nil }
-        return 1 - Double(outputSize) / Double(inputSize)
     }
 }

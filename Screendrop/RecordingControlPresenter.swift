@@ -13,19 +13,6 @@
 import AppKit
 import SwiftUI
 
-/// Retained as the entry point callers already use; the bar itself is owned
-/// by RecordingBarPresenter.
-@MainActor
-enum RecordingControlPresenter {
-    static var shared: RecordingBarPresenter { RecordingBarPresenter.shared }
-}
-
-extension RecordingBarPresenter {
-    func show(displayID: CGDirectDisplayID?) {
-        showRecording(displayID: displayID)
-    }
-}
-
 // MARK: - Controls
 
 struct RecordingSessionControls: View {

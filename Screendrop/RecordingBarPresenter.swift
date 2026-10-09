@@ -8,9 +8,6 @@
 //  to the new width while the controls cross-fade - rather than one window
 //  vanishing and another appearing somewhere near it.
 //
-//  RecordingPickerPresenter and RecordingControlPresenter are the entry
-//  points callers still use; both forward here.
-//
 
 import AppKit
 import SwiftUI
@@ -125,14 +122,6 @@ final class RecordingBarPresenter {
         // Next appearance should always start as the picker, and without
         // animating out of a mode nobody can see.
         mode = .picker
-    }
-
-    func containsScreenPoint(_ point: CGPoint) -> Bool {
-        guard let panel, panel.isVisible else { return false }
-        return containsPanelPoint(CGPoint(
-            x: point.x - panel.frame.minX,
-            y: panel.frame.maxY - point.y
-        ))
     }
 
     // MARK: Geometry

@@ -11,8 +11,10 @@ import AppKit
 import SwiftUI
 
 struct RecordingClipTimelineView: NSViewRepresentable {
-    @Binding var selectedClipID: UUID?
-    @Binding var playheadTime: TimeInterval
+    /// Plain values: the control's own selection and scrub changes reach the
+    /// model through `onSelect`/`onSeek`, which set these properties.
+    let selectedClipID: UUID?
+    let playheadTime: TimeInterval
 
     let timeline: RecordingClipTimeline
     let sourceDuration: TimeInterval
@@ -30,38 +32,19 @@ struct RecordingClipTimelineView: NSViewRepresentable {
     /// Arrow-key nudge of the playhead by a signed number of seconds.
     let onStep: (TimeInterval) -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            selectedClipID: $selectedClipID,
-            playheadTime: $playheadTime,
-            onSelect: onSelect,
-            onSeek: onSeek,
-            onHover: onHover,
-            onSplit: onSplit,
-            onDelete: onDelete,
-            onTrim: onTrim,
-            onZoom: onZoom,
-            onStep: onStep
-        )
-    }
-
     func makeNSView(context: Context) -> RecordingClipTimelineControl {
-        let view = RecordingClipTimelineControl()
-        context.coordinator.connect(to: view)
-        return view
+        RecordingClipTimelineControl()
     }
 
     func updateNSView(_ nsView: RecordingClipTimelineControl, context: Context) {
-        context.coordinator.updateCallbacks(
-            onSelect: onSelect,
-            onSeek: onSeek,
-            onHover: onHover,
-            onSplit: onSplit,
-            onDelete: onDelete,
-            onTrim: onTrim,
-            onZoom: onZoom,
-            onStep: onStep
-        )
+        nsView.selectionDidChange = onSelect
+        nsView.playheadDidChange = onSeek
+        nsView.hoverTimeDidChange = onHover
+        nsView.splitRequested = onSplit
+        nsView.deleteRequested = onDelete
+        nsView.trimDidCommit = onTrim
+        nsView.zoomRequested = onZoom
+        nsView.stepRequested = onStep
         nsView.update(
             timeline: timeline,
             sourceDuration: sourceDuration,
@@ -69,93 +52,6 @@ struct RecordingClipTimelineView: NSViewRepresentable {
             selectedClipID: selectedClipID,
             playheadTime: playheadTime
         )
-    }
-
-    final class Coordinator {
-        @Binding private var selectedClipID: UUID?
-        @Binding private var playheadTime: TimeInterval
-
-        private var onSelect: (UUID) -> Void
-        private var onSeek: (TimeInterval) -> Void
-        private var onHover: (TimeInterval?) -> Void
-        private var onSplit: (TimeInterval) -> Void
-        private var onDelete: () -> Void
-        private var onTrim: (RecordingClipSegment) -> Void
-        private var onZoom: (Double, TimeInterval) -> Void
-        private var onStep: (TimeInterval) -> Void
-
-        init(
-            selectedClipID: Binding<UUID?>,
-            playheadTime: Binding<TimeInterval>,
-            onSelect: @escaping (UUID) -> Void,
-            onSeek: @escaping (TimeInterval) -> Void,
-            onHover: @escaping (TimeInterval?) -> Void,
-            onSplit: @escaping (TimeInterval) -> Void,
-            onDelete: @escaping () -> Void,
-            onTrim: @escaping (RecordingClipSegment) -> Void,
-            onZoom: @escaping (Double, TimeInterval) -> Void,
-            onStep: @escaping (TimeInterval) -> Void
-        ) {
-            _selectedClipID = selectedClipID
-            _playheadTime = playheadTime
-            self.onSelect = onSelect
-            self.onSeek = onSeek
-            self.onHover = onHover
-            self.onSplit = onSplit
-            self.onDelete = onDelete
-            self.onTrim = onTrim
-            self.onZoom = onZoom
-            self.onStep = onStep
-        }
-
-        func updateCallbacks(
-            onSelect: @escaping (UUID) -> Void,
-            onSeek: @escaping (TimeInterval) -> Void,
-            onHover: @escaping (TimeInterval?) -> Void,
-            onSplit: @escaping (TimeInterval) -> Void,
-            onDelete: @escaping () -> Void,
-            onTrim: @escaping (RecordingClipSegment) -> Void,
-            onZoom: @escaping (Double, TimeInterval) -> Void,
-            onStep: @escaping (TimeInterval) -> Void
-        ) {
-            self.onSelect = onSelect
-            self.onSeek = onSeek
-            self.onHover = onHover
-            self.onSplit = onSplit
-            self.onDelete = onDelete
-            self.onTrim = onTrim
-            self.onZoom = onZoom
-            self.onStep = onStep
-        }
-
-        func connect(to view: RecordingClipTimelineControl) {
-            view.selectionDidChange = { [weak self] id in
-                self?.selectedClipID = id
-                self?.onSelect(id)
-            }
-            view.playheadDidChange = { [weak self] time in
-                self?.playheadTime = time
-                self?.onSeek(time)
-            }
-            view.hoverTimeDidChange = { [weak self] time in
-                self?.onHover(time)
-            }
-            view.splitRequested = { [weak self] time in
-                self?.onSplit(time)
-            }
-            view.deleteRequested = { [weak self] in
-                self?.onDelete()
-            }
-            view.trimDidCommit = { [weak self] clip in
-                self?.onTrim(clip)
-            }
-            view.zoomRequested = { [weak self] factor, anchorTime in
-                self?.onZoom(factor, anchorTime)
-            }
-            view.stepRequested = { [weak self] seconds in
-                self?.onStep(seconds)
-            }
-        }
     }
 }
 

@@ -56,9 +56,6 @@ struct Mat: Equatable {
         points.map { applyToPoint($0) }
     }
 
-    /// The point in this transform's local space corresponding to a point in the parent space.
-    func applyInverseToPoint(_ p: Vec) -> Vec { inverse.applyToPoint(p) }
-
     struct Decomposed {
         var x: Double
         var y: Double

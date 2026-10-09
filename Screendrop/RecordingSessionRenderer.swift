@@ -210,16 +210,6 @@ enum RecordingSessionRenderer {
         )
     }
 
-    static func presentFailure(_ error: Error) {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "The camera video could not be added"
-        alert.informativeText = "Your screen, camera, and audio masters are safe in the recording project, but Screendrop could not create the combined video: \(error.localizedDescription)"
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-
     private static func outputSize(
         for asset: AVURLAsset,
         manifest: CaptureManifest?

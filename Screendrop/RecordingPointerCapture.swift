@@ -721,17 +721,7 @@ nonisolated final class PointerActivityRecorder: NSObject, @unchecked Sendable {
     private func geometry(at uptime: TimeInterval) -> CapturedFrameGeometry? {
         guard let first = frameGeometries.first else { return nil }
         guard uptime >= first.uptime else { return first }
-        var low = 0
-        var high = frameGeometries.count
-        while low < high {
-            let middle = (low + high) / 2
-            if frameGeometries[middle].uptime <= uptime {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        return frameGeometries[max(0, low - 1)]
+        return frameGeometries[frameGeometries.lastIndex(atOrBefore: uptime, by: \.uptime) ?? 0]
     }
 
     private static func buttonNumber(for type: CGEventType, event: CGEvent) -> Int {

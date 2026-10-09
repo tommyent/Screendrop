@@ -149,14 +149,6 @@ enum ScreendropPreferences {
         return UserDefaults.standard.bool(forKey: playSoundsKey)
     }
 
-    /// Whether the menu bar icon is shown. Defaults to on.
-    static var showMenuBarIcon: Bool {
-        if UserDefaults.standard.object(forKey: showMenuBarIconKey) == nil {
-            return true
-        }
-        return UserDefaults.standard.bool(forKey: showMenuBarIconKey)
-    }
-
     /// Whether Screendrop's own windows and floating controls are visible in
     /// screenshots and screen recordings. Defaults to off for capture privacy.
     static var includeAppWindowsInCaptures: Bool {
@@ -172,15 +164,6 @@ enum ScreendropPreferences {
     /// Countdown delay (in seconds) before a capture is taken. 0 means off.
     static var captureDelaySeconds: Int {
         max(0, UserDefaults.standard.integer(forKey: captureDelaySecondsKey))
-    }
-
-    /// Which screen corner the preview overlay docks to.
-    static var previewPosition: PreviewOverlayPosition {
-        guard let raw = UserDefaults.standard.string(forKey: previewPositionKey),
-              let position = PreviewOverlayPosition(rawValue: raw) else {
-            return .right
-        }
-        return position
     }
 
     /// Seconds before the preview overlay auto-dismisses. 0 means never.
@@ -224,21 +207,6 @@ enum ScreendropPreferences {
             return true
         }
         return UserDefaults.standard.bool(forKey: trimFullscreenMenuBarKey)
-    }
-
-    // MARK: - Cloud
-    
-    static var cloudWorkerURL: String {
-        CloudCredentialStore.shared.workerURL
-    }
-    
-    static var cloudUploadToken: String {
-        CloudCredentialStore.shared.uploadToken
-    }
-    
-    /// Cloud upload is available when the worker URL and upload token are configured.
-    static var isCloudConfigured: Bool {
-        CloudCredentialStore.shared.isConfigured
     }
 }
 
@@ -338,7 +306,7 @@ enum ScreenshotFileActions {
             withIntermediateDirectories: true
         )
         
-        let destinationURL = uniqueDestinationURL(
+        let destinationURL = ScreenshotFileNaming.uniqueURL(
             for: exportFileName(for: url),
             in: destinationDirectory
         )
@@ -469,9 +437,5 @@ enum ScreenshotFileActions {
         if type.conforms(to: .jpeg) { return .jpeg }
         if type.conforms(to: .heic) { return .heic }
         return type
-    }
-    
-    private static func uniqueDestinationURL(for fileName: String, in directory: URL) -> URL {
-        ScreenshotFileNaming.uniqueURL(for: fileName, in: directory)
     }
 }

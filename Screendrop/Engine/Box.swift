@@ -61,19 +61,11 @@ struct Box: Equatable {
         return Box(minX, minY, maxX - minX, maxY - minY)
     }
 
-    func containsPoint(_ p: Vec, margin: Double = 0) -> Bool {
-        !(p.x < minX - margin || p.y < minY - margin || p.x > maxX + margin || p.y > maxY + margin)
-    }
-
     func contains(_ other: Box) -> Bool {
         other.minX >= minX && other.minY >= minY && other.maxX <= maxX && other.maxY <= maxY
     }
 
     func collides(_ other: Box) -> Bool {
         !(other.maxX < minX || other.minX > maxX || other.maxY < minY || other.minY > maxY)
-    }
-
-    func expandBy(_ n: Double) -> Box {
-        Box(x - n, y - n, w + n * 2, h + n * 2)
     }
 }

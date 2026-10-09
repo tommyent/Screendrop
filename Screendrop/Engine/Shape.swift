@@ -22,8 +22,6 @@ enum DashStyle: String, CaseIterable, Codable {
     case solid
     case dashed
     case dotted
-
-    var label: String { rawValue.capitalized }
 }
 
 /// How a geo shape's interior is painted.
@@ -37,8 +35,6 @@ enum AnnoFillStyle: String, CaseIterable, Codable {
 enum GeoKind: String, CaseIterable, Codable {
     case rectangle
     case ellipse
-
-    var label: String { rawValue.capitalized }
 }
 
 // MARK: - Props

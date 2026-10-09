@@ -50,27 +50,23 @@ nonisolated struct RecordingClipSegment: Identifiable, Codable, Equatable, Senda
         case sourceStart
         case sourceEnd
         case speed
-        // Accepted for migration from the first experimental split schema.
+    }
+
+    /// Accepted for migration from the first experimental split schema.
+    private enum LegacyCodingKeys: String, CodingKey {
         case start
         case end
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         sourceStart = try container.decodeIfPresent(TimeInterval.self, forKey: .sourceStart)
-            ?? container.decode(TimeInterval.self, forKey: .start)
+            ?? legacy.decode(TimeInterval.self, forKey: .start)
         sourceEnd = try container.decodeIfPresent(TimeInterval.self, forKey: .sourceEnd)
-            ?? container.decode(TimeInterval.self, forKey: .end)
+            ?? legacy.decode(TimeInterval.self, forKey: .end)
         speed = try container.decodeIfPresent(Double.self, forKey: .speed) ?? 1
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(sourceStart, forKey: .sourceStart)
-        try container.encode(sourceEnd, forKey: .sourceEnd)
-        try container.encode(speed, forKey: .speed)
     }
 }
 

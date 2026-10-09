@@ -195,20 +195,6 @@ final class AnnoDocument {
         invalidate(stale)
     }
 
-    func bringToFront(_ ids: Set<AnnoShapeID>) {
-        let moved = shapes.filter { ids.contains($0.id) }
-        shapes.removeAll { ids.contains($0.id) }
-        shapes.append(contentsOf: moved)
-        reindex()
-    }
-
-    func sendToBack(_ ids: Set<AnnoShapeID>) {
-        let moved = shapes.filter { ids.contains($0.id) }
-        shapes.removeAll { ids.contains($0.id) }
-        shapes.insert(contentsOf: moved, at: 0)
-        reindex()
-    }
-
     func setBinding(_ binding: ArrowBinding) {
         bindings.removeAll { $0.arrowId == binding.arrowId && $0.terminal == binding.terminal }
         bindings.append(binding)

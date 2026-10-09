@@ -23,11 +23,9 @@ nonisolated struct PointerFrame: Sendable, Equatable {
     /// Normalized recording coordinate, with a top-left origin.
     var location: CGPoint
     var artworkID: String?
-    /// Interaction and visibility magnification, anchored at the pointer artwork's anchor point.
+    /// Press magnification, anchored at the pointer artwork's anchor point.
     var magnification: Double
     var tiltDegrees: Double
-    var opacity: Double
-    var blurRadius: Double
     var press: PointerPressFrame?
 }
 
@@ -42,7 +40,6 @@ nonisolated struct PointerTimeline: Sendable {
     private static let tiltSampleWindow: TimeInterval = 0.4
     private static let tiltGain = 0.03
     private static let tiltWeight = 0.5
-    private static let revealLeadWindow: TimeInterval = 0.25
 
     private let frames: [PointerFrame]
     private let duration: TimeInterval
@@ -88,8 +85,6 @@ nonisolated struct PointerTimeline: Sendable {
             magnification: a.magnification + (b.magnification - a.magnification) * fraction,
             tiltDegrees: a.tiltDegrees
                 + (b.tiltDegrees - a.tiltDegrees) * fraction,
-            opacity: a.opacity + (b.opacity - a.opacity) * fraction,
-            blurRadius: a.blurRadius + (b.blurRadius - a.blurRadius) * fraction,
             press: fraction < 0.5 ? a.press : b.press
         )
     }
@@ -109,7 +104,6 @@ nonisolated struct PointerTimeline: Sendable {
         duration: TimeInterval,
         recordingSizeInPoints: CGSize = CGSize(width: 1_000, height: 1_000),
         fallbackArtwork: PointerArtwork? = nil,
-        hideAfterInactivity: TimeInterval? = nil,
         clipTimeline: RecordingClipTimeline? = nil
     ) -> PointerTimeline {
         guard duration.isFinite, duration > 0 else { return .empty }
@@ -136,9 +130,6 @@ nonisolated struct PointerTimeline: Sendable {
         guard let firstSample = samples.first else { return .empty }
 
         let pressSamples = samples.filter { $0.kind == .press }
-        let travelSamples = samples.filter {
-            $0.kind == .travel || $0.kind == .drag
-        }
         let intervals = pressIntervals(
             from: samples,
             duration: timelineDuration
@@ -154,11 +145,8 @@ nonisolated struct PointerTimeline: Sendable {
         var xSpring = DampedSpring(position: firstSample.x)
         var ySpring = DampedSpring(position: firstSample.y)
         var magnificationSpring = DampedSpring(position: 1)
-        var opacitySpring = DampedSpring(position: 1)
-        var blurSpring = DampedSpring(position: 0)
 
         var sampleIndex = -1
-        var travelIndex = -1
         var latestPressIndex = -1
         var pressIntervalIndex = 0
         var currentArtworkID = firstSample.artworkID
@@ -175,10 +163,6 @@ nonisolated struct PointerTimeline: Sendable {
                 currentArtworkID = sample.artworkID
             }
 
-            while travelIndex + 1 < travelSamples.count,
-                  travelSamples[travelIndex + 1].time <= time {
-                travelIndex += 1
-            }
             while latestPressIndex + 1 < pressSamples.count,
                   pressSamples[latestPressIndex + 1].time <= time {
                 latestPressIndex += 1
@@ -213,24 +197,7 @@ nonisolated struct PointerTimeline: Sendable {
             xSpring.step(toward: target.x, using: motion, dt: dt)
             ySpring.step(toward: target.y, using: motion, dt: dt)
 
-            var isHidden = false
-            if let hideAfterInactivity,
-               hideAfterInactivity > 0,
-               travelIndex >= 0 {
-                let previousTravel = travelSamples[travelIndex]
-                let nextTravel = travelIndex + 1 < travelSamples.count
-                    ? travelSamples[travelIndex + 1]
-                    : nil
-                let willMoveSoon = nextTravel.map {
-                    $0.time - time <= revealLeadWindow
-                } ?? false
-                isHidden = time - previousTravel.time > hideAfterInactivity && !willMoveSoon
-            }
-
-            let targetMagnification = (isPressed ? 0.8 : 1) * (isHidden ? 0.8 : 1)
-            magnificationSpring.step(toward: targetMagnification, using: PointerSpring.settle, dt: dt)
-            opacitySpring.step(toward: isHidden ? 0 : 1, using: PointerSpring.settle, dt: dt)
-            blurSpring.step(toward: isHidden ? 5 : 0, using: PointerSpring.settle, dt: dt)
+            magnificationSpring.step(toward: isPressed ? 0.8 : 1, using: PointerSpring.settle, dt: dt)
 
             let press: PointerPressFrame?
             if latestPressIndex >= 0 {
@@ -251,8 +218,6 @@ nonisolated struct PointerTimeline: Sendable {
                 artworkID: currentArtworkID,
                 magnification: magnificationSpring.position,
                 tiltDegrees: 0,
-                opacity: min(max(opacitySpring.position, 0), 1),
-                blurRadius: max(0, blurSpring.position),
                 press: press
             ))
         }
@@ -352,18 +317,8 @@ nonisolated struct PointerTimeline: Sendable {
         at time: TimeInterval,
         samples: [PointerStreamEvent]
     ) -> PointerStreamEvent? {
-        guard let first = samples.first else { return nil }
-        var low = 0
-        var high = samples.count
-        while low < high {
-            let middle = (low + high) / 2
-            if samples[middle].time <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        return low > 0 ? samples[low - 1] : first
+        guard !samples.isEmpty else { return nil }
+        return samples[samples.lastIndex(atOrBefore: time, by: \.time) ?? 0]
     }
 
     private static func pressIntervals(

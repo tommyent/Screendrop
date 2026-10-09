@@ -126,18 +126,7 @@ nonisolated struct KeystrokeCaptionTimeline: Sendable {
         guard !events.isEmpty, time.isFinite else { return nil }
 
         // Last event that has already started.
-        var low = 0
-        var high = events.count
-        while low < high {
-            let middle = (low + high) / 2
-            if events[middle].time <= time {
-                low = middle + 1
-            } else {
-                high = middle
-            }
-        }
-        let index = low - 1
-        guard index >= 0 else { return nil }
+        guard let index = events.lastIndex(atOrBefore: time, by: \.time) else { return nil }
 
         let event = events[index]
         let naturalEnd = event.time + Self.popInDuration + Self.holdDuration + Self.popOutDuration
