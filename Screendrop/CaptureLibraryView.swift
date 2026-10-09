@@ -407,13 +407,13 @@ struct CaptureLibraryView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
-            Picker("View", selection: $layout) {
+            // Comments are always a list, so the picker says so there.
+            Picker("View", selection: Binding(get: { comments.isShown ? .list : layout }, set: { layout = $0 })) {
                 Label("Grid View", systemImage: "square.grid.2x2").tag(CaptureLibraryLayout.grid).help("Grid view")
                 Label("List View", systemImage: "list.bullet").tag(CaptureLibraryLayout.list).help("List view")
             }
             .labelStyle(.iconOnly)
             .pickerStyle(.segmented)
-            // Comments are always a list.
             .disabled(comments.isShown)
             .help("Switch between grid and list")
         }
@@ -433,7 +433,7 @@ struct CaptureLibraryView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .primaryAction) {
-            if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
+            pageActions
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
@@ -458,11 +458,25 @@ struct CaptureLibraryView: View {
         .help("Comment actions")
     }
 
+    /// The same three slots on every page (Quick Look, Edit, Actions), so
+    /// the toolbar never shifts when the page changes; each does what fits
+    /// its page or is dimmed (design pass choice 5).
+    @ViewBuilder private var pageActions: some View {
+        Button {
+            if cloud.isShown { cloud.quickLook() } else { model.perform(.preview) }
+        } label: { Label("Quick Look", systemImage: "eye") }
+            .disabled(comments.isShown || (cloud.isShown ? cloud.selection.isEmpty : model.selection.count != 1 || model.isBusy))
+            .help("Quick Look (Space)")
+        Button { model.perform(.edit) } label: { Label("Edit", systemImage: "pencil.tip.crop.circle") }
+            .disabled(cloud.isShown || comments.isShown || model.selection.count != 1 || model.isBusy)
+            .help(cloud.isShown || comments.isShown
+                  ? "Uploads can't be edited; edit the capture in the Library"
+                  : "Open in the screenshot or recording editor")
+        if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
+    }
+
     /// Uploads are final, so the Cloud page has no Edit.
     @ViewBuilder private var cloudActions: some View {
-        Button { cloud.quickLook() } label: { Label("Quick Look", systemImage: "eye") }
-            .disabled(cloud.selection.isEmpty)
-            .help("Quick Look (Space)")
         Menu {
             ForEach(Array(cloud.menuItems().enumerated()), id: \.offset) { _, item in
                 if item.startsGroup { Divider() }
@@ -474,12 +488,6 @@ struct CaptureLibraryView: View {
     }
 
     @ViewBuilder private var captureActions: some View {
-        Button { model.perform(.preview) } label: { Label("Quick Look", systemImage: "eye") }
-            .disabled(model.selection.count != 1 || model.isBusy)
-            .help("Quick Look (Space)")
-        Button { model.perform(.edit) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-            .disabled(model.selection.count != 1 || model.isBusy)
-            .help("Open in the screenshot or recording editor")
         Menu {
             Button("Copy", systemImage: "doc.on.doc") { model.perform(.copy) }
             Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
