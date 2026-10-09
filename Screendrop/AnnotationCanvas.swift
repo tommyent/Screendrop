@@ -9,6 +9,7 @@ import SwiftUI
 private enum AnnotationCanvasCursor: Equatable {
     case arrow
     case placement
+    case crosshair
     case openHand
     case closedHand
 
@@ -18,6 +19,8 @@ private enum AnnotationCanvasCursor: Equatable {
             .arrow
         case .placement:
             .annotationPlus
+        case .crosshair:
+            .crosshair
         case .openHand:
             .openHand
         case .closedHand:
@@ -166,16 +169,19 @@ struct AnnotationCanvas: View {
                     if effectiveCamera.hasEffect && !displayLayout.canvasFrame.contains(location) {
                         hoveredLocation = nil
                         probe?.hover(nil, imageFrame: imageFrame)
+                        model.updateHoveredAnnotation(at: nil, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                         setCursor(.arrow)
                         return
                     }
                     let mappedLocation = projection.unproject(location)
                     hoveredLocation = mappedLocation
                     probe?.hover(mappedLocation, imageFrame: imageFrame)
+                    model.updateHoveredAnnotation(at: mappedLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                     updateCursor(at: mappedLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                 case .ended:
                     hoveredLocation = nil
                     probe?.hover(nil, imageFrame: imageFrame)
+                    model.updateHoveredAnnotation(at: nil, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                     setCursor(.arrow)
                 }
             }
@@ -185,6 +191,7 @@ struct AnnotationCanvas: View {
             // Zooming and scrolling move the image under a still pointer.
             .onChange(of: imageFrame) { _, frame in
                 probe?.hover(hoveredLocation, imageFrame: frame)
+                model.updateHoveredAnnotation(at: hoveredLocation, imageFrame: frame, boundaryFrame: boundaryFrame)
             }
             .onChange(of: model.revision) { _, _ in
                 refreshCursor(imageFrame: imageFrame, boundaryFrame: boundaryFrame)
@@ -733,6 +740,7 @@ struct AnnotationCanvas: View {
 
     private func refreshCursor(imageFrame: CGRect, boundaryFrame: CGRect) {
         guard let hoveredLocation else { return }
+        model.updateHoveredAnnotation(at: hoveredLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
         updateCursor(at: hoveredLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
     }
 
@@ -748,6 +756,10 @@ struct AnnotationCanvas: View {
 
         if hasActiveInteraction {
             setCursor(model.isTransformingExistingAnnotation ? .closedHand : .placement)
+        } else if NSEvent.modifierFlags.contains(.command), model.selectedTool.createsAnnotation {
+            setCursor(.crosshair)
+        } else if model.hoveredHandle(at: location, imageFrame: imageFrame) != nil {
+            setCursor(.openHand)
         } else if model.hoveredAnnotation(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) != nil {
             setCursor(.openHand)
         } else if model.selectedTool == .select {

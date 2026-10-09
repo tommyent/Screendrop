@@ -109,7 +109,8 @@ struct AnnotationEditorWindow: View {
                 onCancelCrop: { withAnimation(.snappy(duration: 0.2)) { model.cancelCrop() } },
                 isCropping: { model.isCropping },
                 onCopyColor: probe.copyHovered,
-                onMeasure: probe.measure
+                onMeasure: probe.measure,
+                onEscape: model.escapeSelectionOrDisarm
             ))
             .inspector(isPresented: $isInspectorPresented) {
                 AnnotationEditorInspector(

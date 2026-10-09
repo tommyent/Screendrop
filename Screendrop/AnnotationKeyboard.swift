@@ -28,6 +28,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     /// A held arrow key measures (an axis); its release, or the window
     /// losing focus, ends that (nil). Returns whether the key was used.
     let onMeasure: (PixelMeasureAxis?) -> Bool
+    let onEscape: () -> Void
 
     func makeNSView(context: Context) -> AnnotationKeyCommandHandlerView {
         let view = AnnotationKeyCommandHandlerView()
@@ -58,6 +59,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.isCropping = isCropping
         view.onCopyColor = onCopyColor
         view.onMeasure = onMeasure
+        view.onEscape = onEscape
     }
 }
 
@@ -80,6 +82,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var isCropping: (() -> Bool)?
     var onCopyColor: (() -> Bool)?
     var onMeasure: ((PixelMeasureAxis?) -> Bool)?
+    var onEscape: (() -> Void)?
 
     private var localKeyMonitor: Any?
     private var localKeyUpMonitor: Any?
@@ -156,6 +159,11 @@ final class AnnotationKeyCommandHandlerView: NSView {
             // up or down the height under the pointer, left or right the
             // width. Shift may be held too; it includes the border.
             if let axis = Self.measureAxis(event), self.onMeasure?(axis) == true {
+                return nil
+            }
+
+            if Self.isEscape(event) {
+                self.onEscape?()
                 return nil
             }
 
@@ -337,7 +345,6 @@ final class AnnotationKeyCommandHandlerView: NSView {
         case "p": return .pixelate
         case "b": return .blur
         case "1": return .numberedCircle
-        case "h": return .select
         default: return nil
         }
     }
