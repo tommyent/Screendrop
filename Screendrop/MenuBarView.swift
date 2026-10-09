@@ -16,30 +16,36 @@ struct MenuBarView: View {
     @State private var projectStore = RecordingProjectStore.shared
 
     var body: some View {
+        // Shortcuts change in Settings; this re-reads them.
+        let _ = HotkeyManager.shared.revision
         Group {
             Button {
                 CaptureCoordinator.shared.captureFullscreen()
             } label: {
                 Label("Capture Fullscreen", systemImage: "macwindow")
             }
+            .keyboardShortcut(Self.shortcut(for: .fullscreen))
             
             Button {
                 CaptureCoordinator.shared.captureWindow()
             } label: {
                 Label("Capture Window", systemImage: "macwindow.on.rectangle")
             }
+            .keyboardShortcut(Self.shortcut(for: .window))
             
             Button {
                 CaptureCoordinator.shared.captureArea()
             } label: {
                 Label("Capture Area", systemImage: "rectangle.dashed")
             }
+            .keyboardShortcut(Self.shortcut(for: .area))
 
             Button {
                 CaptureCoordinator.shared.captureText()
             } label: {
                 Label("Capture Text", systemImage: "text.viewfinder")
             }
+            .keyboardShortcut(Self.shortcut(for: .textCapture))
 
             Button {
                 CaptureCoordinator.shared.captureScrolling()
@@ -49,16 +55,29 @@ struct MenuBarView: View {
                     systemImage: "rectangle.expand.vertical"
                 )
             }
+            .keyboardShortcut(Self.shortcut(for: .scrollingCapture))
             // A recording and a scrolling capture both use the region
             // highlight, so neither starts while the other runs.
             .disabled(ScreenRecordingManager.shared.isActive)
 
-            Button {
-                RecordingPickerPresenter.shared.show()
-            } label: {
-                Label("Record Screen", systemImage: "record.circle")
+            // While recording, the item stops it, as Scrolling Capture's
+            // finishes it (design pass choice 13).
+            if ScreenRecordingManager.shared.isActive {
+                Button {
+                    ScreenRecordingManager.shared.stopRecording()
+                } label: {
+                    Label("Stop Recording", systemImage: "stop.circle")
+                }
+                .disabled(ScreenRecordingManager.shared.state == .finishing)
+            } else {
+                Button {
+                    RecordingPickerPresenter.shared.show()
+                } label: {
+                    Label("Record Screen", systemImage: "record.circle")
+                }
+                .keyboardShortcut(Self.shortcut(for: .screenRecording))
+                .disabled(ScrollingCapturePresenter.shared.isRunning)
             }
-            .disabled(ScrollingCapturePresenter.shared.isRunning || ScreenRecordingManager.shared.isActive)
 
             Divider()
 
@@ -228,5 +247,37 @@ struct MenuBarView: View {
         let limit = 34
         guard name.count > limit else { return name }
         return "\(name.prefix(limit - 1))…"
+    }
+}
+
+extension MenuBarView {
+    /// The action's global shortcut, shown beside its menu item so it can
+    /// be learnt there (design pass choice 13). Nil when cleared, or for keys
+    /// a menu can't show, such as function keys.
+    static func shortcut(for action: CaptureHotkeyAction) -> KeyboardShortcut? {
+        guard let hotkey = CaptureHotkeyPreferences.shortcut(for: action),
+              let label = hotkey.displayTokens.last else { return nil }
+        let key: KeyEquivalent
+        switch label {
+        case "↩": key = .return
+        case "⇥": key = .tab
+        case "Space": key = .space
+        case "⌫": key = .delete
+        case "⌦": key = .deleteForward
+        case "⎋": key = .escape
+        case "←": key = .leftArrow
+        case "→": key = .rightArrow
+        case "↑": key = .upArrow
+        case "↓": key = .downArrow
+        default:
+            guard label.count == 1, let character = label.lowercased().first else { return nil }
+            key = KeyEquivalent(character)
+        }
+        var modifiers: EventModifiers = []
+        if hotkey.modifiers.contains(.command) { modifiers.insert(.command) }
+        if hotkey.modifiers.contains(.option) { modifiers.insert(.option) }
+        if hotkey.modifiers.contains(.control) { modifiers.insert(.control) }
+        if hotkey.modifiers.contains(.shift) { modifiers.insert(.shift) }
+        return KeyboardShortcut(key, modifiers: modifiers)
     }
 }
