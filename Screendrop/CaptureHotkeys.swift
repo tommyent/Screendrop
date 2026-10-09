@@ -185,20 +185,25 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         }
     }
 
+    /// One-handed ⌃⌥ chords on the number row, picked by the user: the image
+    /// captures in order, then the recording and Capture Text. ⌥ alone typed
+    /// a character in every app; ⌃⌥R was Rectangle's "Center Two Thirds" and
+    /// ⌃⌥O isn't one-handed. Only actions the user never recorded follow a
+    /// default, so recorded shortcuts stay.
     var defaultShortcut: HotkeyShortcut {
         switch self {
         case .fullscreen:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_1))
+            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_1))
         case .window:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_2))
+            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_2))
         case .area:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_3))
-        case .screenRecording:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_4))
-        case .textCapture:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_5))
+            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_3))
         case .scrollingCapture:
-            HotkeyShortcut(modifiers: [.option], keyCode: Int(kVK_ANSI_6))
+            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_4))
+        case .screenRecording:
+            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_5))
+        case .textCapture:
+            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_6))
         }
     }
 
