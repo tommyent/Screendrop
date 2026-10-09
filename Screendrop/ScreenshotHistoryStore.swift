@@ -63,7 +63,9 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
         duration = try container.decodeIfPresent(Double.self, forKey: .duration)
         cloudURL = try container.decodeIfPresent(String.self, forKey: .cloudURL)
         hasEdits = try container.decodeIfPresent(Bool.self, forKey: .hasEdits) ?? false
+        // Rows imported from Screendrop point at its folder; use this app's copy.
         recordingSessionPath = try container.decodeIfPresent(String.self, forKey: .recordingSessionPath)
+            .map(ScreendropStorage.remapLegacyPath)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
     }

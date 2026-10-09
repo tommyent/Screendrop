@@ -44,7 +44,7 @@ struct AnnotationBackgroundPreset: Identifiable, Codable, Equatable {
 
     var hasMissingWallpaper: Bool {
         guard case .customWallpaper(let path) = background.style else { return false }
-        return !FileManager.default.fileExists(atPath: path)
+        return !FileManager.default.fileExists(atPath: ScreendropStorage.remapLegacyPath(path))
     }
 }
 

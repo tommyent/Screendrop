@@ -25,11 +25,11 @@ final class CloudCredentialStore {
     static let shared = CloudCredentialStore()
 
     private let defaults = UserDefaults.standard
-    private static let keychainService = ScreendropStorage.keychainService
+    static let keychainService = ScreendropStorage.keychainService
 
     // MARK: - Keys
 
-    private enum Keys {
+    enum Keys {
         static let uploadToken = "cloud_upload_token"
         static let workerURL = "cloudWorkerURL"       // Matches existing key
     }
@@ -115,13 +115,14 @@ final class CloudCredentialStore {
 
     // MARK: - Keychain
 
-    private static func setKeychainItem(key: String, value: String) {
+    /// `service` defaults to this app's; the Screendrop import also reads and writes others.
+    static func setKeychainItem(key: String, value: String, service: String = keychainService) {
         let data = Data(value.utf8)
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: keychainService,
+            kSecAttrService as String: service,
         ]
 
         SecItemDelete(query as CFDictionary)
@@ -131,11 +132,11 @@ final class CloudCredentialStore {
         SecItemAdd(newQuery as CFDictionary, nil)
     }
 
-    private static func getKeychainItem(key: String) -> String? {
+    static func getKeychainItem(key: String, service: String = keychainService) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
-            kSecAttrService as String: keychainService,
+            kSecAttrService as String: service,
             kSecReturnData as String: true,
         ]
 

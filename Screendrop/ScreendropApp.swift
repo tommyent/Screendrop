@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 import UserNotifications
 import Carbon
 
-@main
+/// Started by `AppEntry`, after the one-time Screendrop import.
 struct ScreendropApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) var openWindow

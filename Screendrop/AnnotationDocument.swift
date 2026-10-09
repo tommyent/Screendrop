@@ -136,7 +136,8 @@ struct StoredBackground: Codable, Equatable {
         case .gradient(let gradient):
             output.style = .gradient(gradient.backgroundGradient)
         case .customWallpaper(let path):
-            output.style = .customWallpaper(AnnotationCustomWallpaper(url: URL(fileURLWithPath: path)))
+            output.style = .customWallpaper(AnnotationCustomWallpaper(
+                url: URL(fileURLWithPath: ScreendropStorage.remapLegacyPath(path))))
         }
 
         output.padding = CGFloat(padding)
@@ -146,7 +147,8 @@ struct StoredBackground: Codable, Equatable {
         output.aspectRatio = AnnotationBackgroundAspectRatio(rawValue: aspectRatio) ?? .auto
         output.alignment = AnnotationBackgroundAlignment(rawValue: alignment) ?? .center
         if let customWallpaperPath {
-            output.customWallpaper = AnnotationCustomWallpaper(url: URL(fileURLWithPath: customWallpaperPath))
+            output.customWallpaper = AnnotationCustomWallpaper(
+                url: URL(fileURLWithPath: ScreendropStorage.remapLegacyPath(customWallpaperPath)))
         }
         if let camera {
             output.camera = camera.settings
