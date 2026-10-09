@@ -75,7 +75,7 @@
 		AC6600000000000000000008 /* ScrollingCaptureRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureRegion.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000004 /* ScrollingCaptureBands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureBands.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000002 /* ScrollingCaptureRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureRegistration.swift; sourceTree = SOURCE_ROOT; };
-		3163891D2F9DC05A002A7AF3 /* Screendrop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Screendrop.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3163891D2F9DC05A002A7AF3 /* Sukusho.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sukusho.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA6100000000000000000001 /* ScreendropTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ScreendropTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditor.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorInteraction.swift; sourceTree = SOURCE_ROOT; };
@@ -179,7 +179,7 @@
 		3163891E2F9DC05A002A7AF3 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3163891D2F9DC05A002A7AF3 /* Screendrop.app */,
+				3163891D2F9DC05A002A7AF3 /* Sukusho.app */,
 				AA6100000000000000000001 /* ScreendropTests.xctest */,
 			);
 			name = Products;
@@ -275,7 +275,7 @@
 				6711E7AD88BD96C1258D3CE6 /* DockProgress */,
 			);
 			productName = Screendrop;
-			productReference = 3163891D2F9DC05A002A7AF3 /* Screendrop.app */;
+			productReference = 3163891D2F9DC05A002A7AF3 /* Sukusho.app */;
 			productType = "com.apple.product-type.application";
 		};
 		AA6100000000000000000004 /* ScreendropTests */ = {
@@ -559,7 +559,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Screendrop/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Screendrop;
+				INFOPLIST_KEY_CFBundleDisplayName = Sukusho;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -572,8 +572,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.34.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fayazahmed.Screendrop;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tommyent.Sukusho;
+				PRODUCT_MODULE_NAME = Screendrop;
+				PRODUCT_NAME = Sukusho;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -601,7 +602,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Screendrop/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Screendrop;
+				INFOPLIST_KEY_CFBundleDisplayName = Sukusho;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -614,8 +615,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.34.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fayazahmed.Screendrop;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tommyent.Sukusho;
+				PRODUCT_MODULE_NAME = Screendrop;
+				PRODUCT_NAME = Sukusho;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -707,7 +709,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Screendrop/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Screendrop Dev";
+				INFOPLIST_KEY_CFBundleDisplayName = "Sukusho Dev";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -720,8 +722,9 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.34.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fayazahmed.Screendrop.dev;
-				PRODUCT_NAME = "$(TARGET_NAME) Dev";
+				PRODUCT_BUNDLE_IDENTIFIER = com.tommyent.Sukusho.dev;
+				PRODUCT_MODULE_NAME = Screendrop;
+				PRODUCT_NAME = "Sukusho Dev";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
