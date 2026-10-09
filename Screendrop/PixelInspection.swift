@@ -23,8 +23,9 @@ nonisolated struct PixelBuffer: Sendable {
 
     /// Force ImageIO's lazy source through one bitmap before a loupe draws it repeatedly.
     static func decodedImage(_ image: CGImage) -> CGImage? {
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(data: nil, width: image.width, height: image.height,
-            bitsPerComponent: 8, bytesPerRow: 0, space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitsPerComponent: 8, bytesPerRow: 0, space: space,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return context.makeImage()

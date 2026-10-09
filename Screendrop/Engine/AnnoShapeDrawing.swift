@@ -132,8 +132,9 @@ enum AnnoShapeDrawing {
         let redactions = document.shapes.filter { $0.isRedaction }
         guard !redactions.isEmpty else { return source }
         let render = { () -> CGImage? in
+            let space = source.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpaceCreateDeviceRGB()
             guard let clean = CGContext(data: nil, width: source.width, height: source.height,
-                bitsPerComponent: 8, bytesPerRow: 0, space: source.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                bitsPerComponent: 8, bytesPerRow: 0, space: space,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
             clean.draw(source, in: target.pageRect)
             let cleanTarget = Target(
@@ -343,13 +344,14 @@ enum AnnoShapeDrawing {
         let block = Swift.max(1, RedactionImageProcessor.pixelBlockSize(for: CGFloat(density)) * scale)
         let lowWidth = Swift.max(1, Int(CGFloat(image.width) / block))
         let lowHeight = Swift.max(1, Int(CGFloat(image.height) / block))
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpaceCreateDeviceRGB()
         guard let low = CGContext(
             data: nil,
             width: lowWidth,
             height: lowHeight,
             bitsPerComponent: 8,
             bytesPerRow: 0,
-            space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            space: space,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         low.interpolationQuality = .medium
