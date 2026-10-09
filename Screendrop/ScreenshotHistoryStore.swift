@@ -499,26 +499,10 @@ final class ScreenshotHistoryStore {
 
     private func uniqueHistoryURL(for sourceURL: URL) -> URL {
         let pathExtension = sourceURL.pathExtension.isEmpty ? "png" : sourceURL.pathExtension
-        let fileName = ScreenshotFileNaming.fileName(extension: pathExtension)
-        let initialURL = Self.historyDirectory.appendingPathComponent(fileName)
-
-        guard FileManager.default.fileExists(atPath: initialURL.path) else {
-            return initialURL
-        }
-
-        let baseName = initialURL.deletingPathExtension().lastPathComponent
-        for index in 1...10_000 {
-            let candidateURL = Self.historyDirectory
-                .appendingPathComponent("\(baseName)-\(index)")
-                .appendingPathExtension(pathExtension)
-            if !FileManager.default.fileExists(atPath: candidateURL.path) {
-                return candidateURL
-            }
-        }
-
-        return Self.historyDirectory
-            .appendingPathComponent("Screendrop_\(UUID().uuidString)")
-            .appendingPathExtension(pathExtension)
+        return ScreenshotFileNaming.uniqueURL(
+            for: ScreenshotFileNaming.fileName(extension: pathExtension),
+            in: Self.historyDirectory
+        )
     }
 
     private func videoMetadata(at url: URL) async -> (width: Int, height: Int, duration: Double?) {

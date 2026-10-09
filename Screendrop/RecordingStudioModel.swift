@@ -1933,14 +1933,9 @@ final class RecordingStudioModel {
         return session.freshFinalURL(matching: currentDocument())
     }
 
+    /// `recording_<date>_<time>`, not the session package's internal name.
     private var exportSuggestedFileName: String {
-        let container = exportSettings.effectiveContainer
-        return session.map {
-            $0.directoryURL
-                .deletingPathExtension()
-                .lastPathComponent
-                .appending(".\(container.fileExtension)")
-        } ?? VideoFileActions.exportFileName(for: screenURL, container: container)
+        VideoFileActions.exportFileName(for: session?.directoryURL ?? screenURL, container: exportSettings.effectiveContainer)
     }
 
     /// Entry point for the export options popover. Assigning settings marks
