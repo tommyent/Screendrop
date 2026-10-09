@@ -403,7 +403,6 @@ private struct CloudUploadCard: View {
     let layout: CaptureLibraryLayout
     let selected: Bool
     let deleting: Bool
-    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isHovering = false
     /// The duration pill's width, kept clear by the comment and like badges.
     @State private var durationWidth: CGFloat = 0
@@ -437,11 +436,7 @@ private struct CloudUploadCard: View {
         )
         .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .strokeBorder(
-                    Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
-                    lineWidth: selected ? 1 : 0.5
-                )
+            LibraryCardBorder(selected: selected)
         }
         .opacity(deleting ? 0.5 : 1)
         .onHover { isHovering = $0 }

@@ -269,7 +269,6 @@ private struct CommentRow: View {
     let selected: Bool
     let fresh: Bool
     let deleting: Bool
-    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isHovering = false
 
     var body: some View {
@@ -310,11 +309,7 @@ private struct CommentRow: View {
         )
         .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .strokeBorder(
-                    Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
-                    lineWidth: selected ? 1 : 0.5
-                )
+            LibraryCardBorder(selected: selected)
         }
         .opacity(deleting ? 0.5 : 1)
         .onHover { isHovering = $0 }

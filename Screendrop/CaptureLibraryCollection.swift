@@ -401,7 +401,6 @@ struct LibraryCellContent: View {
     let layout: CaptureLibraryLayout
     let selected: Bool
     var onTitleFrame: (CGRect) -> Void = { _ in }
-    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
@@ -437,11 +436,7 @@ struct LibraryCellContent: View {
                 // A solid backing in the chrome colour, so titles never sit on the grid's dots.
                 .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                        .strokeBorder(
-                            Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
-                            lineWidth: selected ? 1 : 0.5
-                        )
+                    LibraryCardBorder(selected: selected)
                 }
                 .onHover { isHovering = $0 }
                 .onChange(of: item.id) { _, _ in isHovering = false }
@@ -517,5 +512,23 @@ struct LibraryCellContent: View {
                         .padding(7)
                 }
             }
+    }
+}
+
+/// A Library card's border: a 2 pt accent ring when selected, grey while
+/// the window isn't key, as Finder does; a hairline otherwise (design pass
+/// choice 4). Shared by capture, upload and comment cards.
+struct LibraryCardBorder: View {
+    let selected: Bool
+    @Environment(\.appearsActive) private var appearsActive
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .strokeBorder(color, lineWidth: selected ? 2 : 0.5)
+    }
+
+    private var color: Color {
+        guard selected else { return Color.primary.opacity(0.08) }
+        return appearsActive ? .accentColor : Color.secondary
     }
 }
