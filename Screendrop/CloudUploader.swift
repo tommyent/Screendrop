@@ -355,8 +355,22 @@ final class CloudUploader: NSObject {
         guard creds.isConfigured else {
             throw CloudUploadError.notConfigured
         }
-        let workerBase = Self.normalizeWorkerURL(creds.workerURL)
-        let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await Self.listFeed(
+            workerBase: Self.normalizeWorkerURL(creds.workerURL),
+            token: creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines),
+            unavailable: unavailable, request: makeRequest, decode: decode
+        )
+    }
+
+    /// The paging loop on its own, so a check can run it against a local
+    /// Worker without the keychain.
+    static func listFeed<Item: CloudFeedItem>(
+        workerBase: String,
+        token: String,
+        unavailable: CloudUploadError,
+        request makeRequest: (String, String, Int) -> URLRequest?,
+        decode: (Data) throws -> (items: [Item], next: Int?)
+    ) async throws -> [Item] {
         var items: [Item] = []
         var offset: Int? = 0
         while let current = offset {
