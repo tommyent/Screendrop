@@ -350,7 +350,7 @@ private struct RecordingStudioContent: View {
             }
             .disabled(!model.isLoaded || model.shareState.isBusy)
         case .exporting(let progress):
-            ExportProgressPill(progress: progress) {
+            SharePill(stage: "Exporting", progress: progress, cancelLabel: "Cancel Export") {
                 model.cancelExport()
             }
         case .finished(let url):
@@ -412,9 +412,12 @@ private struct StudioProgressRing: View {
 
 /// Progress pill for the share pipeline: same ring treatment as the
 /// export pill, with the stage name so render and upload read distinctly.
+/// One pill for a running share or export: a ring showing percent complete,
+/// the number itself, and a way to stop the work.
 private struct SharePill: View {
     let stage: String
     let progress: Double
+    var cancelLabel = "Cancel Share"
     let onCancel: () -> Void
 
     var body: some View {
@@ -435,40 +438,8 @@ private struct SharePill: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("Cancel Share")
-            .accessibilityLabel("Cancel Share")
-        }
-        .padding(.leading, 12)
-    }
-}
-
-/// Single pill that replaces the old "Exporting…" button plus a separate
-/// progress bar with one control: a ring showing percent complete, the
-/// number itself, and a way to actually stop the export.
-private struct ExportProgressPill: View {
-    let progress: Double
-    let onCancel: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            StudioProgressRing(progress: progress)
-
-            Text("Exporting \(Int((progress * 100).rounded()))%")
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .foregroundStyle(.primary.opacity(0.85))
-                .fixedSize()
-                .contentTransition(.numericText())
-
-            Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 16)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .help("Cancel Export")
-            .accessibilityLabel("Cancel Export")
+            .help(cancelLabel)
+            .accessibilityLabel(cancelLabel)
         }
         .padding(.leading, 12)
     }
