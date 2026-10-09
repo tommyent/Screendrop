@@ -23,52 +23,66 @@ actor CaptureLibraryThumbnails {
     nonisolated static func bucket(for pixelSize: CGFloat) -> Int { pixelSize > 320 ? 640 : 320 }
 
     func image(for item: CaptureLibraryItem, maxPixelSize: Int = 640) async -> CGImage? {
-        await image(at: item.fileURL, isVideo: item.isVideo, version: item.thumbnailKey, maxPixelSize: maxPixelSize)
+        await image(at: item.fileURL, owner: item.ownedURL, isVideo: item.isVideo, version: item.thumbnailKey, maxPixelSize: maxPixelSize)
     }
 
     func image(at url: URL, isVideo: Bool = false, maxPixelSize: Int = 640) async -> CGImage? {
-        await image(at: url, isVideo: isVideo, version: url.path, maxPixelSize: maxPixelSize)
+        await image(at: url, owner: url, isVideo: isVideo, version: url.path, maxPixelSize: maxPixelSize)
     }
 
-    private func image(at url: URL, isVideo: Bool, version: String, maxPixelSize: Int) async -> CGImage? {
+    private func image(at url: URL, owner: URL, isVideo: Bool, version: String, maxPixelSize: Int) async -> CGImage? {
         guard !Task.isCancelled else { return nil }
         let size = Self.bucket(for: CGFloat(maxPixelSize))
         var resourceURL = url
         // A reused URL can still hold the old stat values after an editor save.
         resourceURL.removeAllCachedResourceValues()
-        let values = try? resourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-        let version = "v1:\(url.path):\(values?.fileSize ?? 0):\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0):\(isVideo ? version : ""):\(size)"
-        let key = version as NSString
+        guard let values = try? resourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
+        let version = "v2:\(url.path):\(values.fileSize ?? 0):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(isVideo ? version : ""):\(size)"
+        let filename = disk.url(for: version, source: owner).lastPathComponent
+        let key = filename as NSString
         if let image = cache.object(forKey: key) { return image }
-        if let task = inFlight[version] {
+        if let task = inFlight[filename] {
             let result = await task.value
-            return Task.isCancelled ? nil : result
+            return Task.isCancelled || !FileManager.default.fileExists(atPath: url.path) ? nil : result
         }
         guard await acquire() else { return nil }
         defer { release() }
         guard !Task.isCancelled else { return nil }
+        // A queued request must not resurrect a cache after its source was deleted.
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         if let image = cache.object(forKey: key) { return image }
-        if let task = inFlight[version] {
+        if let task = inFlight[filename] {
             let result = await task.value
-            return Task.isCancelled ? nil : result
+            return Task.isCancelled || !FileManager.default.fileExists(atPath: url.path) ? nil : result
         }
         let disk = disk
         let shouldTrim = requestsSinceTrim % 32 == 0
         requestsSinceTrim += 1
         let decode = Task.detached(priority: .utility) { () -> CGImage? in
             if shouldTrim { disk.trim() }
-            if let image = autoreleasepool(invoking: { disk.image(for: version) }) { return image }
+            if let image = autoreleasepool(invoking: { disk.image(for: version, source: owner) }) { return image }
             guard let image = await Self.decode(url, isVideo: isVideo, maxPixelSize: size) else { return nil }
-            autoreleasepool { disk.store(image, for: version) }
+            autoreleasepool { disk.store(image, for: version, source: owner) }
             return image
         }
-        inFlight[version] = decode
+        inFlight[filename] = decode
         // A cancelled cell must not cancel work the preview card or another cell shares.
         let result = await decode.value
-        inFlight[version] = nil
-        guard let result else { return nil }
+        inFlight[filename] = nil
+        guard let result, FileManager.default.fileExists(atPath: url.path) else { return nil }
         cache.setObject(result, forKey: key, cost: result.bytesPerRow * result.height)
         return Task.isCancelled ? nil : result
+    }
+
+    func remove(for sources: [URL]) async {
+        guard !sources.isEmpty else { return }
+        let sourceKeys = Set(sources.map(disk.sourceKey(for:)))
+        let pending = inFlight.filter { sourceKeys.contains(String($0.key.prefix(64))) }.map(\.value)
+        // Finish existing writes before removal; queued requests recheck the source.
+        for task in pending { _ = await task.value }
+        cache.removeAllObjects()
+        let disk = disk
+        await Task.detached(priority: .utility) { disk.remove(for: sources) }.value
     }
 
     private func acquire() async -> Bool {

@@ -10,13 +10,18 @@ nonisolated struct CaptureThumbnailDiskCache: Sendable {
         .appending(path: Bundle.main.bundleIdentifier ?? "Screendrop", directoryHint: .isDirectory)
         .appending(path: "Library Thumbnails", directoryHint: .isDirectory))
 
-    func url(for key: String) -> URL {
-        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
-        return directory.appendingPathComponent(digest + ".png")
+    private func digest(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    func image(for key: String) -> CGImage? {
-        let file = url(for: key)
+    func sourceKey(for url: URL) -> String { digest(url.standardizedFileURL.path) }
+
+    func url(for key: String, source: URL) -> URL {
+        directory.appendingPathComponent(sourceKey(for: source) + "-" + digest(key) + ".png")
+    }
+
+    func image(for key: String, source: URL) -> CGImage? {
+        let file = url(for: key, source: source)
         guard let source = CGImageSourceCreateWithURL(file as CFURL,
                   [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateImageAtIndex(source, 0,
@@ -25,15 +30,23 @@ nonisolated struct CaptureThumbnailDiskCache: Sendable {
         return image
     }
 
-    func store(_ image: CGImage, for key: String) {
+    func store(_ image: CGImage, for key: String, source: URL) {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return }
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { return }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try (data as Data).write(to: url(for: key), options: .atomic)
+            try (data as Data).write(to: url(for: key, source: source), options: .atomic)
         } catch { /* A missing cache must never prevent showing the capture. */ }
+    }
+
+    func remove(for sources: [URL]) {
+        let sourceKeys = Set(sources.map(sourceKey(for:)))
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.pathExtension == "png" && sourceKeys.contains(String(file.lastPathComponent.prefix(64))) {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     // shortcut: up to 32 thumbnails can exceed the budget between batch trims;

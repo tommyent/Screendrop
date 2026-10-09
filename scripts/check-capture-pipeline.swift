@@ -15,6 +15,7 @@ nonisolated struct CaptureLibraryItem: Sendable {
     let fileURL: URL
     let isVideo = false
     let thumbnailKey: String
+    var ownedURL: URL { fileURL }
 }
 
 @main struct CapturePipelineChecks {

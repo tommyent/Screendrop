@@ -7,6 +7,7 @@ nonisolated struct CaptureLibraryItem: Sendable {
     let fileURL: URL
     let isVideo = false
     let thumbnailKey: String
+    var ownedURL: URL { fileURL }
 }
 
 @main struct LibraryThumbnailChecks {
@@ -50,7 +51,7 @@ nonisolated struct CaptureLibraryItem: Sendable {
         precondition(small.width == 160 && small.height == 320 && large.width == 320 && large.height == 640)
         precondition(!isGreen(small) && !isGreen(large))
         let files = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil)
-        precondition(files.count == 2 && files.allSatisfy { $0.deletingPathExtension().lastPathComponent.count == 64 })
+        precondition(files.count == 2 && files.allSatisfy { $0.deletingPathExtension().lastPathComponent.count == 129 })
 
         // A new decoder must read the disk cache, not re-decode the original:
         // replace only the cached small thumbnail with a visible sentinel.
@@ -83,12 +84,40 @@ nonisolated struct CaptureLibraryItem: Sendable {
         precondition(isGreen(unavailable), "Cache write failure must not prevent displaying the image")
 
         let lru = CaptureThumbnailDiskCache(directory: root.appendingPathComponent("lru"))
-        lru.store(small, for: "older")
-        lru.store(large, for: "newer")
-        try manager.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: lru.url(for: "older").path)
-        let size = try lru.url(for: "newer").resourceValues(forKeys: [.fileSizeKey]).fileSize!
+        lru.store(small, for: "older", source: source)
+        lru.store(large, for: "newer", source: source)
+        try manager.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: lru.url(for: "older", source: source).path)
+        let size = try lru.url(for: "newer", source: source).resourceValues(forKeys: [.fileSizeKey]).fileSize!
         lru.trim(to: size)
-        precondition(!manager.fileExists(atPath: lru.url(for: "older").path) && lru.image(for: "newer") != nil)
-        print("PASS: 320/640 buckets; cross-decoder disk hit; corruption repair; edit invalidation; cache failure fallback; LRU trim")
+        precondition(!manager.fileExists(atPath: lru.url(for: "older", source: source).path) && lru.image(for: "newer", source: source) != nil)
+
+        let other = root.appendingPathComponent("other.png")
+        disk.store(small, for: "unrelated", source: other)
+        try manager.removeItem(at: source)
+        await thumbnails.remove(for: [source])
+        let remaining = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil)
+        precondition(remaining.count == 1 && remaining[0].lastPathComponent == disk.url(for: "unrelated", source: other).lastPathComponent,
+            "Delete all buckets and older versions, preserving unrelated captures")
+        let deleted = await thumbnails.image(for: oldItem)
+        precondition(deleted == nil, "A deleted source must not return its in-memory thumbnail")
+
+        let pendingURL = root.appendingPathComponent("pending.png")
+        write(image(width: 800, height: 1600, green: false), to: pendingURL)
+        let pending = Task { await thumbnails.image(at: pendingURL) }
+        await Task.yield()
+        try manager.removeItem(at: pendingURL)
+        await thumbnails.remove(for: [pendingURL])
+        _ = await pending.value
+        let afterPending = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil)
+        precondition(!afterPending.contains { $0.lastPathComponent.hasPrefix(disk.sourceKey(for: pendingURL)) },
+            "A concurrent request must not recreate a deleted thumbnail")
+
+        let package = root.appendingPathComponent("recording.screendrop-recording")
+        disk.store(small, for: "old-render", source: package)
+        disk.store(large, for: "new-render", source: package)
+        await thumbnails.remove(for: [package])
+        let afterPackage = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil)
+        precondition(afterPackage.count == 1, "Package deletion must remove all rendered thumbnail versions")
+        print("PASS: 320/640 buckets; cross-decoder disk hit; corruption repair; edit invalidation; cache failure fallback; LRU trim; deletion eviction")
     }
 }

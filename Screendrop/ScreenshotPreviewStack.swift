@@ -788,6 +788,7 @@ final class ScreenshotPreviewStack {
 
         do {
             try FileManager.default.removeItem(at: url)
+            Task { await CaptureLibraryThumbnails.shared.remove(for: [url]) }
         } catch {
             print("Failed to delete screenshot: \(error)")
         }

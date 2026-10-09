@@ -138,6 +138,7 @@ extension CaptureLibraryModel {
                     }
                 } catch { failures.append("\(item.name): \(error.localizedDescription)") }
             }
+            await CaptureLibraryThumbnails.shared.remove(for: targets.filter { removedEntries.contains($0.id) }.map(\.ownedURL))
             ScreenshotHistoryStore.shared.removeTrashedItems(ids: removedIDs)
             self.selection.subtract(removedEntries)
             RecordingProjectStore.shared.reload()

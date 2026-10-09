@@ -344,6 +344,7 @@ final class ScreenshotHistoryStore {
     }
 
     func delete(_ item: ScreenshotHistoryItem) {
+        let thumbnailOwner = item.recordingSessionPath.map { URL(fileURLWithPath: $0) } ?? item.url
         let auxiliaryURLs: [URL]
         if let recordingSession = item.recordingSession {
             auxiliaryURLs = [recordingSession.directoryURL]
@@ -368,6 +369,7 @@ final class ScreenshotHistoryStore {
         let wasRecordingProject = item.recordingSessionPath != nil
         items.removeAll { $0.id == item.id }
         saveMetadata()
+        Task { await CaptureLibraryThumbnails.shared.remove(for: [thumbnailOwner]) }
         if wasRecordingProject {
             // The package is gone, so the Projects browser must stop listing it.
             RecordingProjectStore.shared.reload()
