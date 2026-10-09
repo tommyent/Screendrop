@@ -183,7 +183,7 @@ struct CaptureLibraryInspector: View {
                 pendingCloudUpload = item
             }
         } label: {
-            actionIcon(isShared ? "link" : "icloud.and.arrow.up")
+            actionIcon(isShared ? "link" : "arrow.up.circle")
                 .modifier(LibraryInspectorActionChrome(id: .libraryCloud, title: title))
         }
         .buttonStyle(BarButtonStyle())
@@ -260,7 +260,7 @@ struct CaptureLibraryInspector: View {
                 if let url = URL(string: link) {
                     Link(destination: url) { Label("Open Shared Capture", systemImage: "arrow.up.right") }
                 }
-                Button("Delete from Cloud…", systemImage: "icloud.slash", role: .destructive) {
+                Button("Delete from Cloud…", systemImage: "trash", role: .destructive) {
                     pendingCloudDelete = item
                 }
             }

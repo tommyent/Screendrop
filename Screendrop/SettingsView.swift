@@ -33,7 +33,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .screenshots: "photo.on.rectangle.angled"
         case .video: "video"
         case .overlay: "square.on.square"
-        case .cloud: "icloud.and.arrow.up"
+        case .cloud: "cloud"
         case .about: "info.circle"
         }
     }

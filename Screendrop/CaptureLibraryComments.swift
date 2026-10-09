@@ -180,7 +180,7 @@ struct CommentsLibraryPage: View {
         Group {
             if !CloudUploader.shared.isConfigured {
                 ContentUnavailableView {
-                    Label("Cloud Isn’t Set Up", systemImage: "icloud.slash")
+                    Label("Cloud Isn’t Set Up", systemImage: "cloud")
                 } description: {
                     Text("Add your Worker in Settings to share captures and read their comments here.")
                 } actions: {
@@ -469,7 +469,7 @@ struct CommentInspector: View {
             HStack(spacing: 0) {
                 action("Open on Share Page", symbol: "arrow.up.right") { comments.open(comment) }
                 action("Copy Text", symbol: "doc.on.doc") { comments.copyText([comment]) }
-                action("Show Upload in Cloud", symbol: "icloud") { cloud.showUpload(id: comment.uploadId) }
+                action("Show Upload in Cloud", symbol: "cloud") { cloud.showUpload(id: comment.uploadId) }
                 action("Delete Comment…", symbol: "trash") { comments.pendingDelete = [comment] }
                     .disabled(comments.deletingIDs.contains(comment.id))
             }

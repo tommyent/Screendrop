@@ -296,7 +296,7 @@ struct CloudLibraryPage: View {
         Group {
             if !CloudUploader.shared.isConfigured {
                 ContentUnavailableView {
-                    Label("Cloud Isn’t Set Up", systemImage: "icloud.slash")
+                    Label("Cloud Isn’t Set Up", systemImage: "cloud")
                 } description: {
                     Text("Add your Worker in Settings to share captures and manage your uploads here.")
                 } actions: {
@@ -308,7 +308,7 @@ struct CloudLibraryPage: View {
                 ProgressView("Loading Uploads…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = cloud.loadError, cloud.uploads.isEmpty {
                 ContentUnavailableView {
-                    Label("Couldn’t Load Uploads", systemImage: "exclamationmark.icloud")
+                    Label("Couldn’t Load Uploads", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(error)
                 } actions: {
@@ -320,7 +320,7 @@ struct CloudLibraryPage: View {
                 let search = CaptureLibraryModel.shared.searchText
                 ContentUnavailableView {
                     if search.isEmpty {
-                        Label("No Uploads", systemImage: "icloud")
+                        Label("No Uploads", systemImage: "cloud")
                     } else {
                         Label("No Results for “\(search)”", systemImage: "magnifyingglass")
                     }
@@ -839,7 +839,7 @@ struct CloudUploadInspector: View {
                 HStack(spacing: 0) {
                     action("Open Link", symbol: "arrow.up.right") { cloud.open(upload) }
                     action("Copy Link", symbol: "link") { cloud.copyLinks([upload]) }
-                    action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = [upload] }
+                    action("Delete from Cloud…", symbol: "trash") { cloud.pendingDelete = [upload] }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -847,7 +847,7 @@ struct CloudUploadInspector: View {
             }
         } else {
             LibraryInspectorPlaceholder(
-                symbol: "icloud", title: "Upload details",
+                symbol: "cloud", title: "Upload details",
                 message: "Select an upload to see its link\nand whether it’s still in the Library."
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -954,7 +954,7 @@ struct CloudUploadInspector: View {
             HStack(spacing: 0) {
                 action("Quick Look", symbol: "eye") { cloud.quickLook(toggling: false) }
                 action("Copy Links", symbol: "link") { cloud.copyLinks(uploads) }
-                action("Delete from Cloud…", symbol: "icloud.slash") { cloud.pendingDelete = uploads }
+                action("Delete from Cloud…", symbol: "trash") { cloud.pendingDelete = uploads }
                     .disabled(cloud.isBusy)
             }
             .padding(.horizontal, 14)

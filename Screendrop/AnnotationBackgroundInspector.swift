@@ -595,7 +595,7 @@ private struct AnnotationWallpaperPackInstallView: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Image(systemName: "icloud.and.arrow.down")
+                        Image(systemName: "arrow.down.circle")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Color.accentColor)
                     }

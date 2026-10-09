@@ -70,7 +70,7 @@ struct CaptureLibraryView: View {
                                     .font(.caption.monospacedDigit())
                             }
                         }
-                    } icon: { Image(systemName: "icloud") }
+                    } icon: { Image(systemName: "cloud") }
                     .tag(CaptureLibrarySidebarSelection.cloud)
                     Label {
                         HStack {
