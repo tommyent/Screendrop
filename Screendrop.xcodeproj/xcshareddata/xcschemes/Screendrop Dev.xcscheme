@@ -29,7 +29,8 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      codeCoverageEnabled = "NO"
+      shouldAutocreateTestPlan = "NO">
       <Testables><TestableReference skipped="NO" parallelizable="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="AA6100000000000000000004" BuildableName="ScreendropTests.xctest" BlueprintName="ScreendropTests" ReferencedContainer="container:Screendrop.xcodeproj"/></TestableReference></Testables>
    </TestAction>
    <LaunchAction
