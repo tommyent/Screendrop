@@ -433,11 +433,11 @@ private struct CloudUploadCard: View {
         .padding(6)
         .background(
             Color.primary.opacity(selected ? 0.075 : isHovering ? 0.035 : 0.012),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
         )
-        .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .strokeBorder(
                     Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
                     lineWidth: selected ? 1 : 0.5
@@ -483,9 +483,10 @@ private struct CloudUploadCard: View {
     private var thumbnail: some View {
         CloudUploadThumbnail(upload: upload, local: local)
             .overlay { CloudFetchOverlay(uploadID: upload.id) }
-            .clipShape(.rect(cornerRadius: 10))
+            // Concentric inside the card: its radius minus its 6 pt padding.
+            .clipShape(.rect(cornerRadius: DS.Radius.m, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
             // Bottom left, clear of the pills above. Side by side when they fit
@@ -845,18 +846,10 @@ struct CloudUploadInspector: View {
                 .disabled(cloud.deletingIDs.contains(upload.id))
             }
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "icloud")
-                    .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(.tertiary)
-                Text("Upload details")
-                    .font(.headline)
-                Text("Select an upload to see its link\nand whether it’s still in the Library.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
+            LibraryInspectorPlaceholder(
+                symbol: "icloud", title: "Upload details",
+                message: "Select an upload to see its link\nand whether it’s still in the Library."
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -986,7 +979,7 @@ struct CloudUploadInspector: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.inspectorSectionHeader)
             .foregroundStyle(.secondary)
     }
 

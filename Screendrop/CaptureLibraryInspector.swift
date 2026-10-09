@@ -13,18 +13,10 @@ struct CaptureLibraryInspector: View {
     var body: some View {
         Group {
             if items.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 28, weight: .light))
-                        .foregroundStyle(.tertiary)
-                    Text("Capture details")
-                        .font(.headline)
-                    Text("Select a screenshot or recording\nto take a closer look.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
+                LibraryInspectorPlaceholder(
+                    symbol: "photo.on.rectangle.angled", title: "Capture details",
+                    message: "Select a screenshot or recording\nto take a closer look."
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
@@ -332,7 +324,7 @@ struct CaptureLibraryInspector: View {
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.inspectorSectionHeader)
             .foregroundStyle(.secondary)
     }
 
@@ -431,5 +423,30 @@ private struct LibraryInspectorTitle: View {
             .help("Click to rename")
             .accessibilityHint("Rename")
         }
+    }
+}
+
+/// What a Library inspector shows with nothing selected: the same quiet
+/// block for captures, uploads and comments. Its title stays secondary, so
+/// it never outshines the cards beside it (design pass).
+struct LibraryInspectorPlaceholder: View {
+    let symbol: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: DS.Space.l) {
+            Image(systemName: symbol)
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(DS.Space.xxl)
     }
 }

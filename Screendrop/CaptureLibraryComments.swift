@@ -306,11 +306,11 @@ private struct CommentRow: View {
         .padding(6)
         .background(
             Color.primary.opacity(selected ? 0.075 : isHovering ? 0.035 : 0.012),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
         )
-        .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
                 .strokeBorder(
                     Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
                     lineWidth: selected ? 1 : 0.5
@@ -422,18 +422,10 @@ struct CommentInspector: View {
         } else if let comment = selected.first {
             single(comment)
         } else {
-            VStack(spacing: 12) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(.tertiary)
-                Text("Comment details")
-                    .font(.headline)
-                Text("Select a comment to read it in full\nand see the upload it’s on.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
+            LibraryInspectorPlaceholder(
+                symbol: "bubble.left.and.bubble.right", title: "Comment details",
+                message: "Select a comment to read it in full\nand see the upload it’s on."
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -459,7 +451,7 @@ struct CommentInspector: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Upload").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                    Text("Upload").font(.inspectorSectionHeader).foregroundStyle(.secondary)
                     CommentUploadThumbnail(comment: comment, upload: upload, local: cloud.localItems[comment.uploadId])
                         .aspectRatio(1.45, contentMode: .fit)
                         .clipShape(.rect(cornerRadius: 11))

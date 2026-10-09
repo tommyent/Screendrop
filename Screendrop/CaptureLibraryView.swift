@@ -371,7 +371,8 @@ struct CaptureLibraryView: View {
         .font(.caption)
         .monospacedDigit()
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 16)
+        // 20, not a DS step: it lines the count up with the toolbar title above.
+        .padding(.horizontal, 20)
         // Keep the status bar out of the column's minimum width. With the card
         // size slider counted in it, resizing the window looped in AppKit's
         // constraint pass until it crashed.
