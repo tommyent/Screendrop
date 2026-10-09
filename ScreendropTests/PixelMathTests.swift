@@ -1,8 +1,68 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 
 struct PixelMathTests {
+    @Test func resizedVaryingAlphaStaysPremultiplied() throws {
+        let palette: [[UInt8]] = [[0,64,0,128], [0,0,0,0], [255,255,255,255], [0,0,0,255], [128,0,0,128]]
+        let indices = [0,1,2,3,1,1,4,0,2,3,3,1,3,2,4,2,0,0,1,4,0,0,3,0,1,2,3,1,3,2,3,2,
+                       1,4,3,1,1,0,4,3,2,4,0,0,0,1,3,4,0,2,3,3,0,1,1,0,0,4,1,0,3,3,4,2]
+        let bytes = Data((0..<8).flatMap { _ in indices.flatMap { palette[$0] } })
+        for name in [CGColorSpace.sRGB, CGColorSpace.displayP3] {
+            let source = rgbaImage(bytes, width: 64, height: 8, space: CGColorSpace(name: name)!)
+            let buffer = try #require(PixelBuffer(image: source))
+            for size in [31, 19, 7] {
+                let resized = try #require(buffer.resized(maxPixelSize: CGFloat(size)))
+                let raw = try #require(resized.dataProvider?.data) as Data
+                let drawn = rgbaPixels(resized)
+                for pixels in [raw, drawn] {
+                    for i in stride(from: 0, to: pixels.count, by: 4) {
+                        #expect(max(pixels[i], pixels[i + 1], pixels[i + 2]) <= pixels[i + 3])
+                    }
+                }
+            }
+            #expect(buffer.image.dataProvider?.data as Data? == bytes)
+        }
+    }
+
+    @Test func resizedAlphaRampAgreesWithImageIO() throws {
+        let bytes = Data((0..<8).flatMap { _ in (0..<64).flatMap { x -> [UInt8] in
+            let alpha = x * 255 / 63
+            return [UInt8(180 * alpha / 255), UInt8(100 * alpha / 255), UInt8(40 * alpha / 255), UInt8(alpha)]
+        } })
+        let source = rgbaImage(bytes, width: 64, height: 8, space: CGColorSpace(name: CGColorSpace.sRGB)!)
+        let encoded = NSMutableData()
+        let writer = try #require(CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil))
+        CGImageDestinationAddImage(writer, source, nil)
+        #expect(CGImageDestinationFinalize(writer))
+        let decoder = try #require(CGImageSourceCreateWithData(encoded, [kCGImageSourceShouldCache: false] as CFDictionary))
+        let reference = try #require(CGImageSourceCreateThumbnailAtIndex(decoder, 0, [
+            kCGImageSourceShouldCache: false, kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 31
+        ] as CFDictionary))
+        let resized = try #require(PixelBuffer(image: source)?.resized(maxPixelSize: 31))
+        #expect(resized.width == reference.width && resized.height == reference.height)
+        let actual = rgbaPixels(resized), expected = rgbaPixels(reference)
+        for i in actual.indices { #expect(abs(Int(actual[i]) - Int(expected[i])) <= 3) }
+    }
+
+    private func rgbaImage(_ data: Data, width: Int, height: Int, space: CGColorSpace) -> CGImage {
+        CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: CGDataProvider(data: data as CFData)!, decode: nil, shouldInterpolate: false,
+            intent: .defaultIntent)!
+    }
+
+    private func rgbaPixels(_ image: CGImage) -> Data {
+        let context = CGContext(data: nil, width: image.width, height: image.height,
+            bitsPerComponent: 8, bytesPerRow: image.width * 4, space: image.colorSpace!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return Data(bytes: context.data!, count: image.width * image.height * 4)
+    }
+
     @Test func resizedPixelsKeepProfileTransparencyAndAspect() throws {
         for name in [CGColorSpace.sRGB, CGColorSpace.displayP3] {
             let space = try #require(CGColorSpace(name: name))

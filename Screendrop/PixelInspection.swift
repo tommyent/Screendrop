@@ -74,14 +74,27 @@ nonisolated struct PixelBuffer: Sendable {
         let w = max(1, Int((CGFloat(width) * scale).rounded()))
         let h = max(1, Int((CGFloat(height) * scale).rounded()))
         if w == width && h == height { return image }
+        let hasTransparency = stride(from: 3, to: bytes.count, by: 4).contains { bytes[$0] != 255 }
+        var sourceBytes = bytes
+        if hasTransparency {
+            // Lanczos can overshoot premultiplied channels; scale straight colour, then premultiply.
+            let error = sourceBytes.withUnsafeMutableBytes { raw in
+                var buffer = vImage_Buffer(data: raw.baseAddress!, height: vImagePixelCount(height),
+                    width: vImagePixelCount(width), rowBytes: width * 4)
+                return vImageUnpremultiplyData_RGBA8888(&buffer, &buffer, vImage_Flags(kvImageNoFlags))
+            }
+            guard error == kvImageNoError else { return nil }
+        }
         var output = Data(count: w * h * 4)
-        let error = bytes.withUnsafeBytes { source in
+        let error = sourceBytes.withUnsafeBytes { source in
             output.withUnsafeMutableBytes { destination in
                 var input = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: source.baseAddress!),
                     height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 4)
                 var result = vImage_Buffer(data: destination.baseAddress!, height: vImagePixelCount(h),
                     width: vImagePixelCount(w), rowBytes: w * 4)
-                return vImageScale_ARGB8888(&input, &result, nil, vImage_Flags(kvImageHighQualityResampling))
+                let error = vImageScale_ARGB8888(&input, &result, nil, vImage_Flags(kvImageHighQualityResampling))
+                guard error == kvImageNoError, hasTransparency else { return error }
+                return vImagePremultiplyData_RGBA8888(&result, &result, vImage_Flags(kvImageNoFlags))
             }
         }
         guard error == kvImageNoError, let provider = CGDataProvider(data: output as CFData) else { return nil }
