@@ -725,7 +725,7 @@ struct AnnotationCanvas: View {
                                      pixelsPerPoint: probe.pixelsPerPoint)
         else { return false }
         onEditorInteraction()
-        model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd))
+        model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd), label: ruler.label)
         return true
     }
 
