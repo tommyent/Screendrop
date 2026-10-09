@@ -63,6 +63,13 @@ struct HotkeyShortcut: Codable, Equatable, Hashable {
         !modifiers.isEmpty
     }
 
+    /// New shortcuts need ⌘ or ⌃. With ⌥ or ⇧ alone the chord types a
+    /// character, so as a global hotkey it would take that character away
+    /// from every app. Shortcuts recorded before this rule are kept.
+    var hasCommandOrControl: Bool {
+        !modifiers.isDisjoint(with: [.command, .control])
+    }
+
     private static func keyLabel(for keyCode: Int) -> String {
         switch keyCode {
         case kVK_Return: return "↩"
@@ -241,7 +248,12 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
 }
 
 enum CaptureHotkeyPreferences {
-    static func shortcut(for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> HotkeyShortcut {
+    /// Stored for an action the user cleared, so it has no shortcut at all.
+    private static let clearedValue = "none"
+
+    /// The action's shortcut: recorded, else the default; nil once cleared.
+    static func shortcut(for action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> HotkeyShortcut? {
+        if defaults.string(forKey: action.preferencesKey) == clearedValue { return nil }
         guard
             let data = defaults.data(forKey: action.preferencesKey),
             let shortcut = try? JSONDecoder().decode(HotkeyShortcut.self, from: data),
@@ -253,11 +265,17 @@ enum CaptureHotkeyPreferences {
         return shortcut
     }
 
+    /// Nil clears the action. Its default is never stored, so changing a
+    /// default reaches everyone who didn't record their own.
     static func saveShortcut(
-        _ shortcut: HotkeyShortcut,
+        _ shortcut: HotkeyShortcut?,
         for action: CaptureHotkeyAction,
         defaults: UserDefaults = .standard
     ) {
+        guard let shortcut else {
+            defaults.set(clearedValue, forKey: action.preferencesKey)
+            return
+        }
         guard shortcut != action.defaultShortcut else {
             defaults.removeObject(forKey: action.preferencesKey)
             return
@@ -267,13 +285,24 @@ enum CaptureHotkeyPreferences {
         defaults.set(data, forKey: action.preferencesKey)
     }
 
+    /// Forgets what the user recorded or cleared, so the default applies.
+    static func resetToDefault(_ action: CaptureHotkeyAction, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: action.preferencesKey)
+    }
+
+    /// Whether the action follows its default: nothing recorded or cleared.
+    static func isDefault(_ action: CaptureHotkeyAction, defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: action.preferencesKey) == nil
+    }
+
+    /// Every action that has a shortcut; cleared ones are left out.
     static func shortcuts(
         for actions: [CaptureHotkeyAction] = CaptureHotkeyAction.allCases,
         defaults: UserDefaults = .standard
     ) -> [CaptureHotkeyAction: HotkeyShortcut] {
-        Dictionary(uniqueKeysWithValues: actions.map { action in
-            (action, shortcut(for: action, defaults: defaults))
-        })
+        actions.reduce(into: [:]) { result, action in
+            result[action] = shortcut(for: action, defaults: defaults)
+        }
     }
 
     static func conflictingAction(

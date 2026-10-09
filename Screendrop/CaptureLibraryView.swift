@@ -306,7 +306,9 @@ struct CaptureLibraryView: View {
         }
         let keys = actions
             .filter { HotkeyManager.shared.registrationErrors[$0.0] == nil }
-            .map { CaptureHotkeyPreferences.shortcut(for: $0.0).displayTokens.joined() + "\u{00A0}" + $0.1 }
+            .compactMap { action, name in
+                CaptureHotkeyPreferences.shortcut(for: action).map { $0.displayTokens.joined() + "\u{00A0}" + name }
+            }
         guard !keys.isEmpty else { return nil }
         let heading = keys.count == 1 ? "Shortcut that works anywhere" : "Shortcuts that work anywhere"
         return heading + "\n" + keys.joined(separator: "\u{00A0}· ")

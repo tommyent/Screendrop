@@ -11,6 +11,9 @@ import Observation
 @Observable
 final class HotkeyShortcutRecorder {
     private(set) var isRecording = false
+    /// Why the last keys were turned down; cleared when recording starts,
+    /// stops or succeeds.
+    private(set) var rejection: String?
 
     @ObservationIgnored private var monitor: Any?
     @ObservationIgnored var onShortcutRecorded: ((HotkeyShortcut) -> Void)?
@@ -25,6 +28,7 @@ final class HotkeyShortcutRecorder {
     func start() {
         stop()
         isRecording = true
+        rejection = nil
 
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self else { return event }
@@ -34,6 +38,7 @@ final class HotkeyShortcutRecorder {
 
     func stop() {
         isRecording = false
+        rejection = nil
 
         if let monitor {
             NSEvent.removeMonitor(monitor)
@@ -49,13 +54,17 @@ final class HotkeyShortcutRecorder {
             return nil
         }
 
-        let modifiers = HotkeyShortcut.Modifiers(from: event.modifierFlags)
-        guard !modifiers.isEmpty else {
+        let shortcut = HotkeyShortcut(
+            modifiers: HotkeyShortcut.Modifiers(from: event.modifierFlags),
+            keyCode: Int(event.keyCode)
+        )
+        guard shortcut.hasCommandOrControl else {
             NSSound.beep()
+            rejection = "Include ⌘ or ⌃. With ⌥ or ⇧ alone, the keys type a character in other apps."
             return nil
         }
 
-        finish(with: HotkeyShortcut(modifiers: modifiers, keyCode: Int(event.keyCode)))
+        finish(with: shortcut)
         return nil
     }
 
