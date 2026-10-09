@@ -135,6 +135,11 @@ private struct HotkeyShortcutDisplay: View {
                 HotkeyKeyCap(token: token)
             }
         }
+        // One element that reads the whole shortcut. A label on the bare
+        // stack made SwiftUI resolve it through its own keycaps and recurse
+        // until the stack overflowed whenever an accessibility client
+        // (VoiceOver, an automation tool) read Settings › Screenshots.
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(shortcut.displayString)
     }
 }
