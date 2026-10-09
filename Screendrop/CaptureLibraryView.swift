@@ -14,6 +14,7 @@ struct CaptureLibraryView: View {
     @AppStorage("captureLibrary.tagsExpanded") private var tagsExpanded = true
     @AppStorage("captureLibrary.cardWidth") private var cardWidth = 220.0
     @AppStorage("captureLibrary.sort") private var savedSort: CaptureLibrarySort = .newest
+    @State private var pendingCloudUpload: CaptureLibraryItem?
 
     private var activeFilter: CaptureLibraryFilter { model.filter ?? .all }
 
@@ -437,6 +438,10 @@ struct CaptureLibraryView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
+            shareMenu
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(placement: .primaryAction) {
             Button { inspectorVisible.toggle() } label: {
                 Label(inspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
             }
@@ -473,6 +478,40 @@ struct CaptureLibraryView: View {
                   ? "Uploads can't be edited; edit the capture in the Library"
                   : "Open in the screenshot or recording editor")
         if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
+    }
+
+    /// One place to share from, on every page (design pass choice 6):
+    /// links, the cloud, the system Share menu and Export.
+    @ViewBuilder private var shareMenu: some View {
+        let items = model.selectedItems
+        let item = items.count == 1 ? items.first : nil
+        let uploads = cloud.selectedUploads
+        Menu {
+            if cloud.isShown {
+                Button(uploads.count > 1 ? "Copy Links" : "Copy Link", systemImage: "link") { cloud.copyLinks(uploads) }
+                ShareLink(items: uploads.compactMap { URL(string: $0.url) }) {
+                    Label("Share…", systemImage: "square.and.arrow.up")
+                }
+            } else {
+                Button("Copy Link", systemImage: "link") { if let item { model.copyLink(item) } }
+                    .disabled(item?.cloudURL == nil)
+                Button("Share to Cloud…", systemImage: "arrow.up.circle") { pendingCloudUpload = item }
+                    .disabled(item == nil || item?.cloudURL != nil || !CloudUploader.shared.isConfigured || model.isBusy)
+                ShareLink(items: items.map(\.fileURL)) {
+                    Label("Share…", systemImage: "square.and.arrow.up")
+                }
+                Divider()
+                Button("Export…", systemImage: "arrow.down.doc") { model.perform(.export) }
+                    .disabled(model.isBusy)
+            }
+        } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        .disabled(comments.isShown || (cloud.isShown ? uploads.isEmpty : items.isEmpty))
+        .help("Share")
+        .popover(item: $pendingCloudUpload, arrowEdge: .bottom) { item in
+            CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
+                model.upload(item, options: options)
+            }
+        }
     }
 
     /// Uploads are final, so the Cloud page has no Edit.
