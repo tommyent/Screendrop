@@ -386,7 +386,7 @@ struct AnnotationEditorWindow: View {
                 guard let sourceURL = model.sourceURL else { return }
                 let resultURL = try await model.commitEdits() ?? sourceURL
 
-                _ = ScreenshotPreviewStack.shared.applyAnnotation(
+                _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                     originalURL: sourceURL,
                     historyURL: resultURL
                 )
@@ -424,7 +424,7 @@ struct AnnotationEditorWindow: View {
             do {
                 guard let sourceURL = model.sourceURL,
                       let resultURL = try await model.commitEdits() else { return }
-                _ = ScreenshotPreviewStack.shared.applyAnnotation(
+                _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                     originalURL: sourceURL,
                     historyURL: resultURL
                 )
@@ -460,7 +460,7 @@ struct AnnotationEditorWindow: View {
             do {
                 let resultURL = try await model.commitEdits()
                 if let resultURL {
-                    let updatedExistingPreview = ScreenshotPreviewStack.shared.applyAnnotation(
+                    let updatedExistingPreview = await ScreenshotPreviewStack.shared.applyAnnotation(
                         originalURL: sourceURL,
                         historyURL: resultURL
                     )
@@ -470,7 +470,7 @@ struct AnnotationEditorWindow: View {
                 }
                 // No result means nothing was drawn: the original is the image.
                 if copyingResult {
-                    try ScreenshotFileActions.copyImageToClipboard(from: resultURL ?? sourceURL)
+                    try await ScreenshotFileActions.copyImageToClipboard(from: resultURL ?? sourceURL)
                 }
                 guard !model.hasUnsavedChanges else {
                     isFinishing = false
@@ -501,7 +501,7 @@ struct AnnotationEditorWindow: View {
                     do {
                         if let sourceURL = model.sourceURL,
                            let resultURL = try await model.commitEdits() {
-                            _ = ScreenshotPreviewStack.shared.applyAnnotation(
+                            _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                                 originalURL: sourceURL,
                                 historyURL: resultURL
                             )

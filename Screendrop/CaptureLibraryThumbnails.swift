@@ -8,6 +8,7 @@ import SwiftUI
 actor CaptureLibraryThumbnails {
     static let shared = CaptureLibraryThumbnails()
     private let cache = NSCache<NSString, CGImage>()
+    private var inFlight: [String: Task<CGImage?, Never>] = [:]
     private var running = 0
     private var waiters: [(UUID, CheckedContinuation<Bool, Never>)] = []
 
@@ -17,21 +18,39 @@ actor CaptureLibraryThumbnails {
     }
 
     func image(for item: CaptureLibraryItem) async -> CGImage? {
-        let key = item.thumbnailKey as NSString
+        await image(at: item.fileURL, isVideo: item.isVideo, version: item.thumbnailKey)
+    }
+
+    func image(at url: URL, isVideo: Bool = false) async -> CGImage? {
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+        return await image(at: url, isVideo: isVideo, version: "\(url.path):\(modified.timeIntervalSince1970)")
+    }
+
+    private func image(at url: URL, isVideo: Bool, version: String) async -> CGImage? {
+        let key = version as NSString
         if let image = cache.object(forKey: key) { return image }
+        if let task = inFlight[version] {
+            let result = await task.value
+            return Task.isCancelled ? nil : result
+        }
         guard await acquire() else { return nil }
         defer { release() }
         guard !Task.isCancelled else { return nil }
         if let image = cache.object(forKey: key) { return image }
-        let decode = Task.detached(priority: .utility) {
-            await Self.decode(item)
+        if let task = inFlight[version] {
+            let result = await task.value
+            return Task.isCancelled ? nil : result
         }
-        let result = await withTaskCancellationHandler {
-            await decode.value
-        } onCancel: { decode.cancel() }
-        guard !Task.isCancelled, let result else { return nil }
+        let decode = Task.detached(priority: .utility) {
+            await Self.decode(url, isVideo: isVideo)
+        }
+        inFlight[version] = decode
+        // A cancelled cell must not cancel work the preview card or another cell shares.
+        let result = await decode.value
+        inFlight[version] = nil
+        guard let result else { return nil }
         cache.setObject(result, forKey: key, cost: result.bytesPerRow * result.height)
-        return result
+        return Task.isCancelled ? nil : result
     }
 
     private func acquire() async -> Bool {
@@ -57,24 +76,26 @@ actor CaptureLibraryThumbnails {
         else { waiters.removeFirst().1.resume(returning: true) }
     }
 
-    private nonisolated static func decode(_ item: CaptureLibraryItem) async -> CGImage? {
+    private nonisolated static func decode(_ url: URL, isVideo: Bool) async -> CGImage? {
         guard !Task.isCancelled else { return nil }
-        if item.isVideo {
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: item.fileURL))
+        if isVideo {
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 640, height: 640)
             return await withTaskCancellationHandler {
                 try? await generator.image(at: .zero).image
             } onCancel: { generator.cancelAllCGImageGeneration() }
         }
-        guard let source = CGImageSourceCreateWithURL(item.fileURL as CFURL,
-            [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 640,
-            kCGImageSourceShouldCacheImmediately: true
-        ] as CFDictionary)
+        return autoreleasepool {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL,
+                [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+            return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 640,
+                kCGImageSourceShouldCacheImmediately: true
+            ] as CFDictionary)
+        }
     }
 }
 

@@ -79,35 +79,35 @@ final class ScreenshotPreviewStack {
         isCollapsed = false
     }
 
-    func add(url: URL) {
+    func add(url: URL) async {
         QuickLookPreviewPresenter.dismiss()
 
         if AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot),
-           let image = ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: 520) {
-            var item = ScreenshotPreviewItem(url: url, previewImage: image)
+           let image = await CaptureLibraryThumbnails.shared.image(at: url) {
+            var item = ScreenshotPreviewItem(url: url, previewImage: NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height)))
             if AfterCaptureActions.isEnabled(.save, for: .screenshot) {
                 item.autoSavedURL = saveToDefaultLocation(from: url)
             }
             prepareForInsertedPreview()
             items.insert(item, at: 0)
-            runAfterCaptureActions(type: .screenshot, url: url, itemID: item.id)
+            await runAfterCaptureActions(type: .screenshot, url: url, itemID: item.id)
             scheduleAutoClose(id: item.id)
         } else {
             if AfterCaptureActions.isEnabled(.save, for: .screenshot) {
                 _ = saveToDefaultLocation(from: url)
             }
-            runAfterCaptureActions(type: .screenshot, url: url, itemID: UUID())
+            await runAfterCaptureActions(type: .screenshot, url: url, itemID: UUID())
         }
     }
 
     /// Runs the non-save after-capture actions (copy / upload / annotate / pin /
     /// open editor). Save is handled by the caller so it can track the
     /// auto-saved URL on the preview item.
-    private func runAfterCaptureActions(type: AfterCaptureType, url: URL, itemID: UUID) {
+    private func runAfterCaptureActions(type: AfterCaptureType, url: URL, itemID: UUID) async {
         if AfterCaptureActions.isEnabled(.copy, for: type) {
             switch type {
             case .screenshot:
-                _ = copyURLToClipboard(url)
+                _ = await copyURLToClipboard(url)
             case .recording:
                 Task { _ = await copyVideoURLToClipboard(url, itemID: itemID) }
             }
@@ -155,10 +155,11 @@ final class ScreenshotPreviewStack {
         }
     }
 
-    func previewExistingImage(url: URL) {
-        guard let image = ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: 520) else {
+    func previewExistingImage(url: URL) async {
+        guard let thumbnail = await CaptureLibraryThumbnails.shared.image(at: url) else {
             return
         }
+        let image = NSImage(cgImage: thumbnail, size: CGSize(width: thumbnail.width, height: thumbnail.height))
 
         QuickLookPreviewPresenter.dismiss()
 
@@ -207,7 +208,7 @@ final class ScreenshotPreviewStack {
             if AfterCaptureActions.isEnabled(.save, for: .recording) {
                 Task { _ = await saveVideoToDefaultLocation(from: url, itemID: nil) }
             }
-            runAfterCaptureActions(type: .recording, url: url, itemID: UUID())
+            Task { await runAfterCaptureActions(type: .recording, url: url, itemID: UUID()) }
             return
         }
 
@@ -231,7 +232,7 @@ final class ScreenshotPreviewStack {
 
         prepareForInsertedPreview()
         items.insert(item, at: 0)
-        runAfterCaptureActions(type: .recording, url: url, itemID: itemID)
+        Task { await runAfterCaptureActions(type: .recording, url: url, itemID: itemID) }
         scheduleAutoClose(id: itemID)
 
         Task {
@@ -397,8 +398,10 @@ final class ScreenshotPreviewStack {
 
         switch item.kind {
         case .image:
-            guard copyURLToClipboard(item.url) else { return }
-            dismiss(id: id)
+            Task {
+                guard await copyURLToClipboard(item.url) else { return }
+                dismiss(id: id)
+            }
         case .video:
             // Flattening can take a moment, so the card stays up showing
             // progress and only dismisses once the copy actually happened.
@@ -433,7 +436,7 @@ final class ScreenshotPreviewStack {
 
                 compressionTasks[id] = nil
                 compressingItemIDs.remove(id)
-                insertCompressedPreview(sourceID: id, result: result)
+                await insertCompressedPreview(sourceID: id, result: result)
             } catch is CancellationError {
                 compressionTasks[id] = nil
                 compressingItemIDs.remove(id)
@@ -445,10 +448,11 @@ final class ScreenshotPreviewStack {
         }
     }
 
-    private func insertCompressedPreview(sourceID: ScreenshotPreviewItem.ID, result: ScreenshotCompressionResult) {
-        guard let image = ScreenshotImageLoader.downsampledImage(at: result.outputURL, maxPixelSize: 520) else {
+    private func insertCompressedPreview(sourceID: ScreenshotPreviewItem.ID, result: ScreenshotCompressionResult) async {
+        guard let thumbnail = await CaptureLibraryThumbnails.shared.image(at: result.outputURL), !Task.isCancelled else {
             return
         }
+        let image = NSImage(cgImage: thumbnail, size: CGSize(width: thumbnail.width, height: thumbnail.height))
 
         var compressedItem = ScreenshotPreviewItem(url: result.outputURL, previewImage: image)
         let compressedID = compressedItem.id
@@ -624,10 +628,11 @@ final class ScreenshotPreviewStack {
     /// overwriting the existing auto-saved file so we never leave a stale copy
     /// behind or accumulate duplicates.
     @discardableResult
-    func applyAnnotation(originalURL: URL, historyURL: URL) -> Bool {
-        guard let image = ScreenshotImageLoader.downsampledImage(at: historyURL, maxPixelSize: 520) else {
+    func applyAnnotation(originalURL: URL, historyURL: URL) async -> Bool {
+        guard let thumbnail = await CaptureLibraryThumbnails.shared.image(at: historyURL) else {
             return false
         }
+        let image = NSImage(cgImage: thumbnail, size: CGSize(width: thumbnail.width, height: thumbnail.height))
 
         QuickLookPreviewPresenter.dismiss()
 
@@ -635,12 +640,12 @@ final class ScreenshotPreviewStack {
             CloudUploader.shared.clearUploadState(for: items[index].id)
             items[index].url = historyURL
             items[index].previewImage = image
-            republishLatestVersion(at: index)
+            await republishLatestVersion(at: index)
             return true
         } else {
             prepareForInsertedPreview()
             items.insert(ScreenshotPreviewItem(url: historyURL, previewImage: image), at: 0)
-            republishLatestVersion(at: 0)
+            await republishLatestVersion(at: 0)
             return false
         }
     }
@@ -649,7 +654,7 @@ final class ScreenshotPreviewStack {
     /// overwrites an existing exported file in place. Auto Save controls whether
     /// a new export is created, not whether an earlier manual/automatic export
     /// should stay synchronized with the latest edit.
-    private func republishLatestVersion(at index: Int) {
+    private func republishLatestVersion(at index: Int) async {
         guard items.indices.contains(index) else { return }
         let item = items[index]
 
@@ -664,7 +669,7 @@ final class ScreenshotPreviewStack {
         }
 
         if ScreendropPreferences.autoCopy {
-            _ = copyURLToClipboard(item.url)
+            _ = await copyURLToClipboard(item.url)
         }
     }
 
@@ -820,9 +825,9 @@ final class ScreenshotPreviewStack {
         compressionResultBadges.removeAll()
     }
 
-    private func copyURLToClipboard(_ url: URL) -> Bool {
+    private func copyURLToClipboard(_ url: URL) async -> Bool {
         do {
-            try ScreenshotFileActions.copyImageToClipboard(from: url)
+            try await ScreenshotFileActions.copyImageToClipboard(from: url)
             return true
         } catch {
             print("Failed to copy screenshot: \(error)")

@@ -166,15 +166,15 @@ private struct PinnedScreenshotView: View {
     }
 
     private func copy() {
-        do {
-            try ScreenshotFileActions.copyPNGToClipboard(from: url)
-            withAnimation { didCopy = true }
-            Task {
+        Task {
+            do {
+                try await ScreenshotFileActions.copyPNGToClipboard(from: url)
+                withAnimation { didCopy = true }
                 try? await Task.sleep(for: .seconds(1.5))
                 withAnimation { didCopy = false }
+            } catch {
+                print("Failed to copy pinned screenshot: \(error)")
             }
-        } catch {
-            print("Failed to copy pinned screenshot: \(error)")
         }
     }
 

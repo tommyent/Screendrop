@@ -302,7 +302,7 @@ enum ScreenshotExportFormat: String, CaseIterable, Identifiable {
 }
 
 enum ScreenshotFileActions {
-    static func copyImageToClipboard(from url: URL) throws {
+    static func copyImageToClipboard(from url: URL) async throws {
         let contentType = UTType(filenameExtension: url.pathExtension)
         let dataType: NSPasteboard.PasteboardType = if contentType?.conforms(to: .jpeg) == true {
             NSPasteboard.PasteboardType(UTType.jpeg.identifier)
@@ -310,35 +310,19 @@ enum ScreenshotFileActions {
             .png
         }
 
-        try copyImageToClipboard(from: url, dataType: dataType)
+        try await copyImageToClipboard(from: url, dataType: dataType)
     }
 
-    static func copyPNGToClipboard(from url: URL) throws {
-        try copyImageToClipboard(from: url, dataType: .png)
+    static func copyPNGToClipboard(from url: URL) async throws {
+        try await copyImageToClipboard(from: url, dataType: .png)
     }
 
-    private static func copyImageToClipboard(from url: URL, dataType: NSPasteboard.PasteboardType) throws {
-        let imageData = try Data(contentsOf: url, options: .mappedIfSafe)
+    private static func copyImageToClipboard(from url: URL, dataType: NSPasteboard.PasteboardType) async throws {
+        let item = try await ScreenshotClipboardImage.item(from: url, dataType: dataType)
         let pasteboard = NSPasteboard.general
+        // Publication stays on MainActor, without suspension between clear and
+        // write, so colour, text and link copies cannot interleave with it.
         pasteboard.clearContents()
-
-        // Write several representations on a single pasteboard item so that
-        // every kind of paste target can find a flavor it understands:
-        //
-        // - `.fileURL`: terminals and apps that "paste a file" (e.g. opencode's
-        //   terminal, editors, Slack) read the file reference from disk.
-        // - image data / `.tiff`: rich-text and web targets (Gmail, Notes, Mail,
-        //   image editors) read raw pixels directly.
-        //
-        // Only providing image data is why pasting worked in Gmail but not in
-        // terminal apps - those read the file URL flavor instead.
-        let item = NSPasteboardItem()
-        item.setString(url.absoluteString, forType: .fileURL)
-        item.setData(imageData, forType: dataType)
-        if let tiffData = NSBitmapImageRep(data: imageData)?.tiffRepresentation
-            ?? NSImage(data: imageData)?.tiffRepresentation {
-            item.setData(tiffData, forType: .tiff)
-        }
 
         // The pasteboard can refuse a write; callers treat a return as copied.
         guard pasteboard.writeObjects([item]) else {

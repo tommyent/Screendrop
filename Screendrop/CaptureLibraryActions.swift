@@ -31,7 +31,7 @@ extension CaptureLibraryModel {
             run("Copying \(selected.count == 1 ? "capture" : "captures")…") {
                 StudioProjectRegistry.shared.flushDrafts()
                 if selected.count == 1, let item = selected.first, !item.isVideo {
-                    try ScreenshotFileActions.copyImageToClipboard(from: item.fileURL)
+                    try await ScreenshotFileActions.copyImageToClipboard(from: item.fileURL)
                 } else {
                     var urls: [URL] = []
                     for item in selected {

@@ -27,7 +27,7 @@ final class CaptureCoordinator {
     /// Set by the App to open the preview window. Returns the URL the
     /// capture was imported to in history, so awaitable capture callers
     /// (App Intents) can hand the finished file to their result.
-    var onShowPreview: ((URL, CGDirectDisplayID?) -> URL)?
+    var onShowPreview: ((URL, CGDirectDisplayID?) async -> URL)?
     
     private init() {}
     
@@ -102,7 +102,7 @@ final class CaptureCoordinator {
             displayID: displayID
         ) else { return nil }
         guard let url = await ScreenshotManager.shared.captureFullscreen(displayID: displayID) else { return nil }
-        return finishCapture(url: url, displayID: displayID)
+        return await finishCapture(url: url, displayID: displayID)
     }
 
     @discardableResult
@@ -114,7 +114,7 @@ final class CaptureCoordinator {
             delaySeconds: ScreendropPreferences.captureDelaySeconds
         ) else { return nil }
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
-        return finishCapture(url: url, displayID: displayID)
+        return await finishCapture(url: url, displayID: displayID)
     }
 
     @discardableResult
@@ -125,18 +125,18 @@ final class CaptureCoordinator {
             delaySeconds: ScreendropPreferences.captureDelaySeconds
         ) else { return nil }
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
-        return finishCapture(url: url, displayID: displayID)
+        return await finishCapture(url: url, displayID: displayID)
     }
 
     /// No self-timer: the capture runs for as long as the user scrolls.
     @discardableResult
     private func performCaptureScrolling() async -> URL? {
         guard let capture = await ScrollingCapturePresenter.shared.run() else { return nil }
-        guard let url = ScreenshotManager.shared.writeCapture(capture.image, scale: capture.scale) else {
+        guard let url = await ScreenshotManager.shared.writeCapture(capture.image, scale: capture.scale) else {
             FailureAlert.present(message: "Scrolling capture couldn't be saved", error: CocoaError(.fileWriteUnknown))
             return nil
         }
-        return finishCapture(url: url, displayID: capture.displayID)
+        return await finishCapture(url: url, displayID: capture.displayID)
     }
 
     /// Capture Text is the odd one out: it recognizes the text inside the drawn
@@ -229,11 +229,11 @@ final class CaptureCoordinator {
 
     @discardableResult
     @MainActor
-    private func finishCapture(url: URL, displayID: CGDirectDisplayID?) -> URL {
+    private func finishCapture(url: URL, displayID: CGDirectDisplayID?) async -> URL {
         if ScreendropPreferences.playSounds {
             CaptureFeedbackSound.play()
         }
-        let historyURL = showPreview(url: url, displayID: displayID)
+        let historyURL = await showPreview(url: url, displayID: displayID)
         // History keeps its own copy, and the preview card, editor, copy, save,
         // upload, pin and Shortcuts all get that copy, so the temp original is
         // no longer used. Keep it only when the import failed and it is still
@@ -245,17 +245,17 @@ final class CaptureCoordinator {
     }
 
     @discardableResult
-    private func showPreview(url: URL, displayID: CGDirectDisplayID?) -> URL {
+    private func showPreview(url: URL, displayID: CGDirectDisplayID?) async -> URL {
         guard let onShowPreview else {
             let historyURL = ScreenshotHistoryStore.shared.importScreenshot(from: url)
-            ScreenshotPreviewStack.shared.add(url: historyURL)
+            await ScreenshotPreviewStack.shared.add(url: historyURL)
             if AfterCaptureActions.isEnabled(.showOverlay, for: .screenshot) {
                 PreviewPanelPresenter.shared.show(displayID: displayID)
             }
             return historyURL
         }
 
-        return onShowPreview(url, displayID)
+        return await onShowPreview(url, displayID)
     }
 }
 
