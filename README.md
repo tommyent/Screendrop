@@ -443,4 +443,4 @@ It creates a DMG, signs the update for Sparkle, creates the GitHub release, upda
 
 ## License
 
-Screendrop is dedicated to the public domain under [CC0 1.0 Universal](LICENSE).
+This fork's own changes are licensed under the [MIT License](LICENSE). It is based on [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed, which is dedicated to the public domain under [CC0 1.0 Universal](LICENSE-CC0); see [NOTICE](NOTICE).

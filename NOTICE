@@ -1,0 +1,11 @@
+This project is a fork of Screendrop by Fayaz Ahmed
+(https://github.com/fayazara/Screendrop), which its author dedicated to the
+public domain under CC0 1.0 Universal. The original dedication is kept in
+LICENSE-CC0. Code that came from upstream remains available under CC0.
+
+Changes and additions made in this fork are licensed under the MIT License in
+LICENSE.
+
+Third-party packages keep their own licences, including Sparkle
+(https://github.com/sparkle-project/Sparkle) and DockProgress
+(https://github.com/sindresorhus/DockProgress).
