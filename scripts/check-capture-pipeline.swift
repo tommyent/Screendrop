@@ -1,5 +1,5 @@
 // swiftc -parse-as-library -default-isolation MainActor scripts/check-capture-pipeline.swift \
-//   Screendrop/{ScreenshotManager,ScreenshotClipboardImage,CaptureLibraryThumbnails,CaptureThumbnailDiskCache}.swift -o /tmp/check-capture-pipeline
+//   Screendrop/{ScreenshotManager,ScreenshotFileNaming,ScreenshotClipboardImage,CaptureLibraryThumbnails,CaptureThumbnailDiskCache}.swift -o /tmp/check-capture-pipeline
 import AppKit
 import ImageIO
 
@@ -7,9 +7,6 @@ import ImageIO
 // screen capture, preferences, Library or general pasteboard access.
 enum NotchBarTrimmer {
     static func trimmingEmptyMenuBar(_ image: CGImage, displayID: CGDirectDisplayID) -> CGImage { image }
-}
-enum ScreenshotFileNaming {
-    static func fileName(extension ext: String) -> String { "check.\(ext)" }
 }
 nonisolated struct CaptureLibraryItem: Sendable {
     let fileURL: URL
