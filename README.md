@@ -1,4 +1,11 @@
-# Screendrop
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/readme-header-dark@2x.png">
+    <img alt="Sukusho" src="docs/brand/readme-header-light@2x.png" width="640" height="160">
+  </picture>
+</h1>
+
+Sukusho is a fork of [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed. The download and release links below are Screendrop's own.
 
 A beautiful screenshot + screen recording + Loom alternative - all native, self hostable and free.
 

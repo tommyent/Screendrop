@@ -58,14 +58,14 @@ diagnosis.
 
 4. **Kill every running instance of the app, across all schemes** - not just
    the one being launched. Different schemes can produce different
-   executable names (`Screendrop`, `Screendrop Dev`), and leaving an old
+   executable names (`Sukusho`, `Sukusho Dev`), and leaving an old
    instance from another scheme running is confusing (duplicate menu bar
    icons, port/state conflicts, etc). Kill all known variants unconditionally
    before relaunching:
 
 ```bash
-killall Screendrop 2>/dev/null
-killall "Screendrop Dev" 2>/dev/null
+killall Sukusho 2>/dev/null
+killall "Sukusho Dev" 2>/dev/null
 ```
 
 (It's fine if these error because that variant wasn't running. If a new
