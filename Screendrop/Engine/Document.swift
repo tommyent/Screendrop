@@ -332,8 +332,13 @@ enum AnnoShapeGeometry {
             case .ellipse:
                 return Ellipse2d(width: props.w, height: props.h, isFilled: isFilled)
             }
-        case .arrow:
-            return arrowGeometry(shape, in: document)
+        case let .arrow(props):
+            let body = arrowGeometry(shape, in: document)
+            guard let info = document.arrowInfo(shape.id),
+                  let label = ArrowLabel.layout(props, midpoint: info.middle, rotation: shape.rotation) else { return body }
+            let rect = TextMeasure.outerRect(label.text)
+            let box = Rectangle2d(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height, isFilled: true)
+            return Group2d(children: [body, box.transformed(label.transform)])
         case let .text(props):
             // Includes a box's padding, so the box selects, hit-tests and binds arrows as a whole.
             let rect = TextMeasure.outerRect(props)

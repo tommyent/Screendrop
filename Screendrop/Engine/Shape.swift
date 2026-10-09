@@ -86,6 +86,7 @@ struct ArrowProps: Codable, Equatable {
     var bend: Double = 0
     var arrowheadStart: Arrowhead = .none
     var arrowheadEnd: Arrowhead = .arrow
+    var label: String? = nil
     var swatch: AnnotationSwatch = .red
     var strokeWidth: Double = 8
     var dash: DashStyle = .solid
