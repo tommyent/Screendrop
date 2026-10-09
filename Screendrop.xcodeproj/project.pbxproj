@@ -58,6 +58,7 @@
 		AA6100000000000000000092 /* Screendrop/CloudPreviewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */; };
 		AA6100000000000000000093 /* Screendrop/CaptureTagField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */; };
 		AA6100000000000000000094 /* Screendrop/CaptureTagStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */; };
+		AA6200000000000000000001 /* Screendrop/ScreenshotHistoryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -112,6 +113,7 @@
 		AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CloudPreviewCache.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CaptureTagField.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CaptureTagStyles.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScreenshotHistoryMetadata.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -168,6 +170,7 @@
 		AA6100000000000000000003 /* Tested logic */ = {
 			isa = PBXGroup;
 			children = (
+				AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */,
 				AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */,
 				AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */,
 				AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */,
@@ -327,6 +330,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA6200000000000000000001 /* Screendrop/ScreenshotHistoryMetadata.swift in Sources */,
 				AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */,
 				AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */,
 				AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */,
