@@ -316,12 +316,6 @@ nonisolated private final class CameraCaptureEngine: NSObject, AVCaptureVideoDat
         await writer.cancel()
     }
 
-    /// Tears the session down without ever having written a movie - the
-    /// warm preview was toggled off or dismissed before recording began.
-    func stopSessionOnly() async {
-        await stopSession()
-    }
-
     func makePreviewLayer() -> AVCaptureVideoPreviewLayer {
         let layer = AVCaptureVideoPreviewLayer(session: session)
         if let connection = layer.connection, connection.isVideoMirroringSupported {

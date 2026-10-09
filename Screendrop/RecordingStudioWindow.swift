@@ -1799,7 +1799,6 @@ private struct StudioTimelineEditor: View {
                 model.seek(to: time)
             },
             onHover: { time in
-                model.timelineHoverTime = time
                 model.hoverPreviewTime = time
             },
             onSplit: { model.splitClip(at: $0) },

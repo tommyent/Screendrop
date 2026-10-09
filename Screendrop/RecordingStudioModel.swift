@@ -160,7 +160,6 @@ final class RecordingStudioModel {
     var selectedCueID: UUID?
     private(set) var clipTimeline = RecordingClipTimeline(segments: [])
     var selectedClipID: UUID?
-    var timelineHoverTime: TimeInterval?
     /// Storyboard tiles for the clip lane, sampled on demand at whatever
     /// density the lane's current zoom needs.
     let timelineThumbnails = RecordingTimelineThumbnailStore()
@@ -797,7 +796,6 @@ final class RecordingStudioModel {
 
         pause()
         hoverPreviewTime = nil
-        timelineHoverTime = nil
         clipTimeline = next
         duration = next.duration
         selectedClipID = selectedID.flatMap { id in

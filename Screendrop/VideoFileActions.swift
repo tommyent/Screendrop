@@ -79,11 +79,6 @@ extension VideoExportContainer {
 }
 
 enum VideoFileActions {
-    /// Recordings are delivered in the container capture already produces,
-    /// so the default save stays a copy rather than a rewrite. Studio's
-    /// export inspector overrides this per project.
-    static var exportContentType: UTType { VideoExportContainer.default.contentType }
-
     static func copyToClipboard(from url: URL) throws {
         try copyFilesToClipboard(from: [url])
     }
