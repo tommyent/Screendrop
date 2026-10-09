@@ -5,7 +5,12 @@
   </picture>
 </h1>
 
-Sukusho is a native macOS app for screenshots, scrolling captures and screen recordings, with an editor, a Library for everything you capture, and share links served from your own Cloudflare Worker. It is a fork of [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed.
+Sukusho is a native macOS app for screenshots, scrolling captures and screen recordings, with an editor, a Library for everything you capture, and share links served from your own Cloudflare Worker.
+
+Sukusho started as a fork of [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed, and thanks go to that project for the foundation. It has since grown into a separate project: a heavily modified app with its own features, its own name and app identity, and its own Cloudflare Worker for share pages. The two apps install side by side and don't share updates.
+
+> [!IMPORTANT]
+> Sukusho is not affiliated with or supported by Screendrop or its author. Please report Sukusho problems here, not to the Screendrop project.
 
 > [!NOTE]
 > There are no releases yet. To use Sukusho, [build it from source](#building-from-source). It is under active development, so expect rough edges.
