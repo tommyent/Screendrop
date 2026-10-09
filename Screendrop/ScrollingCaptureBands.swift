@@ -38,6 +38,8 @@ nonisolated struct ScrollingCaptureBandCompositor {
     private let width: Int
     private let height: Int
     private let contentRows: Range<Int>
+    private var ownerContentRows: Range<Int>
+    private let matchingColumns: [Range<Int>]
     private let padding = 2
 
     init?(initial: ScrollingCapturePlacement, selection: ScrollingCaptureOutputRect,
@@ -46,8 +48,8 @@ nonisolated struct ScrollingCaptureBandCompositor {
               initial.contentRows.upperBound <= initial.frame.height,
               !selection.columns.isEmpty, !selection.rows.isEmpty,
               selection.columns.lowerBound >= 0, selection.columns.upperBound <= initial.frame.width,
-              selection.rows.lowerBound >= initial.contentRows.lowerBound,
-              selection.rows.upperBound <= initial.contentRows.upperBound,
+              selection.rows.lowerBound >= 0,
+              selection.rows.upperBound <= initial.frame.height,
               maximumOutputRows >= selection.rows.count,
               maximumBufferedBytes >= initial.frame.byteCount * 2 else { return nil }
         self.selection = selection
@@ -56,17 +58,28 @@ nonisolated struct ScrollingCaptureBandCompositor {
         width = initial.frame.width
         height = initial.frame.height
         contentRows = initial.contentRows
+        ownerContentRows = initial.contentRows
+        matchingColumns = initial.frame.matchingColumns
         guard ingest(initial) == nil else { return nil }
     }
 
     var bufferedBytes: Int {
         cache.reduce(0) { $0 + $1.frame.byteCount }
-            + bands.reduce(0) { $0 + ($1.owner?.pixels.count ?? 0) * 4 }
+            + bands.filter { !$0.locked }.reduce(0) { $0 + ($1.owner?.pixels.count ?? 0) * 4 }
     }
 
     mutating func add(_ placement: ScrollingCapturePlacement) -> Event {
         add([placement])
     }
+
+    mutating func resume() { isLost = false }
+
+    mutating func narrowOwnerSourcingToSelection() {
+        let lower = max(contentRows.lowerBound, selection.rows.lowerBound)
+        ownerContentRows = lower..<max(lower, min(contentRows.upperBound, selection.rows.upperBound))
+    }
+
+    var outputHeight: Int { max(0, lastVerifiedOffset + selection.rows.count) }
 
     /// Buffered samples resolve together; an earlier sample must not commit past
     /// the selected bottom of the batch's final (possibly scrolled-back) frame.
@@ -97,12 +110,14 @@ nonisolated struct ScrollingCaptureBandCompositor {
         let end = lastVerifiedOffset + selection.rows.upperBound
         guard end > start, end - start <= maximumOutputRows else { return nil }
         let confirmedEnd = start + confirmedHeight
-        let tail = cache.last { $0.pageRows.lowerBound <= confirmedEnd && $0.pageRows.upperBound >= end }
+        let tail = cache.last { $0.offset <= min(confirmedEnd, end) && $0.offset + height >= end }
         guard confirmedEnd >= end || tail != nil else { return nil }
         var output: [UInt32] = []
         output.reserveCapacity((end - start) * selection.columns.count)
         for y in start..<end {
-            if let band = bands.first(where: { $0.rows.contains(y) }), let owner = band.owner {
+            if y >= lastVerifiedOffset + contentRows.upperBound, let last = cache.last {
+                output.append(contentsOf: cropRow(last.frame, at: y - last.offset))
+            } else if let band = bands.first(where: { $0.rows.contains(y) }), let owner = band.owner {
                 let index = (y - owner.rows.lowerBound) * selection.columns.count
                 output.append(contentsOf: owner.pixels[index..<(index + selection.columns.count)])
             } else if y >= confirmedEnd, let tail {
@@ -117,14 +132,16 @@ nonisolated struct ScrollingCaptureBandCompositor {
     /// Only confirmed selection pixels are suitable for a recovery target.
     func recoveryRows(_ count: Int) -> ScrollingCaptureRaster? {
         guard count > 0, confirmedHeight > 0, let image = finish() else { return nil }
-        let start = max(0, confirmedHeight - count)
-        return ScrollingCaptureRaster(width: image.width, height: confirmedHeight - start,
-            pixels: Array(image.pixels[(start * image.width)..<(confirmedHeight * image.width)]))
+        let end = min(confirmedHeight, image.height)
+        let start = max(0, end - count)
+        return ScrollingCaptureRaster(width: image.width, height: end - start,
+            pixels: Array(image.pixels[(start * image.width)..<(end * image.width)]))
     }
 
     private mutating func ingest(_ placement: ScrollingCapturePlacement,
                                  confirmingThrough ceiling: Int? = nil, validateFinish: Bool = true) -> Failure? {
         guard placement.frame.width == width, placement.frame.height == height,
+              placement.frame.matchingColumns == matchingColumns,
               placement.contentRows == contentRows,
               placement.motionRows.isSubset(of: Set(contentRows)),
               placement.stableRows.isSubset(of: Set(contentRows)),
@@ -132,12 +149,17 @@ nonisolated struct ScrollingCaptureBandCompositor {
               cache.last.map({ placement.index > $0.index }) ?? true else { return .invalidPlacement }
         let start = selection.rows.lowerBound
         let end = placement.offset + selection.rows.upperBound
-        guard end >= start + confirmedHeight, end > start,
+        guard end > start,
               end - start <= maximumOutputRows else { return .outputLimit }
+        if cache.isEmpty {
+            for y in selection.rows where y < contentRows.lowerBound {
+                rows[y] = cropRow(placement.frame, at: y)
+            }
+        }
         if let previous = cache.last, previous.offset != placement.offset {
             for y in contentRows where !placement.frame.isBlank(y)
                 && previous.frame.sameRow(y, as: placement.frame, at: y) {
-                if let old = rows[placement.offset + y], old != cropRow(placement.frame, at: y) {
+                if let old = rows[placement.offset + y], !sameSelectedRow(old, as: placement.frame, at: y) {
                     return .pinnedOverlay
                 }
             }
@@ -148,7 +170,7 @@ nonisolated struct ScrollingCaptureBandCompositor {
             let pageY = placement.offset + y
             guard pageY >= start else { continue }
             let row = cropRow(placement.frame, at: y)
-            if let old = rows[pageY], old != row { changed.insert(pageY) }
+            if let old = rows[pageY], !sameSelectedRow(old, as: placement.frame, at: y) { changed.insert(pageY) }
             else if rows[pageY] == nil { rows[pageY] = row }
         }
         cache.append(placement)
@@ -174,7 +196,7 @@ nonisolated struct ScrollingCaptureBandCompositor {
             if let previous = merged.last {
                 let union = previous.lowerBound..<max(previous.upperBound, range.upperBound)
                 // A complete owner, not a guessed semantic object boundary, permits merging.
-                if cache.contains(where: { contains($0.pageRows, union) }) || previous.overlaps(range) {
+                if cache.contains(where: { contains(ownerRows($0), union) }) || previous.overlaps(range) {
                     merged[merged.count - 1] = union
                     continue
                 }
@@ -187,25 +209,24 @@ nonisolated struct ScrollingCaptureBandCompositor {
         for range in merged {
             // Before any advance, Done can always save the selected initial frame,
             // even when moving content reaches both edges and has no whole owner.
-            guard range.count <= contentRows.count || cache.count == 1 else { return .noCompleteOwner }
+            guard range.count <= ownerContentRows.count || cache.count == 1 else { return .noCompleteOwner }
             let previousOwner = bands.first { contains($0.rows, range) }?.owner
             var owner = previousOwner
-            if let source = cache.last(where: { contains($0.pageRows, range) }) {
-                owner = Owner(index: source.index, rows: range, sourcePageRows: source.pageRows,
+            if let source = cache.last(where: { contains(ownerRows($0), range) }) {
+                owner = Owner(index: source.index, rows: range, sourcePageRows: ownerRows(source),
                     pixels: range.flatMap { cropRow(source.frame, at: $0 - source.offset) })
             }
-            let leaving = range.lowerBound < placement.pageRows.lowerBound
+            let leaving = range.lowerBound < ownerRows(placement).lowerBound
             guard !leaving || owner != nil else { return .noCompleteOwner }
             nextBands.append(Band(rows: range, owner: owner, locked: leaving))
         }
         bands = nextBands.sorted { $0.rows.lowerBound < $1.rows.lowerBound }
         while cache.count > 1, bufferedBytes > maximumBufferedBytes { cache.removeFirst() }
         guard bufferedBytes <= maximumBufferedBytes else { return .noCompleteOwner }
-        var boundary = min(end, max(start + confirmedHeight, placement.pageRows.lowerBound))
+        var boundary = min(end, placement.pageRows.lowerBound)
         if let ceiling { boundary = min(boundary, ceiling) }
         for band in bands where !band.locked { boundary = min(boundary, band.rows.lowerBound) }
-        guard boundary >= start + confirmedHeight else { return .noCompleteOwner }
-        confirmedHeight = boundary - start
+        confirmedHeight = max(confirmedHeight, boundary - start)
         lastVerifiedOffset = placement.offset
         guard !validateFinish || finish() != nil else { return .missingCoverage }
         return nil
@@ -214,9 +235,21 @@ nonisolated struct ScrollingCaptureBandCompositor {
     private func contains(_ outer: Range<Int>, _ inner: Range<Int>) -> Bool {
         outer.lowerBound <= inner.lowerBound && outer.upperBound >= inner.upperBound
     }
+    private func ownerRows(_ placement: ScrollingCapturePlacement) -> Range<Int> {
+        (placement.offset + ownerContentRows.lowerBound)..<(placement.offset + ownerContentRows.upperBound)
+    }
     private func cropRow(_ frame: ScrollingCaptureRaster, at y: Int) -> [UInt32] {
         let start = y * width
         return Array(frame.pixels[(start + selection.columns.lowerBound)..<(start + selection.columns.upperBound)])
+    }
+    private func sameSelectedRow(_ old: [UInt32], as frame: ScrollingCaptureRaster, at y: Int) -> Bool {
+        matchingColumns.allSatisfy { columns in
+            let lower = max(columns.lowerBound, selection.columns.lowerBound)
+            let upper = min(columns.upperBound, selection.columns.upperBound)
+            guard lower < upper else { return true }
+            return old[(lower - selection.columns.lowerBound)..<(upper - selection.columns.lowerBound)]
+                .elementsEqual(frame.pixels[(y * width + lower)..<(y * width + upper)])
+        }
     }
     private func runs(_ values: Set<Int>) -> [Range<Int>] {
         var result: [Range<Int>] = []

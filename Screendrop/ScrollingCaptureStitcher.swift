@@ -31,6 +31,15 @@ struct ScrollingCaptureSession {
 /// The remaining columns must agree on an unambiguous offset. A zero retry
 /// uses the columns proven to move with the last accepted scroll.
 actor ScrollingCaptureStitcher {
+    struct Registration: Sendable {
+        let offset: Int
+        let rows: Range<Int>
+        let isStatic: Bool
+        let hasOnlyMinorRedraw: Bool
+        let matchingColumns: [Range<Int>]
+    }
+    private(set) var registration: Registration?
+    private(set) var proposedViewport: Range<Int>?
     enum Update: Sendable {
         /// Lined up, but nothing new: the content hasn't moved, or moved back
         /// up while still overlapping the last accepted frame.
@@ -118,6 +127,8 @@ actor ScrollingCaptureStitcher {
     }
 
     func add(_ frame: CGImage) -> Update {
+        registration = nil
+        proposedViewport = nil
         guard frame.width == width, frame.height == height,
               let pixels = Self.pixels(of: frame, colorSpace: colorSpace) else {
             resetMotionDetection()
@@ -125,13 +136,19 @@ actor ScrollingCaptureStitcher {
         }
         var refused = false
         defer {
-            if refused { observeLocalChange(pixels) }
+            if refused {
+                registration = nil
+                observeLocalChange(pixels)
+            }
             else { resetMotionDetection() }
         }
         let isIdentical = pixels.withUnsafeBytes { new in
             last.withUnsafeBytes { old in memcmp(new.baseAddress!, old.baseAddress!, new.count) == 0 }
         }
         if isIdentical {
+            registration = Registration(offset: stitchedHeight - height,
+                rows: (fixedEdges?.top ?? 0)..<(height - (fixedEdges?.bottom ?? 0)), isStatic: true, hasOnlyMinorRedraw: false,
+                matchingColumns: [0..<hashedWidth])
             return .unchanged
         }
 
@@ -185,6 +202,15 @@ actor ScrollingCaptureStitcher {
         let matchedColumns: [[Range<Int>]]
         switch match {
         case .identical:
+            let band = (fixedEdges?.top ?? 0)..<(height - (fixedEdges?.bottom ?? 0))
+            let checked = (0..<hashedWidth).filter { !isChrome[$0] }
+            let staticPixels = band.allSatisfy { y in checked.allSatisfy { x in
+                let index = (y * width + x) * 4
+                return last[index..<(index + 4)].elementsEqual(pixels[index..<(index + 4)])
+            } }
+            registration = Registration(offset: stitchedHeight - height,
+                rows: band, isStatic: staticPixels, hasOnlyMinorRedraw: false,
+                matchingColumns: Self.stripColumns(hashedWidth: hashedWidth, skipping: isChrome, count: 1).flatMap { $0 })
             return .unchanged
         case .unmatched:
             refused = true
@@ -195,6 +221,29 @@ actor ScrollingCaptureStitcher {
             matchedColumns = lineUpColumns
         }
         let band = edges.top..<(height - edges.bottom)
+        // R7 replaces the held tail from one frame. Changes there cannot mix
+        // committed moments; handoff re-owns that whole still-visible tail.
+        let checkedColumns = (0..<hashedWidth).filter { !isChrome[$0] }
+        let committed = band.lowerBound..<Self.cut(in: band)
+        let isStatic = band.allSatisfy { y in
+            guard band.contains(y + shift) else { return true }
+            guard shift <= 0 || (committed.contains(y) && committed.contains(y + shift)) else { return true }
+            return checkedColumns.allSatisfy { x in
+                let old = ((y + shift) * width + x) * 4, new = (y * width + x) * 4
+                return last[old..<(old + 4)].elementsEqual(pixels[new..<(new + 4)])
+            }
+        }
+        // Compatibility only: this never supplies an offset or relaxes owner equality.
+        let minorRedraw = !isStatic && shift > 0 && band.allSatisfy { y in
+            guard band.contains(y + shift) else { return true }
+            return checkedColumns.allSatisfy { x in
+                let old = ((y + shift) * width + x) * 4, new = (y * width + x) * 4
+                return (0..<4).allSatisfy { abs(Int(last[old + $0]) - Int(pixels[new + $0])) <= 2 }
+            }
+        }
+        registration = Registration(offset: stitchedHeight - height + shift, rows: band, isStatic: isStatic,
+            hasOnlyMinorRedraw: minorRedraw,
+            matchingColumns: Self.stripColumns(hashedWidth: hashedWidth, skipping: isChrome, count: 1).flatMap { $0 })
         // Still in place (a caret blinked), or scrolled back up but still
         // overlapping: nothing new below the last accepted frame yet.
         guard shift > 0 else { return .unchanged }
@@ -309,6 +358,7 @@ actor ScrollingCaptureStitcher {
         guard rows != lastRows else { return .identical }
         let edges = fixedEdges ?? unmovedEdges(from: lastRows, to: rows)
         let band = edges.top..<(height - edges.bottom)
+        proposedViewport = band
         guard band.count > Self.minimumMatchedRows else { return .unmatched }
         if let shift = bestShift(from: lastRows, to: rows, in: band).shift {
             let moving = shift > 0 ? strips.indices.filter { column in

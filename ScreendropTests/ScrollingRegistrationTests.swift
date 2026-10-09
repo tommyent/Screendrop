@@ -29,7 +29,7 @@ import Testing
         _ = buffer.add(F.frame(20), at: 41)
         #expect(buffer.add(F.frame(20), at: 42).state == .appended)
     }
-    @Test("A fixed header/footer is outside registration; shrinking chrome invalidates the sample")
+    @Test("Changed browser chrome outside the viewport never ends capture")
     func headers() throws {
         var buffer = try #require(ScrollingCaptureRegistrationBuffer(
             first: F.frame(0, header: 12, footer: 10), confirmation: F.frame(0, header: 12, footer: 10),
@@ -37,8 +37,9 @@ import Testing
         _ = buffer.add(F.frame(30, header: 12, footer: 10), at: 1)
         #expect(buffer.add(F.frame(30, header: 12, footer: 10), at: 2).state == .appended)
         let changed = buffer.add(F.frame(60, header: 6, footer: 10), at: 3)
-        #expect(changed.state == .lost && changed.failure == .changedChrome)
-        #expect(buffer.frontier == 30)
+        #expect(changed.state == .pending)
+        #expect(buffer.add(F.frame(60, header: 6, footer: 10), at: 4).state == .appended)
+        #expect(buffer.frontier == 60 && !buffer.isLost)
     }
     @Test("Pinned interior zero and lazy relayout never authorize a positive append", arguments: [false, true])
     func contradictoryRows(relayout: Bool) throws {
@@ -125,5 +126,20 @@ import Testing
         #expect(buffer.bufferedBytes <= buffer.maximumBufferedBytes)
         print("WIDER 1600x1000 raster bytes", first.byteCount, "buffer bytes", buffer.bufferedBytes,
               "elapsed", start.duration(to: clock.now))
+    }
+
+    @Test("A settled flick with no overlap shows recovery after one second and can re-register")
+    func missingOverlap() throws {
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(
+            first: F.frame(0), confirmation: F.frame(0), contentRows: 0..<F.height))
+        _ = buffer.add(F.frame(40), at: 1)
+        #expect(buffer.add(F.frame(40), at: 2).state == .appended)
+        _ = buffer.add(F.frame(400), at: 3)
+        #expect(buffer.add(F.frame(400), at: 4).pendingReason == .noOverlap)
+        #expect(buffer.add(F.frame(400), at: 24).failure == .noOverlap)
+        buffer.discardUnresolved()
+        _ = buffer.add(F.frame(40), at: 25)
+        #expect(buffer.add(F.frame(40), at: 26).placements.last?.offset == 40)
+        #expect(!buffer.isLost)
     }
 }

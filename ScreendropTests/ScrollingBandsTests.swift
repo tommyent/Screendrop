@@ -6,6 +6,20 @@ import Testing
     private typealias F = ScrollingReworkFixture
     private let selection = ScrollingCaptureOutputRect(columns: 4..<44, rows: 60..<140)
 
+    @Test("Changed recovery chrome narrows new owners and preserves Done on incomplete video")
+    func narrowedOwners() throws {
+        let video = 100..<220
+        var output = try #require(ScrollingCaptureBandCompositor(initial: F.placement(0, index: 0, video: video), selection: selection))
+        for (index, offset) in [20, 40].enumerated() {
+            #expect(output.add(F.placement(offset, index: index + 1, phase: index + 2, video: video)).state != .lost)
+        }
+        let before = try #require(output.finish())
+        output.narrowOwnerSourcingToSelection()
+        let result = output.add(F.placement(60, index: 3, phase: 4, video: video))
+        #expect(result.state == .lost && result.failure == .noCompleteOwner)
+        #expect(output.finish() == before)
+    }
+
     @Test("A whole video has one source frame; every static/output pixel and trim is exact")
     func wholeVideo() throws {
         let video = 100..<220
@@ -254,5 +268,36 @@ import Testing
         #expect(before.height == 200 && before.width == 40 && output.confirmedHeight == 0)
         #expect(output.add(F.placement(20, index: 1, phase: 2, video: 0..<400)).state == .lost)
         #expect(output.finish() == before)
+    }
+
+    @Test("Backscroll above confirmed rows trims Done and forward capture resumes")
+    func reversePastConfirmed() throws {
+        let rect = ScrollingCaptureOutputRect(columns: 4..<44, rows: 16..<48)
+        var output = try #require(ScrollingCaptureBandCompositor(initial: F.placement(0, index: 0), selection: rect))
+        for (index, offset) in [20, 40, 60, 40, 20, 5, 80].enumerated() {
+            #expect(output.add(F.placement(offset, index: index + 1)).state != .lost)
+            let image = try #require(output.finish())
+            #expect(image.height == offset + 32 && image.height == output.outputHeight)
+            for y in 0..<image.height { for x in 0..<image.width {
+                #expect(image.pixels[y * image.width + x] == F.pixel(x: x + 4, pageY: y + 16))
+            } }
+            if output.confirmedHeight > 0 { #expect(output.recoveryRows(20) != nil) }
+        }
+        #expect(!output.isLost && output.outputHeight == 112)
+    }
+
+    @Test("Selected chrome appears once, while the caption equals Done's complete height")
+    func selectedChrome() throws {
+        var output = try #require(ScrollingCaptureBandCompositor(
+            initial: F.placement(0, index: 0, header: 12, footer: 10),
+            selection: ScrollingCaptureOutputRect(columns: 0..<48, rows: 0..<200)))
+        #expect(output.outputHeight == 200 && output.confirmedHeight < 200)
+        #expect(output.add(F.placement(20, index: 1, header: 12, footer: 10)).state != .lost)
+        let image = try #require(output.finish())
+        #expect(image.height == 220 && output.outputHeight == 220)
+        for y in 0..<image.height {
+            let pageY = y < 12 ? y + 50_000 : y >= 210 ? y - 20 + 50_000 : y
+            #expect(image.row(y).elementsEqual((0..<48).map { F.pixel(x: $0, pageY: pageY) }))
+        }
     }
 }
