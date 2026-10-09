@@ -422,16 +422,6 @@ extension PointerCaptureFile {
         ) ?? []
         isSanitized = try container.decodeIfPresent(Bool.self, forKey: .isSanitized) ?? false
     }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(formatVersion, forKey: .formatVersion)
-        try container.encode(travel, forKey: .travel)
-        try container.encode(presses, forKey: .presses)
-        try container.encode(keystrokes, forKey: .keystrokes)
-        try container.encode(artwork, forKey: .artwork)
-        try container.encode(isSanitized, forKey: .isSanitized)
-    }
 }
 
 extension PointerTravelSample {
@@ -453,15 +443,6 @@ extension PointerTravelSample {
             forKey: .kind
         ) ?? .move
         artworkID = try container.decodeIfPresent(String.self, forKey: .artworkID)
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(time, forKey: .time)
-        try container.encode(x, forKey: .x)
-        try container.encode(y, forKey: .y)
-        try container.encode(kind, forKey: .kind)
-        try container.encodeIfPresent(artworkID, forKey: .artworkID)
     }
 }
 
