@@ -23,6 +23,8 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     let onApplyCrop: () -> Void
     let onCancelCrop: () -> Void
     let isCropping: () -> Bool
+    /// Tab: copies the colour under the pointer; false when it isn't over the image.
+    let onCopyColor: () -> Bool
 
     func makeNSView(context: Context) -> AnnotationKeyCommandHandlerView {
         let view = AnnotationKeyCommandHandlerView()
@@ -51,6 +53,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.onApplyCrop = onApplyCrop
         view.onCancelCrop = onCancelCrop
         view.isCropping = isCropping
+        view.onCopyColor = onCopyColor
     }
 }
 
@@ -71,6 +74,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var onApplyCrop: (() -> Void)?
     var onCancelCrop: (() -> Void)?
     var isCropping: (() -> Bool)?
+    var onCopyColor: (() -> Bool)?
 
     private var localKeyMonitor: Any?
 
@@ -119,6 +123,12 @@ final class AnnotationKeyCommandHandlerView: NSView {
                 if Self.isUndo(event) || Self.isRedo(event) {
                     return event
                 }
+                return nil
+            }
+
+            // Tab copies the colour under the pointer, as in Shottr. Off the
+            // image it keeps moving the keyboard focus.
+            if Self.isPlainTab(event), self.onCopyColor?() == true {
                 return nil
             }
 
@@ -192,6 +202,10 @@ final class AnnotationKeyCommandHandlerView: NSView {
 
     private static func isEscape(_ event: NSEvent) -> Bool {
         event.keyCode == 53
+    }
+
+    private static func isPlainTab(_ event: NSEvent) -> Bool {
+        event.keyCode == 48 && event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty
     }
 
     private static func isCropToggle(_ event: NSEvent) -> Bool {

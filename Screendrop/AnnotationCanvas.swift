@@ -32,6 +32,7 @@ struct AnnotationCanvas: View {
     let onEditorInteraction: () -> Void
 
     @Environment(\.displayScale) private var displayScale
+    @Environment(PixelProbe.self) private var probe: PixelProbe?
     @State private var hasActiveInteraction = false
     @State private var hoveredLocation: CGPoint?
     @State private var currentCursor: AnnotationCanvasCursor = .arrow
@@ -161,19 +162,26 @@ struct AnnotationCanvas: View {
                 case .active(let location):
                     if effectiveCamera.hasEffect && !displayLayout.canvasFrame.contains(location) {
                         hoveredLocation = nil
+                        probe?.hover(nil, imageFrame: imageFrame)
                         setCursor(.arrow)
                         return
                     }
                     let mappedLocation = projection.unproject(location)
                     hoveredLocation = mappedLocation
+                    probe?.hover(mappedLocation, imageFrame: imageFrame)
                     updateCursor(at: mappedLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                 case .ended:
                     hoveredLocation = nil
+                    probe?.hover(nil, imageFrame: imageFrame)
                     setCursor(.arrow)
                 }
             }
             .onChange(of: model.selectedTool) { _, _ in
                 refreshCursor(imageFrame: imageFrame, boundaryFrame: boundaryFrame)
+            }
+            // Zooming and scrolling move the image under a still pointer.
+            .onChange(of: imageFrame) { _, frame in
+                probe?.hover(hoveredLocation, imageFrame: frame)
             }
             .onChange(of: model.revision) { _, _ in
                 refreshCursor(imageFrame: imageFrame, boundaryFrame: boundaryFrame)

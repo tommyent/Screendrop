@@ -13,6 +13,7 @@ struct AnnotationEditorWindow: View {
     @Binding var url: URL?
 
     @State private var model = AnnotationEditorModel()
+    @State private var probe = PixelProbe()
     @State private var wallpaperStore = AnnotationWallpaperStore.shared
     @State private var backgroundPresetStore = AnnotationBackgroundPresetStore.shared
     @State private var isInspectorPresented = true
@@ -85,6 +86,11 @@ struct AnnotationEditorWindow: View {
                 // engine, so it never bumps `revision`.
                 closeGuard.refreshDocumentEdited()
             }
+            // The pixels under the pointer come from the base image, so they
+            // are read again whenever a crop or its undo replaces it.
+            .task(id: model.baseImageURL) {
+                await probe.load(model.baseImageURL)
+            }
             .background(AnnotationKeyCommandHandler(
                 isEnabled: { !model.isCommitting },
                 onDelete: model.deleteSelectedAnnotation,
@@ -101,7 +107,8 @@ struct AnnotationEditorWindow: View {
                 onToggleCrop: { withAnimation(.snappy(duration: 0.2)) { model.toggleCropping() } },
                 onApplyCrop: { withAnimation(.snappy(duration: 0.2)) { model.applyCrop() } },
                 onCancelCrop: { withAnimation(.snappy(duration: 0.2)) { model.cancelCrop() } },
-                isCropping: { model.isCropping }
+                isCropping: { model.isCropping },
+                onCopyColor: probe.copyHovered
             ))
             .inspector(isPresented: $isInspectorPresented) {
                 AnnotationEditorInspector(
@@ -114,6 +121,7 @@ struct AnnotationEditorWindow: View {
                 )
                 .disabled(model.isCropping || model.isCommitting)
             }
+            .environment(probe)
     }
 
     // MARK: Toolbar actions

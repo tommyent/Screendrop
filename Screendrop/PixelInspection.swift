@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// One pixel's colour in sRGB, 0–255 per channel, alpha straight (not
-/// premultiplied). The pixel inspector reads, formats and compares these.
+/// premultiplied). The editor shows and copies the one under the pointer.
 nonisolated struct PixelColor: Hashable, Sendable {
     var red: UInt8
     var green: UInt8
@@ -11,76 +11,11 @@ nonisolated struct PixelColor: Hashable, Sendable {
 
     /// `#1E90FF`, alpha left out.
     var hex: String { String(format: "#%02X%02X%02X", red, green, blue) }
-
-    /// CSS Color 4: `rgb(30 144 255)`, or `rgb(30 144 255 / 0.5)` when not opaque.
-    var css: String {
-        let rgb = "\(red) \(green) \(blue)"
-        guard alpha < 255 else { return "rgb(\(rgb))" }
-        return "rgb(\(rgb) / \(Self.decimal(Double(alpha) / 255, places: 2)))"
-    }
-
-    /// `Color(red: 0.118, green: 0.565, blue: 1.000)`, with `opacity:` when not opaque.
-    var swiftUI: String {
-        let parts = [("red", red), ("green", green), ("blue", blue)]
-            .map { "\($0.0): \(Self.decimal(Double($0.1) / 255, places: 3))" }
-            .joined(separator: ", ")
-        guard alpha < 255 else { return "Color(\(parts))" }
-        return "Color(\(parts), opacity: \(Self.decimal(Double(alpha) / 255, places: 3)))"
-    }
-
-    /// WCAG 2 relative luminance of the sRGB colour.
-    var relativeLuminance: Double {
-        func linear(_ channel: UInt8) -> Double {
-            let value = Double(channel) / 255
-            return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
-        }
-        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
-    }
-
-    private static func decimal(_ value: Double, places: Int) -> String {
-        String(format: "%.\(places)f", value)
-    }
 }
 
-/// How a colour is copied from the inspector.
-nonisolated enum PixelColorFormat: String, CaseIterable, Identifiable, Sendable {
-    case hex = "Hex"
-    case css = "CSS"
-    case swiftUI = "SwiftUI"
-
-    var id: String { rawValue }
-
-    func string(for color: PixelColor) -> String {
-        switch self {
-        case .hex: color.hex
-        case .css: color.css
-        case .swiftUI: color.swiftUI
-        }
-    }
-}
-
-/// The WCAG 2 contrast between two colours, with the pass marks for text.
-nonisolated struct PixelContrast: Equatable, Sendable {
-    let ratio: Double
-
-    init(_ first: PixelColor, _ second: PixelColor) {
-        let (a, b) = (first.relativeLuminance, second.relativeLuminance)
-        ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
-    }
-
-    /// Two decimals, cut rather than rounded, so a failing 4.499 never
-    /// shows as a passing-looking 4.50 (WCAG doesn't round).
-    var display: String { String(format: "%.2f:1", (ratio * 100).rounded(.down) / 100) }
-
-    var passesAANormal: Bool { ratio >= 4.5 }
-    var passesAALarge: Bool { ratio >= 3 }
-    var passesAAANormal: Bool { ratio >= 7 }
-    var passesAAALarge: Bool { ratio >= 4.5 }
-}
-
-/// A screenshot's pixels at full resolution, read once when inspection
-/// starts: the editor's preview may be downscaled, so it can't give exact
-/// colours. Stored as straight-alpha sRGB, row 0 at the top.
+/// A screenshot's pixels at full resolution, read once per base image: the
+/// editor's preview may be downscaled, so it can't give exact colours.
+/// Stored as straight-alpha sRGB, row 0 at the top.
 nonisolated struct PixelBuffer: Sendable {
     let width: Int
     let height: Int
@@ -166,5 +101,23 @@ nonisolated enum PixelMeasurement {
         let points = Double(pixels) / Double(pixelsPerPoint)
         let shown = points.rounded() == points ? String(Int(points)) : String(format: "%.1f", points)
         return "\(shown) pt · \(pixels) px"
+    }
+}
+
+nonisolated struct PixelPoint: Hashable, Sendable {
+    var x: Int
+    var y: Int
+}
+
+extension PixelBuffer {
+    /// The pixel drawn under a canvas point when the image fills
+    /// `imageFrame`: the engine's screenToPage, done here without moving
+    /// the engine's own viewport. Nil off the image.
+    nonisolated func pixel(at point: CGPoint, imageFrame: CGRect) -> PixelPoint? {
+        guard imageFrame.width > 0, imageFrame.height > 0 else { return nil }
+        let x = Int(((point.x - imageFrame.minX) / imageFrame.width * CGFloat(width)).rounded(.down))
+        let y = Int(((point.y - imageFrame.minY) / imageFrame.height * CGFloat(height)).rounded(.down))
+        guard (0..<width).contains(x), (0..<height).contains(y) else { return nil }
+        return PixelPoint(x: x, y: y)
     }
 }
