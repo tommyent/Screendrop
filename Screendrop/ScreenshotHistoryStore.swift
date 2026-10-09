@@ -182,40 +182,6 @@ final class ScreenshotHistoryStore {
         }
     }
 
-    @discardableResult
-    func importVideo(from sourceURL: URL) async -> URL {
-        do {
-            try FileManager.default.createDirectory(at: Self.historyDirectory, withIntermediateDirectories: true)
-            let destinationURL = uniqueHistoryURL(for: sourceURL)
-
-            if sourceURL != destinationURL {
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-            }
-
-            let metadata = await videoMetadata(at: destinationURL)
-
-            let item = ScreenshotHistoryItem(
-                id: UUID(),
-                createdAt: Date(),
-                updatedAt: Date(),
-                fileName: destinationURL.lastPathComponent,
-                pixelWidth: metadata.width,
-                pixelHeight: metadata.height,
-                kind: .video,
-                duration: metadata.duration
-            )
-            items.insert(item, at: 0)
-            saveMetadata()
-            return destinationURL
-        } catch {
-            print("Failed to import video into history: \(error)")
-            return sourceURL
-        }
-    }
-
     /// Adds a Studio recording to history without copying its potentially huge
     /// screen master. History owns the package and reopens the complete project
     /// (camera, event sidecar, and project edits), not a detached movie.
