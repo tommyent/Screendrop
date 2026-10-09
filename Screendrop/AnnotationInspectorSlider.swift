@@ -168,6 +168,7 @@ struct InspectorSlider: View {
     @State private var valueSelection: TextSelection?
     @State private var isHovering = false
     @State private var dragStartValue: CGFloat?
+    @State private var keyboardSteps = 0
 
     private enum FocusedPart: Hashable {
         case scrubber
@@ -211,6 +212,11 @@ struct InspectorSlider: View {
             if focusedPart == .value {
                 commitDraftText()
             }
+        }
+        // A held key retains its first action; apply steps here with the current binding.
+        .onChange(of: keyboardSteps) { oldSteps, newSteps in
+            if focusedPart == .value { commitDraftText() }
+            adjustValue(by: CGFloat(newSteps - oldSteps) * format.step)
         }
         .onChange(of: value) { _, _ in
             syncDraftText()
@@ -259,12 +265,12 @@ struct InspectorSlider: View {
             .focused($focusedPart, equals: .scrubber)
             .onKeyPress(.leftArrow) {
                 guard isEnabled else { return .ignored }
-                adjustValue(by: -format.step)
+                keyboardSteps -= 1
                 return .handled
             }
             .onKeyPress(.rightArrow) {
                 guard isEnabled else { return .ignored }
-                adjustValue(by: format.step)
+                keyboardSteps += 1
                 return .handled
             }
             .accessibilityElement(children: .ignore)
@@ -303,14 +309,12 @@ struct InspectorSlider: View {
             }
             .onKeyPress(.upArrow) {
                 guard isEnabled else { return .ignored }
-                commitDraftText()
-                adjustValue(by: format.step)
+                keyboardSteps += 1
                 return .handled
             }
             .onKeyPress(.downArrow) {
                 guard isEnabled else { return .ignored }
-                commitDraftText()
-                adjustValue(by: -format.step)
+                keyboardSteps -= 1
                 return .handled
             }
             .accessibilityLabel("\(title) value")
