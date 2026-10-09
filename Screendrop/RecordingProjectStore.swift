@@ -29,8 +29,6 @@ nonisolated struct RecordingProjectSummary: Identifiable, Equatable, Sendable {
     /// Orders both the Recordings menu and the browser's default sort:
     /// what you touched last, falling back to when it was recorded.
     var lastActivityAt: Date { lastOpenedAt ?? createdAt }
-
-    var hasCamera: Bool { session.hasCamera }
 }
 
 @MainActor
@@ -65,58 +63,12 @@ final class RecordingProjectStore {
         }
     }
 
-    func rename(_ project: RecordingProjectSummary, to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        project.session.updateProjectMetadata {
-            // An emptied field falls back to the folder name rather than
-            // leaving the project nameless.
-            $0.displayName = trimmed.isEmpty ? nil : trimmed
-        }
-        reload()
-    }
-
     /// Drop references only after the entire package has safely reached the Trash.
     func delete(_ session: RecordingSession) throws {
         try RecordingSessionStore.deleteSession(session)
         ScreenshotPreviewStack.shared.dismissRecordingSession(session.directoryURL)
         ScreenshotHistoryStore.shared.deleteRecordingSession(session)
         reload()
-    }
-
-    func delete(_ project: RecordingProjectSummary) throws {
-        try delete(project.session)
-    }
-
-    func reveal(_ project: RecordingProjectSummary) {
-        NSWorkspace.shared.activateFileViewerSelecting([project.session.directoryURL])
-    }
-
-    // MARK: - Posters
-
-    /// A cached first frame, written into the package so the browser doesn't
-    /// decode video every time it opens.
-    static func poster(for session: RecordingSession) async -> NSImage? {
-        if let cached = NSImage(contentsOf: session.posterURL) {
-            return cached
-        }
-        // Prefer the flattened deliverable when there is one: it shows the
-        // background and camera, which is what the project actually looks like.
-        let source = session.existingFinalURL ?? session.screenURL
-        guard let image = await VideoPreviewImageLoader.thumbnail(at: source, maxPixelSize: 640) else {
-            return nil
-        }
-        writePoster(image, to: session.posterURL)
-        return image
-    }
-
-    private static func writePoster(_ image: NSImage, to url: URL) {
-        guard let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.72])
-        else {
-            return
-        }
-        try? jpeg.write(to: url, options: .atomic)
     }
 
     // MARK: - Summaries

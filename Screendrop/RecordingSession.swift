@@ -27,7 +27,6 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     /// The document that produced the current flattened deliverable, so a
     /// cached render can be proven fresh instead of assumed fresh.
     static let renderStampFileName = "render.json"
-    static let posterFileName = "poster.jpg"
     /// Base name for an imported soundtrack. The picked file is copied in
     /// beside the footage (keeping its own extension) so the project keeps
     /// playing after the original is moved or deleted.
@@ -56,7 +55,6 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     var draftDocumentURL: URL { directoryURL.appendingPathComponent(Self.draftDocumentFileName) }
     var projectMetadataURL: URL { directoryURL.appendingPathComponent(Self.projectMetadataFileName) }
     var renderStampURL: URL { directoryURL.appendingPathComponent(Self.renderStampFileName) }
-    var posterURL: URL { directoryURL.appendingPathComponent(Self.posterFileName) }
 
     /// True once the project has been committed with an explicit save. Every
     /// package written by older builds has an `edit.json` from the previous
