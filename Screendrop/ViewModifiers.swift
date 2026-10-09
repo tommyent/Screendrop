@@ -10,18 +10,6 @@ import SwiftUI
 
 // MARK: - On Click Outside
 
-/// Fires when a mouse-down occurs outside the view's bounds within the same window.
-/// The click is not consumed - the target element still receives it.
-private struct OnClickOutsideModifier: ViewModifier {
-    let enabled: Bool
-    let action: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .background(ClickOutsideDetector(enabled: enabled, action: action))
-    }
-}
-
 private struct ClickOutsideDetector: NSViewRepresentable {
     let enabled: Bool
     let action: () -> Void
@@ -84,20 +72,11 @@ private final class ClickOutsideNSView: NSView {
 extension View {
     /// Fires when a click lands outside this view's bounds. The click is not consumed.
     func onClickOutside(enabled: Bool = true, perform action: @escaping () -> Void) -> some View {
-        modifier(OnClickOutsideModifier(enabled: enabled, action: action))
+        background(ClickOutsideDetector(enabled: enabled, action: action))
     }
 }
 
 // MARK: - Window Accessor
-
-/// Fires a callback whenever the SwiftUI view's hosting NSWindow changes.
-private struct WindowAccessorModifier: ViewModifier {
-    let onChange: (NSWindow?) -> Void
-
-    func body(content: Content) -> some View {
-        content.background(WindowAccessorView(onChange: onChange))
-    }
-}
 
 private struct WindowAccessorView: NSViewRepresentable {
     let onChange: (NSWindow?) -> Void
@@ -125,6 +104,6 @@ private final class WindowAccessorNSView: NSView {
 extension View {
     /// Fires when this view's hosting NSWindow changes (attached or detached).
     func onWindowChange(_ onChange: @escaping (NSWindow?) -> Void) -> some View {
-        modifier(WindowAccessorModifier(onChange: onChange))
+        background(WindowAccessorView(onChange: onChange))
     }
 }
