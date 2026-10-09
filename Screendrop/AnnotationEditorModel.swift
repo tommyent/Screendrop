@@ -26,6 +26,10 @@ final class AnnotationEditorModel {
     }
     /// Bumped on every engine change. Views read this to pick up edits the engine made.
     private(set) var revision = 0
+    /// Bumped by File › Save As… (⇧⌘S); the editor window opens its save panel.
+    private(set) var saveAsRequest = 0
+
+    func requestSaveAs() { saveAsRequest += 1 }
 
     /// The display/history image being edited. Used to match the preview item
     /// and to locate the sidecar document.

@@ -81,6 +81,8 @@ struct AnnotationEditorWindow: View {
                 closeGuard.refreshDocumentEdited()
                 if didCopyLink { withAnimation(.snappy(duration: 0.2)) { didCopyLink = false } }
             }
+            .focusedSceneValue(\.annotationEditor, model)
+            .onChange(of: model.saveAsRequest) { _, _ in saveAs() }
             .onChange(of: model.baseImageURL) { _, _ in
                 // Cropping replaces the base image rather than touching the
                 // engine, so it never bumps `revision`.
@@ -165,12 +167,6 @@ struct AnnotationEditorWindow: View {
             .disabled(isUploading)
         }
 
-        Button(action: saveAs) {
-            Label("Save As", systemImage: "arrow.down.circle")
-                .labelStyle(.titleAndIcon)
-        }
-        .help("Save a copy to a location of your choice")
-
         Button(action: saveEdits) {
             if isSaving {
                 ProgressView().controlSize(.small)
@@ -183,10 +179,11 @@ struct AnnotationEditorWindow: View {
         .disabled(!model.hasUnsavedChanges || isSaving || isFinishing)
         .help("Save annotations (⌘S)")
 
-        // Labels, shown as icons, so VoiceOver and the toolbar's overflow menu name them.
+        // Done is the main action, so it says so. Save As is File › Save As…
+        // (⇧⌘S) now, which leaves one save icon here (design pass choice 9).
         Button(action: finishEditing) {
             Label("Done", systemImage: "checkmark.circle")
-                .labelStyle(.iconOnly)
+                .labelStyle(.titleAndIcon)
         }
         .keyboardShortcut(.return, modifiers: .command)
         .help("Finish editing and save (⌘↩; ⌘C also copies the image)")
@@ -551,5 +548,22 @@ private struct AnnotationLoadFailureView: View {
                 .keyboardShortcut(.cancelAction)
         }
         .padding(32)
+    }
+}
+
+extension FocusedValues {
+    /// The key editor window's model, for menu commands.
+    @Entry var annotationEditor: AnnotationEditorModel?
+}
+
+/// File › Save As… for the key editor window. It left the toolbar so Save
+/// and Save As are no longer two look-alike icons (design pass choice 9).
+struct AnnotationEditorSaveAsCommand: View {
+    @FocusedValue(\.annotationEditor) private var editor
+
+    var body: some View {
+        Button("Save As…") { editor?.requestSaveAs() }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled(editor == nil)
     }
 }
