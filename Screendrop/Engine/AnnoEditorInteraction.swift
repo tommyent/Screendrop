@@ -7,6 +7,7 @@ extension AnnoEditor {
     // MARK: - Down
 
     func pointerDown(_ pointer: PointerInfo) {
+        setSnapGuides([])
         setHoveredShape(nil)
         // A press anywhere commits whatever is being typed, unless it lands on that same shape.
         if let editingId = editingTextId, hitShape(at: pointer.pagePoint)?.id != editingId {
@@ -97,7 +98,7 @@ extension AnnoEditor {
             }
             guard !selectedIds.isEmpty else { return }
             markUndo()
-            setInteraction(.translating(origin: pointer.pagePoint, initial: initialPositions()))
+            setInteraction(.translating(origin: pointer.pagePoint, initial: initialPositions(), anchors: snapAnchors(for: selectedShapes)))
             return
         }
 
@@ -200,6 +201,7 @@ extension AnnoEditor {
     // MARK: - Move
 
     func pointerMove(_ pointer: PointerInfo) {
+        setSnapGuides([])
         switch interaction {
         case .idle:
             return
@@ -213,8 +215,8 @@ extension AnnoEditor {
             updateMagnifierCreation(id: id, origin: origin, pointer: pointer)
         case let .brushing(origin):
             setBrush(Box.fromPoints([origin, pointer.pagePoint]))
-        case let .translating(origin, initial):
-            translate(origin: origin, initial: initial, pointer: pointer)
+        case let .translating(origin, initial, anchors):
+            translate(origin: origin, initial: initial, anchors: anchors, pointer: pointer)
         case let .resizing(handle, bounds, initial):
             resize(handle: handle, bounds: bounds, initial: initial, pointer: pointer)
         case let .rotating(center, startAngle, initial):
@@ -289,11 +291,12 @@ extension AnnoEditor {
     // MARK: - Drawing
 
     private func appendDrawPoint(id: AnnoShapeID, origin: Vec, pointer: PointerInfo) {
+        let point = snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
         document.update(id) { shape in
             guard case var .draw(props) = shape.kind else { return }
             let local = Vec(
-                pointer.pagePoint.x - origin.x,
-                pointer.pagePoint.y - origin.y,
+                point.x - origin.x,
+                point.y - origin.y,
                 pointer.isPen ? pointer.pressure : 0.5
             )
             // Skip points that land on top of the previous one; they add nothing and cost a full
@@ -301,6 +304,9 @@ extension AnnoEditor {
             if let last = props.points.last, Vec.distMin(last, local, 0.5) { return }
             props.points.append(local)
             shape.kind = .draw(props)
+        }
+        if let shape = document.shape(id), let end = shape.drawProps?.points.last {
+            retainSnapGuides(alignedWith: AnnoSnapping.anchors(shape.pageTransform.applyToPoint(end)))
         }
     }
 
@@ -352,25 +358,22 @@ extension AnnoEditor {
     }
 
     private func resizeBoxWhileCreating(id: AnnoShapeID, origin: Vec, pointer: PointerInfo) {
-        var minX = Swift.min(origin.x, pointer.pagePoint.x)
-        var minY = Swift.min(origin.y, pointer.pagePoint.y)
-        var w = abs(pointer.pagePoint.x - origin.x)
-        var h = abs(pointer.pagePoint.y - origin.y)
-
+        var point = pointer.pagePoint
         if pointer.shift {
             // Constrain to a square, growing away from the origin corner.
-            let side = Swift.max(w, h)
-            minX = pointer.pagePoint.x < origin.x ? origin.x - side : origin.x
-            minY = pointer.pagePoint.y < origin.y ? origin.y - side : origin.y
-            w = side
-            h = side
+            let side = Swift.max(abs(point.x - origin.x), abs(point.y - origin.y))
+            point = Vec(origin.x + (point.x < origin.x ? -side : side),
+                        origin.y + (point.y < origin.y ? -side : side))
         }
-
+        point = snapPoint(point, excluding: [id], pointer: pointer,
+                          direction: pointer.shift ? Vec.sub(point, origin) : nil)
+        let box = Box.fromPoints([origin, point])
         document.update(id) { shape in
-            shape.x = minX
-            shape.y = minY
+            shape.x = box.x
+            shape.y = box.y
         }
-        setBoxSize(id, width: w, height: h)
+        setBoxSize(id, width: box.w, height: box.h)
+        if let shape = document.shape(id) { retainSnapGuides(alignedWith: snapAnchors(for: [shape])) }
     }
 
     // MARK: - Arrow creation
@@ -381,12 +384,20 @@ extension AnnoEditor {
         if pointer.shift, let props = shape.arrowProps {
             local = axisSnapped(from: props.start, to: local)
         }
+        let point = shape.pageTransform.applyToPoint(local)
+        let start = shape.pageTransform.applyToPoint(shape.arrowProps?.start ?? .zero)
+        let snapped = snapPoint(point, excluding: [id], pointer: pointer,
+                                direction: pointer.shift ? Vec.sub(point, start) : nil)
+        local = document.pointInShapeSpace(shape, snapped)
         document.update(id) { shape in
             guard case var .arrow(props) = shape.kind else { return }
             props.end = local
             shape.kind = .arrow(props)
         }
-        bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
+        bindTerminal(arrowId: id, terminal: .end, at: snapped, precise: pointer.alt)
+        if let info = document.arrowInfo(id) {
+            retainSnapGuides(alignedWith: AnnoSnapping.anchors(shape.pageTransform.applyToPoint(info.end.point)))
+        }
     }
 
     /// Snap to the nearest 15° from the anchor, the way holding shift on a line should behave.
@@ -438,19 +449,23 @@ extension AnnoEditor {
 
     // MARK: - Translate
 
-    private func translate(origin: Vec, initial: [AnnoShapeID: Vec], pointer: PointerInfo) {
+    private func translate(origin: Vec, initial: [AnnoShapeID: Vec], anchors: [AnnoSnapAnchor], pointer: PointerInfo) {
         var dx = pointer.pagePoint.x - origin.x
         var dy = pointer.pagePoint.y - origin.y
         if pointer.shift {
             // Lock to whichever axis has moved further.
             if abs(dx) > abs(dy) { dy = 0 } else { dx = 0 }
         }
+        let result = snapMovement(moving: anchors, excluding: Set(initial.keys), delta: Vec(dx, dy),
+                                  pointer: pointer, direction: pointer.shift ? Vec(dx, dy) : nil)
+        setSnapGuides(result.guides)
         for (id, start) in initial {
             document.update(id) { shape in
-                shape.x = start.x + dx
-                shape.y = start.y + dy
+                shape.x = start.x + result.delta.x
+                shape.y = start.y + result.delta.y
             }
         }
+        retainSnapGuides(alignedWith: snapAnchors(for: document.shapes.filter { initial[$0.id] != nil }))
     }
 
     // MARK: - Resize
@@ -490,16 +505,66 @@ extension AnnoEditor {
             scaleY = s * (scaleY < 0 ? -1 : 1)
         }
 
-        // Don't let a shape collapse to nothing; flipping is fine, zero isn't.
-        if abs(scaleX) < 0.01 { scaleX = scaleX < 0 ? -0.01 : 0.01 }
-        if abs(scaleY) < 0.01 { scaleY = scaleY < 0 ? -0.01 : 0.01 }
-
-        for id in selectedIds {
-            applyScale(
-                to: id, scaleX: scaleX, scaleY: scaleY,
-                anchor: anchor, selectionTransform: bounds.transform,
-                isWidthOnly: !handle.scalesY
-            )
+        let originalHandle = Vec(bounds.box.x + bounds.box.w * (1 - anchorNormalized.x),
+                                 bounds.box.y + bounds.box.h * (1 - anchorNormalized.y))
+        let uniformlySized = selectedShapes.count == 1
+            && (selectedShapes[0].numberedProps != nil || (selectedShapes[0].isText && handle.scalesY))
+        func applyResize() {
+            // Don't let a shape collapse to nothing; flipping is fine, zero isn't.
+            if abs(scaleX) < 0.01 { scaleX = scaleX < 0 ? -0.01 : 0.01 }
+            if abs(scaleY) < 0.01 { scaleY = scaleY < 0 ? -0.01 : 0.01 }
+            document.restore(initial)
+            for id in selectedIds {
+                applyScale(to: id, scaleX: scaleX, scaleY: scaleY,
+                           anchor: anchor, selectionTransform: bounds.transform,
+                           isWidthOnly: !handle.scalesY)
+            }
+        }
+        // Text and callouts scale uniformly, so snap their painted handle rather than the pointer's box.
+        applyResize()
+        guard let resized = selectionBounds else { return }
+        let currentHandle = resized.pagePoint(Vec(1 - anchorNormalized.x, 1 - anchorNormalized.y))
+        var uniformDerivative: Vec?
+        if uniformlySized {
+            let sx = scaleX < 0 ? -1.0 : 1.0, sy = scaleY < 0 ? -1.0 : 1.0
+            let dx = handle.scalesX ? Vec(-anchor.x * sx + originalHandle.x / 2, originalHandle.y / 2) : .zero
+            let dy = handle.scalesY ? Vec(originalHandle.x / 2, -anchor.y * sy + originalHandle.y / 2) : .zero
+            let local = Vec.add(dx, dy)
+            uniformDerivative = Vec(bounds.transform.a * local.x + bounds.transform.c * local.y,
+                                    bounds.transform.b * local.x + bounds.transform.d * local.y)
+        }
+        let direction: Vec?
+        if let uniformDerivative {
+            direction = uniformDerivative
+        } else if pointer.shift, handle.isCorner {
+            direction = Vec.sub(currentHandle, bounds.transform.applyToPoint(anchor))
+        } else if !handle.scalesY {
+            direction = Vec(bounds.transform.a, bounds.transform.b)
+        } else if !handle.scalesX {
+            direction = Vec(bounds.transform.c, bounds.transform.d)
+        } else {
+            direction = nil
+        }
+        let snappedPoint = snapPoint(currentHandle, excluding: selectedIds, pointer: pointer, direction: direction)
+        let offset = Vec.sub(snappedPoint, currentHandle)
+        if let derivative = uniformDerivative, derivative.len2 > 0 {
+            let change = (offset.x * derivative.x + offset.y * derivative.y) / derivative.len2
+            if handle.scalesX { scaleX += change * (scaleX < 0 ? -1 : 1) }
+            if handle.scalesY { scaleY += change * (scaleY < 0 ? -1 : 1) }
+        } else {
+            let inverse = bounds.transform.inverse
+            let correction = Vec(inverse.a * offset.x + inverse.c * offset.y,
+                                 inverse.b * offset.x + inverse.d * offset.y)
+            if handle.scalesX, originalHandle.x != anchor.x {
+                scaleX += correction.x / (originalHandle.x - anchor.x)
+            }
+            if handle.scalesY, originalHandle.y != anchor.y {
+                scaleY += correction.y / (originalHandle.y - anchor.y)
+            }
+        }
+        if offset != .zero { applyResize() }
+        if let actual = selectionBounds {
+            retainSnapGuides(alignedWith: AnnoSnapping.anchors(actual.pagePoint(Vec(1 - anchorNormalized.x, 1 - anchorNormalized.y))))
         }
     }
 
@@ -606,7 +671,9 @@ extension AnnoEditor {
 
     private func dragArrowHandle(id: AnnoShapeID, handle: AnnoSelectionHandle, pointer: PointerInfo) {
         guard let shape = document.shape(id) else { return }
-        let local = document.pointInShapeSpace(shape, pointer.pagePoint)
+        let point = handle == .arrowMiddle ? pointer.pagePoint
+            : snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
+        let local = document.pointInShapeSpace(shape, point)
 
         switch handle {
         case .arrowStart:
@@ -615,14 +682,14 @@ extension AnnoEditor {
                 p.start = local
                 shape.kind = .arrow(p)
             }
-            bindTerminal(arrowId: id, terminal: .start, at: pointer.pagePoint, precise: pointer.alt)
+            bindTerminal(arrowId: id, terminal: .start, at: point, precise: pointer.alt)
         case .arrowEnd:
             document.update(id) { shape in
                 guard case var .arrow(p) = shape.kind else { return }
                 p.end = local
                 shape.kind = .arrow(p)
             }
-            bindTerminal(arrowId: id, terminal: .end, at: pointer.pagePoint, precise: pointer.alt)
+            bindTerminal(arrowId: id, terminal: .end, at: point, precise: pointer.alt)
         case .arrowMiddle:
             // Bend is the signed distance from the straight line between the terminals to where the
             // middle handle has been dragged.
@@ -642,6 +709,10 @@ extension AnnoEditor {
             }
         default:
             break
+        }
+        if let info = document.arrowInfo(id) {
+            let tip = handle == .arrowStart ? info.start.point : info.end.point
+            retainSnapGuides(alignedWith: AnnoSnapping.anchors(shape.pageTransform.applyToPoint(tip)))
         }
     }
 }
