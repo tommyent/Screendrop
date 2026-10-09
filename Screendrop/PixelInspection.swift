@@ -15,11 +15,15 @@ nonisolated struct PixelColor: Hashable, Sendable {
 
 /// A screenshot's pixels at full resolution, read once per base image: the
 /// editor's preview may be downscaled, so it can't give exact colours.
-/// Stored as straight-alpha sRGB, row 0 at the top.
+/// The loupe and readout share one immutable bitmap, row 0 at the top.
 nonisolated struct PixelBuffer: Sendable {
     let width: Int
     let height: Int
-    private let bytes: [UInt8]
+    let image: CGImage
+    private let bytes: Data
+    private let colorSpace: CGColorSpace
+    private let isSRGB: Bool
+    private static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
     /// Force ImageIO's lazy source through one bitmap before a loupe draws it repeatedly.
     static func decodedImage(_ image: CGImage) -> CGImage? {
@@ -31,12 +35,15 @@ nonisolated struct PixelBuffer: Sendable {
         return context.makeImage()
     }
 
-    /// Draws `image` into an sRGB buffer of its own pixel size. Colours from
-    /// a Display P3 capture come out as their sRGB values, as CSS hex expects.
+    /// Preserve the source profile for the loupe; convert readout colours to sRGB.
     init?(image: CGImage) {
+        self.init(image: image, space: image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? Self.sRGB)
+    }
+
+    private init?(image: CGImage, space: CGColorSpace) {
         let width = image.width, height = image.height
-        guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        guard width > 0, height > 0 else { return nil }
+        var bytes = Data(count: width * height * 4)
         let drawn = bytes.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(
                 data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
@@ -46,10 +53,17 @@ nonisolated struct PixelBuffer: Sendable {
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
-        guard drawn else { return nil }
+        guard drawn, let provider = CGDataProvider(data: bytes as CFData),
+              let sharedImage = CGImage(width: width, height: height, bitsPerComponent: 8,
+                bitsPerPixel: 32, bytesPerRow: width * 4, space: space,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
         self.width = width
         self.height = height
         self.bytes = bytes
+        self.image = sharedImage
+        self.colorSpace = space
+        self.isSRGB = CFEqual(space, Self.sRGB)
     }
 
     /// The pixel at `x`, `y` (0,0 top left), nil outside the image.
@@ -61,7 +75,14 @@ nonisolated struct PixelBuffer: Sendable {
             guard alpha > 0, alpha < 255 else { return alpha == 0 ? 0 : value }
             return UInt8(min(255, (Double(value) * 255 / Double(alpha)).rounded()))
         }
-        return PixelColor(red: straight(bytes[i]), green: straight(bytes[i + 1]), blue: straight(bytes[i + 2]), alpha: alpha)
+        let native = PixelColor(red: straight(bytes[i]), green: straight(bytes[i + 1]), blue: straight(bytes[i + 2]), alpha: alpha)
+        guard !isSRGB, let converted = CGColor(colorSpace: colorSpace, components: [
+            CGFloat(native.red) / 255, CGFloat(native.green) / 255,
+            CGFloat(native.blue) / 255, CGFloat(alpha) / 255
+        ])?.converted(to: Self.sRGB, intent: .defaultIntent, options: nil),
+              let components = converted.components else { return native }
+        func channel(_ x: CGFloat) -> UInt8 { UInt8((min(1, max(0, x)) * 255).rounded()) }
+        return PixelColor(red: channel(components[0]), green: channel(components[1]), blue: channel(components[2]), alpha: alpha)
     }
 
     /// A step between neighbouring pixels larger than this, in any channel,
@@ -77,6 +98,14 @@ nonisolated struct PixelBuffer: Sendable {
     /// stopped it, so a 200 px box with a 1 px border measures 202.
     func span(x: Int, y: Int, includingBorder: Bool = false) -> (horizontal: ClosedRange<Int>, vertical: ClosedRange<Int>)? {
         guard color(x: x, y: y) != nil else { return nil }
+        if !isSRGB {
+            // Convert only the two measured lines, not a second full-resolution image.
+            guard let row = image.cropping(to: CGRect(x: 0, y: y, width: width, height: 1)),
+                  let column = image.cropping(to: CGRect(x: x, y: 0, width: 1, height: height)),
+                  let horizontal = PixelBuffer(image: row, space: Self.sRGB)?.span(x: x, y: 0, includingBorder: includingBorder),
+                  let vertical = PixelBuffer(image: column, space: Self.sRGB)?.span(x: 0, y: y, includingBorder: includingBorder) else { return nil }
+            return (horizontal.horizontal, vertical.vertical)
+        }
         func run(_ step: (Int) -> (x: Int, y: Int), limit: Int, from start: Int) -> ClosedRange<Int> {
             func pixel(_ i: Int) -> PixelColor? {
                 guard (0..<limit).contains(i) else { return nil }

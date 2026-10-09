@@ -55,6 +55,7 @@ struct AnnotationEditorWindow: View {
             }
             .onDisappear {
                 closeGuard.detach()
+                probe.release()
                 model.releaseEditorResources()
                 AnnotationEditorActivationPolicy.leave(restorePreview: true)
             }
@@ -88,8 +89,8 @@ struct AnnotationEditorWindow: View {
             }
             // The pixels under the pointer come from the base image, so they
             // are read again whenever a crop or its undo replaces it.
-            .task(id: model.baseImageURL) {
-                await probe.load(model.baseImageURL)
+            .task(id: model.previewCGImage.map(ObjectIdentifier.init)) {
+                await probe.load(model.baseImageURL, preview: model.previewCGImage)
             }
             .background(AnnotationKeyCommandHandler(
                 isEnabled: { !model.isCommitting },
