@@ -35,19 +35,23 @@ enum AnnoSnapping {
     /// The caller converts the six-screen-point tolerance to page units before solving.
     static func snap(
         moving: [AnnoSnapAnchor], targets: [AnnoSnapAnchor], delta: Vec,
-        tolerance: Double, bypass: Bool = false
+        tolerance: Double, bypass: Bool = false, direction: Vec? = nil
     ) -> AnnoSnapResult {
         guard !bypass, delta.isFinite, tolerance.isFinite, tolerance >= 0 else {
             return AnnoSnapResult(delta: delta, guides: [])
         }
         var result = delta
         var snappedAxes: [AnnoSnapAxis] = []
+        let unit = direction?.uni
+        var constrainedCorrection: Double?
         for axis in [AnnoSnapAxis.x, .y] {
             let movement = axis == .x ? delta.x : delta.y
+            let component = unit.map { axis == .x ? $0.x : $0.y } ?? 1
+            guard abs(component) > 0.0001 else { continue }
             var correction: Double?
             for source in moving where source.axis == axis {
                 for target in targets where target.axis == axis {
-                    let offset = target.position - source.position - movement
+                    let offset = (target.position - source.position - movement) / component
                     guard abs(offset) <= tolerance else { continue }
                     if correction == nil || abs(offset) < abs(correction!) {
                         correction = offset
@@ -55,9 +59,19 @@ enum AnnoSnapping {
                 }
             }
             if let correction {
-                if axis == .x { result.x += correction } else { result.y += correction }
-                snappedAxes.append(axis)
+                if unit != nil {
+                    if constrainedCorrection == nil || abs(correction) < abs(constrainedCorrection!) {
+                        constrainedCorrection = correction
+                    }
+                } else {
+                    if axis == .x { result.x += correction } else { result.y += correction }
+                    snappedAxes.append(axis)
+                }
             }
+        }
+        if let unit, let correction = constrainedCorrection {
+            result = Vec.add(delta, Vec.mul(unit, correction))
+            snappedAxes = [AnnoSnapAxis.x, .y].filter { abs($0 == .x ? unit.x : unit.y) > 0.0001 }
         }
 
         var guides: [AnnoSnapGuide] = []

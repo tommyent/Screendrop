@@ -47,6 +47,19 @@ struct EditorSnappingChecks {
         precondition(closest.delta == Vec(11, 3))
         let empty = AnnoSnapping.snap(moving: moving, targets: [], delta: Vec(5, 7), tolerance: 6)
         precondition(empty.delta == Vec(5, 7) && empty.guides.isEmpty)
+        let locked = AnnoSnapping.snap(moving: point, targets: tip, delta: Vec(105, 125),
+                                       tolerance: 6, direction: Vec(1, 0))
+        precondition(locked.delta == Vec(110, 125))
+        precondition(locked.guides.allSatisfy { $0.start.x == $0.end.x })
+        // A rotated side handle follows its own axis; a Shift corner keeps its aspect ratio.
+        let diagonal = AnnoSnapping.snap(moving: point,
+                                         targets: [AnnoSnapAnchor(axis: .x, position: 50, lower: 0, upper: 100)],
+                                         delta: Vec(6, 6), tolerance: 6, direction: Vec(1, 1))
+        precondition(Vec.dist(diagonal.delta, Vec(10, 10)) < 0.0001)
+        let outsideAlongAxis = AnnoSnapping.snap(moving: point,
+                                                targets: [AnnoSnapAnchor(axis: .x, position: 50, lower: 0, upper: 100)],
+                                                delta: Vec(5, 5), tolerance: 6, direction: Vec(1, 1))
+        precondition(outsideAlongAxis.delta == Vec(5, 5) && outsideAlongAxis.guides.isEmpty)
         print("PASS: edges, centres, tips, both axes, 5/7-screen-point tolerance at three zooms, Command bypass, guide extents and deterministic ties")
     }
 }
