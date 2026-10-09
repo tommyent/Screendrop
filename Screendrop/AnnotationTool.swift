@@ -22,7 +22,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     /// Keep the old raw value readable without giving a fill style its own tool.
     var paletteTool: AnnotationTool { self == .filledRectangle ? .rectangle : self }
 
-    static var paletteTools: [AnnotationTool] { allCases.filter { $0 != .filledRectangle } }
+    static var paletteTools: [AnnotationTool] { allCases.filter { $0 != .select && $0 != .filledRectangle } }
 
     var title: String {
         switch self {

@@ -7,23 +7,28 @@ extension AnnoEditor {
     // MARK: - Down
 
     func pointerDown(_ pointer: PointerInfo) {
+        setHoveredShape(nil)
         // A press anywhere commits whatever is being typed, unless it lands on that same shape.
         if let editingId = editingTextId, hitShape(at: pointer.pagePoint)?.id != editingId {
             stopEditingText()
         }
 
+        // Decide once at mouse-down. Changing modifiers later cannot turn a move into a draw.
+        if !pointer.command,
+           handle(at: pointer.screenPoint) != nil || hitShape(at: pointer.pagePoint) != nil {
+            beginSelectInteraction(pointer)
+            notifyChanged()
+            return
+        }
+
+        if tool.createsAnnotation { selectedIds.removeAll() }
         switch tool {
         case .select:
             beginSelectInteraction(pointer)
         case .freehand:
             beginDrawing(pointer)
         case .text:
-            // Clicking existing text edits it; clicking empty canvas starts a new one.
-            if let shape = hitShape(at: pointer.pagePoint), shape.isText {
-                startEditingText(shape.id)
-            } else {
-                createText(at: pointer.pagePoint)
-            }
+            createText(at: pointer.pagePoint)
         case .rectangle, .filledRectangle, .ellipse, .highlight, .blur, .pixelate:
             beginBoxShape(pointer)
         case .numberedCircle:
@@ -81,17 +86,6 @@ extension AnnoEditor {
             return
         }
 
-        // Nothing under the pointer - but the selection's own bounds act as a drag handle, so a
-        // hollow shape can be moved from its empty middle. Ported from
-        // `isPointInRotatedSelectionBounds`, which tests the *rotated* bounds as a polygon.
-        if canDragSelectionBackground,
-           let bounds = selectionBounds,
-           pointInPolygon(pointer.pagePoint, bounds.pageCorners) {
-            markUndo()
-            setInteraction(.translating(origin: pointer.pagePoint, initial: initialPositions()))
-            return
-        }
-
         if !pointer.shift { selectedIds.removeAll() }
         setInteraction(.brushing(origin: pointer.pagePoint))
         setBrush(Box(pointer.pagePoint.x, pointer.pagePoint.y, 0, 0))
@@ -103,15 +97,6 @@ extension AnnoEditor {
             if let shape = document.shape(id) { initial[id] = Vec(shape.x, shape.y) }
         }
         return initial
-    }
-
-    /// Whether the inside of the selection box can be dragged. Arrows and lines opt out, because
-    /// their bounding box is mostly empty space and dragging from it would feel wrong.
-    private var canDragSelectionBackground: Bool {
-        if selectedIds.isEmpty { return false }
-        if selectedIds.count > 1 { return true }
-        guard let shape = selectedShapes.first else { return false }
-        return !shape.isArrow
     }
 
     // MARK: - Creation
@@ -249,7 +234,6 @@ extension AnnoEditor {
                 setBoxSize(id, width: fallback, height: fallback)
             }
             selectedIds = [id]
-            tool = .select
 
         case let .creatingArrow(id):
             if let shape = document.shape(id), let props = shape.arrowProps,
@@ -258,7 +242,6 @@ extension AnnoEditor {
                 document.delete([id])
             } else {
                 selectedIds = [id]
-                tool = .select
             }
 
         case let .brushing(origin):
@@ -687,10 +670,6 @@ extension AnnoEditor {
             selectedIds.remove(id)
         }
         onEditingTextChanged?(nil)
-        // Fall back to select once the text is committed, the same as finishing a geo or an arrow.
-        // Safe against the `tool` observer calling back into here: `editingTextId` is already nil,
-        // so the guard at the top returns immediately.
-        if tool == .text { tool = .select }
         notifyChanged()
     }
 

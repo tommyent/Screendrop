@@ -98,7 +98,7 @@ struct PointerInfo {
     var alt = false
     var command = false
     /// 1 for an ordinary press. The canvas copies this from the mouse event; the
-    /// Select tool treats 2 or more on a text shape as "edit", not "drag".
+    /// Any tool treats 2 or more on a text shape as "edit", not "drag".
     var clickCount = 1
 }
 
@@ -161,6 +161,7 @@ final class AnnoEditor {
     private(set) var brush: Box?
     /// The shape an arrow terminal would bind to if the pointer were released now.
     private(set) var hintedBindingId: AnnoShapeID?
+    private(set) var hoveredShapeId: AnnoShapeID?
 
     private var undoStack: [AnnoDocument.Snapshot] = []
     private var redoStack: [AnnoDocument.Snapshot] = []
@@ -173,6 +174,12 @@ final class AnnoEditor {
     func setInteraction(_ interaction: AnnoInteraction) { self.interaction = interaction }
     func setBrush(_ brush: Box?) { self.brush = brush }
     func setHintedBinding(_ id: AnnoShapeID?) { hintedBindingId = id }
+
+    func setHoveredShape(_ id: AnnoShapeID?) {
+        guard hoveredShapeId != id else { return }
+        hoveredShapeId = id
+        notifyChanged()
+    }
 
     // MARK: - Camera
 
@@ -207,6 +214,7 @@ final class AnnoEditor {
         selectedIds.removeAll()
         editingTextId = nil
         interaction = .idle
+        hoveredShapeId = nil
         undoStack.removeAll()
         redoStack.removeAll()
         notifyChanged()
@@ -288,7 +296,19 @@ final class AnnoEditor {
 
     func selectAll() {
         selectedIds = Set(document.shapes.map { $0.id })
-        tool = .select
+        notifyChanged()
+    }
+
+    /// The first Escape clears the selection; another leaves no drawing tool armed.
+    func escapeSelectionOrDisarm() {
+        guard case .idle = interaction else { return }
+        stopEditingText()
+        if selectedIds.isEmpty {
+            tool = .select
+        } else {
+            selectedIds.removeAll()
+        }
+        hoveredShapeId = nil
         notifyChanged()
     }
 

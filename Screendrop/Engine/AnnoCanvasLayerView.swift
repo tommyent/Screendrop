@@ -187,6 +187,17 @@ final class AnnoCanvasNSView: NSView {
         let accent = AnnoTheme.selectionStroke
         let lineWidth = 1.5
 
+        if let id = editor.hoveredShapeId, !editor.selectedIds.contains(id),
+           let corners = editor.document.pageCorners(id) {
+            let path = CGMutablePath()
+            path.addLines(between: corners.map { editor.pageToScreen($0).cgPoint })
+            path.closeSubpath()
+            context.addPath(path)
+            context.setStrokeColor(accent.cgColor)
+            context.setLineWidth(lineWidth)
+            context.strokePath()
+        }
+
         if let hintedId = editor.hintedBindingId, let corners = editor.document.pageCorners(hintedId) {
             let path = CGMutablePath()
             path.addLines(between: corners.map { editor.pageToScreen($0).cgPoint })
@@ -213,7 +224,7 @@ final class AnnoCanvasNSView: NSView {
 
         // While text is being typed the selection frame stays hidden - the text view is the only
         // affordance.
-        guard editor.editingTextId == nil, editor.tool == .select, !editor.selectedIds.isEmpty else { return }
+        guard editor.editingTextId == nil, !editor.selectedIds.isEmpty else { return }
 
         // A lone arrow shows its own handles, since resizing it as a box makes no sense.
         if editor.selectedIds.count == 1, let shape = editor.selectedShapes.first, shape.isArrow,

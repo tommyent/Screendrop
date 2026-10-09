@@ -531,9 +531,17 @@ final class AnnotationEditorModel {
     }
 
     func hoveredAnnotation(at location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) -> AnnoShape? {
-        guard boundaryFrame.contains(location) else { return nil }
+        guard !isCropping, boundaryFrame.contains(location) else { return nil }
         updateViewport(imageFrame: imageFrame)
         return engine.hitShape(at: engine.screenToPage(Vec(location)))
+    }
+
+    func updateHoveredAnnotation(at location: CGPoint?, imageFrame: CGRect, boundaryFrame: CGRect) {
+        guard !isPointerDown, !NSEvent.modifierFlags.contains(.command), let location else {
+            engine.setHoveredShape(nil)
+            return
+        }
+        engine.setHoveredShape(hoveredAnnotation(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)?.id)
     }
 
     /// Whether a selection handle sits under the pointer, so the canvas can show a resize cursor.
@@ -651,8 +659,12 @@ final class AnnotationEditorModel {
     }
 
     func selectAllAnnotations() {
-        selectedTool = .select
         engine.selectAll()
+    }
+
+    func escapeSelectionOrDisarm() {
+        engine.escapeSelectionOrDisarm()
+        selectedTool = engine.tool
     }
 
     func nudgeSelection(dx: CGFloat, dy: CGFloat) {
