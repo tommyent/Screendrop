@@ -473,10 +473,7 @@ extension PointerTravelSample {
 
 nonisolated enum RecordingSessionStore {
     static var recordingsDirectory: URL {
-        let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        return baseURL
-            .appendingPathComponent("Screendrop", isDirectory: true)
+        return ScreendropStorage.applicationSupportDirectory
             .appendingPathComponent("Recordings", isDirectory: true)
     }
 

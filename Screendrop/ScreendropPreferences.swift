@@ -91,7 +91,7 @@ enum ScreendropPreferences {
     static var defaultExportDirectory: URL {
         let picturesDirectory = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
         return (picturesDirectory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Pictures"))
-            .appendingPathComponent("Screendrop", isDirectory: true)
+            .appendingPathComponent(ScreendropStorage.directoryName, isDirectory: true)
     }
 
     /// Unique ID of the camera recorded alongside the screen. Empty = camera off.

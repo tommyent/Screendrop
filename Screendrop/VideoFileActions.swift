@@ -93,7 +93,7 @@ enum VideoFileActions {
         guard !urls.isEmpty else { return }
         let files = FileManager.default
         let directory = files.temporaryDirectory
-            .appendingPathComponent("Screendrop/Clipboard", isDirectory: true)
+            .appendingPathComponent("\(ScreendropStorage.directoryName)/Clipboard", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
             var snapshots: [NSURL] = []

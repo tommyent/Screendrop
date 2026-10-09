@@ -103,9 +103,7 @@ final class ScreenshotHistoryStore {
     static let shared = ScreenshotHistoryStore()
 
     static var applicationSupportDirectory: URL {
-        let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        return baseURL.appendingPathComponent("Screendrop", isDirectory: true)
+        ScreendropStorage.applicationSupportDirectory
     }
 
     static var historyDirectory: URL {
