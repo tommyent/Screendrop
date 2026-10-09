@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7700000000000000000002 /* ScrollingCaptureTrace.swift */; };
 		AC6600000000000000000005 /* ScrollingCaptureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000006 /* ScrollingCaptureEngine.swift */; };
 		AC6600000000000000000007 /* ScrollingCaptureRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000008 /* ScrollingCaptureRegion.swift */; };
 		AC6600000000000000000003 /* ScrollingCaptureBands.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000004 /* ScrollingCaptureBands.swift */; };
@@ -73,6 +74,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AC7700000000000000000002 /* ScrollingCaptureTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureTrace.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000006 /* ScrollingCaptureEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureEngine.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000008 /* ScrollingCaptureRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureRegion.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000004 /* ScrollingCaptureBands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureBands.swift; sourceTree = SOURCE_ROOT; };
@@ -243,6 +245,7 @@
 				AC6600000000000000000002 /* ScrollingCaptureRegistration.swift */,
 				AC6600000000000000000004 /* ScrollingCaptureBands.swift */,
 				AC6600000000000000000006 /* ScrollingCaptureEngine.swift */,
+				AC7700000000000000000002 /* ScrollingCaptureTrace.swift */,
 				AC6600000000000000000008 /* ScrollingCaptureRegion.swift */,
 				AA61000000000000000000F3 /* Screendrop/PixelInspection.swift */,
 				AA61000000000000000000F4 /* Screendrop/CloudCommentList.swift */,
@@ -414,6 +417,7 @@
 				AC6600000000000000000001 /* ScrollingCaptureRegistration.swift in Sources */,
 				AC6600000000000000000003 /* ScrollingCaptureBands.swift in Sources */,
 				AC6600000000000000000005 /* ScrollingCaptureEngine.swift in Sources */,
+				AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */,
 				AC6600000000000000000007 /* ScrollingCaptureRegion.swift in Sources */,
 				AA610000000000000000008F /* Screendrop/PixelInspection.swift in Sources */,
 				AA6100000000000000000090 /* Screendrop/CloudCommentList.swift in Sources */,
