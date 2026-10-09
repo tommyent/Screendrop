@@ -21,6 +21,17 @@ import SwiftUI
 struct AnnotationDocument: Codable, Equatable {
     static let currentVersion = 3
 
+    /// Absence is editable; an existing unreadable document must never be treated as a new image.
+    static func load(from url: URL) throws -> AnnotationDocument? {
+        do {
+            return try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
+        } catch {
+            let error = error as NSError
+            if error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoSuchFileError { return nil }
+            throw AnnotationDocumentReadError.unreadable
+        }
+    }
+
     /// Schema version, for forward-compatible migrations.
     var version: Int
     /// File name of the untouched base image stored in the same directory.
@@ -46,6 +57,10 @@ struct AnnotationDocument: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        guard version <= Self.currentVersion else {
+            throw DecodingError.dataCorruptedError(forKey: .version, in: container,
+                debugDescription: "The edit document needs a newer Screendrop build.")
+        }
         baseImageFileName = try container.decodeIfPresent(String.self, forKey: .baseImageFileName) ?? ""
         // A v1 document's annotations can't be expressed in the shape model. They and its
         // background are already baked into the display image, which the editor opens as a
@@ -59,6 +74,14 @@ struct AnnotationDocument: Codable, Equatable {
 
     var backgroundSettings: AnnotationBackgroundSettings {
         background.settings
+    }
+}
+
+enum AnnotationDocumentReadError: LocalizedError {
+    case unreadable
+
+    var errorDescription: String? {
+        "This capture’s edits could not be read. They may have been made by a newer Screendrop build. Save and Done are blocked to protect the original image and edits. Open the capture in a compatible newer build."
     }
 }
 

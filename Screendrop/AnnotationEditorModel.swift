@@ -43,6 +43,7 @@ final class AnnotationEditorModel {
     /// The sidecar predates v2. Its marks exist only in the display image the
     /// editor loaded as its base, so restoring `.base.png` would erase them.
     private var isLegacyDocument = false
+    private var unreadableEditDocument = false
     var previewImage: NSImage?
     /// The preview image's pixels, for the canvas's redaction passes to sample.
     @ObservationIgnored private(set) var previewCGImage: CGImage? {
@@ -244,7 +245,14 @@ final class AnnotationEditorModel {
         resetZoom()
         sourceURL = url
 
-        let document = ScreenshotHistoryStore.shared.loadEditDocument(for: url)
+        let document: AnnotationDocument?
+        do {
+            document = try ScreenshotHistoryStore.shared.loadEditDocument(for: url)
+            unreadableEditDocument = false
+        } catch {
+            document = nil
+            unreadableEditDocument = true
+        }
         isLegacyDocument = document.map { $0.version < 2 } ?? false
         let candidateBaseURL = ScreenshotHistoryStore.baseImageURL(for: url)
         let renderSourceURL: URL
@@ -287,7 +295,7 @@ final class AnnotationEditorModel {
         cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
         cropAspect = .freeform
         RedactionImageProcessor.removeAllCachedPreviewImages()
-        errorMessage = nil
+        errorMessage = unreadableEditDocument ? AnnotationDocumentReadError.unreadable.localizedDescription : nil
         smartRedactionMessage = nil
 
         if previewImage == nil || imageSize == .zero {
@@ -341,10 +349,16 @@ final class AnnotationEditorModel {
     /// through it.
     private(set) var isCommitting = false
 
+    func validateEditDocument() throws {
+        guard !unreadableEditDocument else { throw AnnotationDocumentReadError.unreadable }
+        if let sourceURL { _ = try ScreenshotHistoryStore.shared.loadEditDocument(for: sourceURL) }
+    }
+
     @discardableResult
     func commitEdits() async throws -> URL? {
         guard !isCommitting else { throw CocoaError(.userCancelled) }
         guard let sourceURL = self.sourceURL else { return nil }
+        try validateEditDocument()
         isCommitting = true
         defer { isCommitting = false }
         commitTextEditing()

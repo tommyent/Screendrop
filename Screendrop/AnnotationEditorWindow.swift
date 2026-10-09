@@ -325,6 +325,10 @@ struct AnnotationEditorWindow: View {
     private func saveAs() {
         clearInspectorFocus()
         guard !isBusy, let sourceURL = model.sourceURL else { return }
+        do { try model.validateEditDocument() } catch {
+            model.errorMessage = error.localizedDescription
+            return
+        }
         let baseURL = model.baseImageURL ?? sourceURL
 
         let panel = NSSavePanel()

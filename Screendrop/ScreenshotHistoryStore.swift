@@ -131,13 +131,8 @@ final class ScreenshotHistoryStore {
     }
 
     /// Loads the editable annotation document for a screenshot, if one exists.
-    func loadEditDocument(for displayURL: URL) -> AnnotationDocument? {
-        let documentURL = Self.editDocumentURL(for: displayURL)
-        guard let data = try? Data(contentsOf: documentURL),
-              let document = try? JSONDecoder().decode(AnnotationDocument.self, from: data) else {
-            return nil
-        }
-        return document
+    func loadEditDocument(for displayURL: URL) throws -> AnnotationDocument? {
+        try AnnotationDocument.load(from: Self.editDocumentURL(for: displayURL))
     }
 
     func hasEditDocument(for displayURL: URL) -> Bool {
@@ -285,6 +280,7 @@ final class ScreenshotHistoryStore {
         renderedURL: URL,
         document: AnnotationDocument
     ) throws -> URL {
+        _ = try loadEditDocument(for: displayURL)
         guard isHistoryURL(displayURL) else {
             let imported = importScreenshot(from: baseURL)
             guard isHistoryURL(imported) else { throw CocoaError(.fileWriteUnknown) }
@@ -323,6 +319,7 @@ final class ScreenshotHistoryStore {
     /// Restores the base and removes the editable files as one recoverable save.
     @discardableResult
     func removeAnnotations(displayURL: URL) throws -> URL {
+        _ = try loadEditDocument(for: displayURL)
         guard isHistoryURL(displayURL) else { return displayURL }
         let baseDestination = Self.baseImageURL(for: displayURL)
         let documentURL = Self.editDocumentURL(for: displayURL)
