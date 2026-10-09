@@ -61,6 +61,7 @@ nonisolated struct ScrollingCapturePlacement: Sendable {
     let stableRows: Set<Int>
     let motionRows: Set<Int>
     let contentRows: Range<Int>
+    var corroboratingRows: Set<Int> = []
     var pageRows: Range<Int> { (offset + contentRows.lowerBound)..<(offset + contentRows.upperBound) }
 }
 
@@ -69,7 +70,7 @@ nonisolated struct ScrollingCapturePlacement: Sendable {
 /// do not establish it. Chrome outside that viewport never supplies evidence.
 nonisolated struct ScrollingCaptureRegistrationBuffer {
     enum State: Equatable { case pending, appended, lost }
-    enum Failure: Equatable { case invalidSample, bufferExhausted, noOverlap }
+    enum Failure: Equatable { case invalidSample, bufferExhausted, motionTimeout, noOverlap }
     enum PendingReason: Equatable { case motion, noOverlap }
     struct Event {
         let state: State
@@ -82,11 +83,13 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         let frame: ScrollingCaptureRaster
         let stable: Set<Int>
         let motion: Set<Int>
+        let time: TimeInterval
     }
     private enum Match { case absent, ambiguous, offset(Int) }
 
     let initial: ScrollingCapturePlacement
     let maximumBufferedBytes: Int
+    let maximumPendingTime: TimeInterval
     private(set) var frontier = 0
     private(set) var lastVerifiedOffset = 0
     private(set) var isLost = false
@@ -96,18 +99,23 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private var lastIndex = 0
     private var lastWitness: ScrollingCapturePlacement?
     private var movingPageRows: Set<Int>
+    private var everMovingPageRows: Set<Int>
+    private var settledObservations: [Int: Int] = [:]
     private var pageWitnessRows: Set<Int>?
     private var noOverlapSince: Int?
     private let contentRows: Range<Int>
     private let minimumRows = 8
+    private var lastTime: TimeInterval = -.infinity
 
     init?(first: ScrollingCaptureRaster, confirmation: ScrollingCaptureRaster,
           contentRows: Range<Int>, maximumBufferedBytes: Int = 128 * 1024 * 1024,
-          observedMotionRows: Set<Int> = [], pageWitnessRows: Set<Int>? = nil) {
+          observedMotionRows: Set<Int> = [], pageWitnessRows: Set<Int>? = nil,
+          maximumPendingTime: TimeInterval = 2) {
         guard first.width == confirmation.width, first.height == confirmation.height,
               first.matchingColumns == confirmation.matchingColumns,
               contentRows.lowerBound >= 0, contentRows.upperBound <= first.height,
-              contentRows.count >= 16, maximumBufferedBytes / first.byteCount >= 4 else { return nil }
+              contentRows.count >= 16, maximumBufferedBytes / first.byteCount >= 4,
+              maximumPendingTime.isFinite, maximumPendingTime > 0 else { return nil }
         let stable = Set(contentRows.filter { first.sameRow($0, as: confirmation, at: $0) }).subtracting(observedMotionRows)
         let motion = Set(contentRows).subtracting(stable)
         initial = ScrollingCapturePlacement(index: 0, offset: 0, frame: confirmation,
@@ -117,7 +125,9 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         self.contentRows = contentRows
         self.maximumBufferedBytes = maximumBufferedBytes
         movingPageRows = motion
+        everMovingPageRows = motion
         self.pageWitnessRows = pageWitnessRows
+        self.maximumPendingTime = maximumPendingTime
     }
 
     // Count conservatively: two working frames plus every queued/registered frame.
@@ -127,16 +137,19 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         return (retained.count + 2) * initial.frame.byteCount
     }
     var pendingCount: Int { unresolved.count }
+    var settledPageRows: Set<Int> { everMovingPageRows.subtracting(movingPageRows) }
 
-    mutating func add(_ frame: ScrollingCaptureRaster, at index: Int) -> Event {
+    mutating func add(_ frame: ScrollingCaptureRaster, at index: Int, time: TimeInterval? = nil) -> Event {
+        let time = time ?? Double(index) * 0.05
         guard !isLost else { return Event(state: .lost) }
-        guard index > lastIndex, frame.width == initial.frame.width,
+        guard index > lastIndex, time.isFinite, time >= lastTime, frame.width == initial.frame.width,
               frame.height == initial.frame.height,
               frame.matchingColumns == initial.frame.matchingColumns else { return lose(.invalidSample) }
         lastIndex = index
+        lastTime = time
         let stable = Set(contentRows.filter { previous.sameRow($0, as: frame, at: $0) })
         let sample = Sample(index: index, frame: frame, stable: stable,
-                            motion: Set(contentRows).subtracting(stable))
+                            motion: Set(contentRows).subtracting(stable), time: time)
         previous = frame
         var match = locate(sample)
         if case .absent = match, let displaced = movingOffset(sample) { match = .offset(displaced) }
@@ -156,12 +169,18 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             let placement = placed(sample, at: offset)
             var resolved = [placement]
             movingPageRows.formUnion(placement.motionRows.map { $0 + offset })
+            everMovingPageRows.formUnion(placement.motionRows.map { $0 + offset })
+            observeSettledRows(placement)
             if pageWitnessRows != nil {
                 pageWitnessRows!.formUnion(placement.stableRows.map { $0 + offset })
             }
             keys.append(placement)
-            for waiting in unresolved {
-                if case .offset(let position) = locate(waiting, requiringDisplacement: true) {
+            for waiting in unresolved where time - waiting.time < maximumPendingTime {
+                var match = locate(waiting, requiringDisplacement: true)
+                if case .absent = match, let position = movingOffset(waiting), position != lastVerifiedOffset {
+                    match = .offset(position)
+                }
+                if case .offset(let position) = match {
                     resolved.append(placed(waiting, at: position))
                 }
             }
@@ -169,13 +188,18 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             unresolved.removeAll()
             let highest = resolved.map(\.offset).max() ?? offset
             let advanced = highest > frontier
-            if offset != lastVerifiedOffset, hasPageWitness(placement) { lastWitness = placement }
+            if offset != lastVerifiedOffset, hasPageWitness(placement) {
+                lastWitness = ScrollingCapturePlacement(index: placement.index, offset: offset, frame: frame,
+                    stableRows: placement.stableRows.filter { !everMovingPageRows.contains(offset + $0) },
+                    motionRows: placement.motionRows, contentRows: contentRows)
+            }
             frontier = max(frontier, highest)
             lastVerifiedOffset = offset
             trimKeys()
             return Event(state: advanced ? .appended : .pending,
                          placements: resolved.sorted { $0.index < $1.index })
         case .absent, .ambiguous:
+            if let first = unresolved.first, time - first.time >= maximumPendingTime { return lose(.motionTimeout) }
             let votes = keys.flatMap { votes($0, sample).values }
             if stable.filter({ !frame.isBlank($0) }).count >= minimumRows, votes.isEmpty {
                 noOverlapSince = noOverlapSince ?? index
@@ -183,14 +207,19 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                 return Event(state: .pending, pendingReason: .noOverlap)
             }
             noOverlapSince = nil
-            // Without an at-rest witness there is nothing useful to retain. Hover/
-            // selection transitions do not accumulate frames or trigger lost-track.
-            guard stable.count >= minimumRows,
-                  hasNonzeroEvidence(sample) else { return Event(state: .pending, pendingReason: .motion) }
+            // A stationary page with hover/video changes is not a scrolling gap.
+            let stationary = lastWitness.map { witness in
+                hasPageWitness(witness) && witness.stableRows.allSatisfy { witness.frame.sameRow($0, as: frame, at: $0) }
+                    && !hasMovingChanges(from: witness.frame, to: frame)
+            } ?? false
+            guard !stationary, hasNonzeroEvidence(sample) || frontier > 0 else {
+                return Event(state: .pending, pendingReason: .motion)
+            }
             unresolved.append(sample)
             trimKeys()
             if bufferedBytes > maximumBufferedBytes { return lose(.bufferExhausted) }
-            return Event(state: .pending)
+            if time - unresolved[0].time >= maximumPendingTime { return lose(.motionTimeout) }
+            return Event(state: .pending, pendingReason: .motion)
         }
     }
 
@@ -207,10 +236,17 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     }
     private func placed(_ sample: Sample, at offset: Int) -> ScrollingCapturePlacement {
         if pageWitnessRows != nil {
-            var stable = Set<Int>(), motion = Set<Int>()
+            var stable = Set<Int>(), motion = Set<Int>(), corroborating = Set<Int>()
             for y in contentRows {
                 let pageY = offset + y
-                if movingPageRows.contains(pageY) { motion.insert(y); continue }
+                if everMovingPageRows.contains(pageY) {
+                    if !movingPageRows.contains(pageY), let last = keys.last,
+                       contentRows.contains(pageY - last.offset),
+                       last.frame.sameRow(pageY - last.offset, as: sample.frame, at: y) {
+                        corroborating.insert(y)
+                    } else { motion.insert(y) }
+                    continue
+                }
                 for key in keys {
                     let oldY = pageY - key.offset
                     guard contentRows.contains(oldY) else { continue }
@@ -223,10 +259,25 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             }
             // Unseen incoming rows stay provisional; scrolling itself is not animation.
             return ScrollingCapturePlacement(index: sample.index, offset: offset, frame: sample.frame,
-                stableRows: stable.subtracting(motion), motionRows: motion, contentRows: contentRows)
+                stableRows: stable.subtracting(motion), motionRows: motion, contentRows: contentRows,
+                corroboratingRows: corroborating)
         }
         return ScrollingCapturePlacement(index: sample.index, offset: offset, frame: sample.frame,
-            stableRows: sample.stable, motionRows: sample.motion, contentRows: contentRows)
+            stableRows: sample.stable.filter { !everMovingPageRows.contains(offset + $0) },
+            motionRows: sample.motion, contentRows: contentRows)
+    }
+
+    private mutating func observeSettledRows(_ placement: ScrollingCapturePlacement) {
+        guard let last = keys.last else { return }
+        var observations: [Int: Int] = [:]
+        for y in contentRows where everMovingPageRows.contains(placement.offset + y) {
+            let pageY = placement.offset + y, oldY = pageY - last.offset
+            let same = contentRows.contains(oldY) && last.frame.sameRow(oldY, as: placement.frame, at: y)
+            let count = same ? (settledObservations[pageY] ?? 1) + 1 : 1
+            observations[pageY] = count
+            if count >= 3 { movingPageRows.remove(pageY) } else { movingPageRows.insert(pageY) }
+        }
+        settledObservations = observations
     }
     /// Positive registration uses previously proven page rows even while the view moves.
     private func movingOffset(_ sample: Sample) -> Int? {
@@ -235,7 +286,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         for key in keys {
             var oldRows: [Int: [Int]] = [:]
             for y in key.stableRows where pageWitnessRows.contains(key.offset + y)
-                && !movingPageRows.contains(key.offset + y) && !key.frame.isBlank(y) {
+                && !everMovingPageRows.contains(key.offset + y) && !key.frame.isBlank(y) {
                 oldRows[key.frame.rowHash(y), default: []].append(y)
             }
             for y in contentRows where !sample.frame.isBlank(y) {
@@ -247,7 +298,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         }
         let candidates = offsets.filter { $0.value.count >= minimumRows }.keys
         guard candidates.count == 1, let offset = candidates.first,
-              offsets.keys.allSatisfy({ $0 == offset }) else { return nil }
+              offsets.keys.allSatisfy({ $0 == offset }), corroborates(offset, sample) else { return nil }
         if offset == lastVerifiedOffset {
             guard let witness = lastWitness, hasPageWitness(witness),
                   witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }),
@@ -279,18 +330,18 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
            witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }) {
             return .ambiguous
         }
-        return .offset(offset)
+        return corroborates(offset, sample) ? .offset(offset) : .ambiguous
     }
     private func votes(_ key: ScrollingCapturePlacement, _ sample: Sample) -> [Int: Set<Int>] {
         var oldRows: [Int: [Int]] = [:]
-        for y in key.stableRows where !key.frame.isBlank(y) && !movingPageRows.contains(key.offset + y) {
+        for y in key.stableRows where !key.frame.isBlank(y) && !everMovingPageRows.contains(key.offset + y) {
             oldRows[key.frame.rowHash(y), default: []].append(y)
         }
         var shifts: [Int: Set<Int>] = [:]
         for y in sample.stable where !sample.frame.isBlank(y) {
             let hash = sample.frame.rowHash(y)
             for oldY in oldRows[hash, default: []] where key.frame.sameRow(oldY, as: sample.frame, at: y) {
-                guard !movingPageRows.contains(key.offset + oldY) else { continue }
+                guard !everMovingPageRows.contains(key.offset + oldY) else { continue }
                 shifts[oldY - y, default: []].insert(hash)
             }
         }
@@ -311,7 +362,22 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         keys.contains { key in votes(key, sample).contains { $0.key != 0 && !$0.value.isEmpty } }
     }
     private func hasPageWitness(_ placement: ScrollingCapturePlacement) -> Bool {
-        Set(placement.stableRows.filter { !placement.frame.isBlank($0) }.map { placement.frame.rowHash($0) }).count >= minimumRows
+        Set(placement.stableRows.filter { !everMovingPageRows.contains(placement.offset + $0) && !placement.frame.isBlank($0) }
+            .map { placement.frame.rowHash($0) }).count >= minimumRows
+    }
+
+    /// Settled media can veto conflicting evidence, never create a position or an idle witness.
+    private func corroborates(_ offset: Int, _ sample: Sample) -> Bool {
+        for key in keys {
+            var votes: [Int: Set<Int>] = [:]
+            for oldY in key.corroboratingRows where settledPageRows.contains(key.offset + oldY) && !key.frame.isBlank(oldY) {
+                for y in contentRows where !sample.frame.isBlank(y) && key.frame.sameRow(oldY, as: sample.frame, at: y) {
+                    votes[key.offset + oldY - y, default: []].insert(sample.frame.rowHash(y))
+                }
+            }
+            if votes.contains(where: { $0.key != offset && $0.value.count >= minimumRows }) { return false }
+        }
+        return true
     }
     /// Even sub-threshold translated content must veto an idle classification.
     private func hasMovingChanges(from old: ScrollingCaptureRaster, to new: ScrollingCaptureRaster) -> Bool {

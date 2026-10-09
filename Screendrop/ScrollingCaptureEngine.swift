@@ -56,6 +56,7 @@ actor ScrollingCaptureEngine {
     private var pageWitnessRows = Set<Int>()
     private var safeOffset = 0
     private var sampleIndex = 0
+    private var previousTime: TimeInterval?
     private var buffer: ScrollingCaptureRegistrationBuffer?
     private var compositor: ScrollingCaptureBandCompositor?
     private var prefix: [UInt32] = []
@@ -109,7 +110,8 @@ actor ScrollingCaptureEngine {
         let old = previous
         traceEvents.removeAll(keepingCapacity: true)
         traceRecoveryAttempt = recovering
-        let result = await process(image)
+        let result = await process(image, at: time)
+        previousTime = time
         if trace != nil, let decoded = ScrollingCaptureRaster(image: image, colorSpace: colorSpace) {
             let masked = decoded.using(columns: matchingColumns) ?? decoded
             guard let input = try? ScrollingCaptureTrace.Raster(masked) else { return result }
@@ -129,7 +131,7 @@ actor ScrollingCaptureEngine {
 
     private func note(_ event: @autoclosure () -> String) { if trace != nil { traceEvents.append(event()) } }
 
-    private func process(_ image: CGImage) async -> Update {
+    private func process(_ image: CGImage, at time: TimeInterval) async -> Update {
         sampleIndex += 1
         guard let decoded = ScrollingCaptureRaster(image: image, colorSpace: colorSpace),
               let frame = decoded.using(columns: matchingColumns),
@@ -262,7 +264,7 @@ actor ScrollingCaptureEngine {
                 band.rows.map { $0 + baseOffset - offset }
             } ?? []).intersection(rows)
             if sameBounds, var candidate = buffer, candidate.initial.contentRows == viewport {
-                let verified = candidate.add(frame, at: sampleIndex)
+                let verified = candidate.add(frame, at: sampleIndex, time: time)
                 note("recovery registration: \(verified.state); \(String(describing: verified.failure))")
                 if verified.placements.last.map({ $0.offset + registrationOrigin == offset - baseOffset }) == true {
                     buffer = candidate
@@ -282,7 +284,7 @@ actor ScrollingCaptureEngine {
             recovering = false
         }
         let matching = frame.using(columns: matchingColumns)!
-        var event = recoveryEvent ?? buffer!.add(matching, at: sampleIndex)
+        var event = recoveryEvent ?? buffer!.add(matching, at: sampleIndex, time: time)
         if engine == .legacy, let placed = event.placements.last, placed.offset > 0, sampleIndex > 1 {
             let proposed = widerViewport(body: viewport, delta: placed.offset, frame: matching)
             let old = lastSafeFrame.using(columns: matchingColumns)!
@@ -293,8 +295,8 @@ actor ScrollingCaptureEngine {
                var candidate = ScrollingCaptureRegistrationBuffer(first: old, confirmation: old,
                     contentRows: proposed, observedMotionRows: motion, pageWitnessRows: pageWitnessRows),
                let preceding = previous.using(columns: matchingColumns) {
-                _ = candidate.add(preceding, at: sampleIndex - 1)
-                let verified = candidate.add(matching, at: sampleIndex)
+                _ = candidate.add(preceding, at: sampleIndex - 1, time: previousTime ?? time - 0.05)
+                let verified = candidate.add(matching, at: sampleIndex, time: time)
                 note("wider registration: \(verified.state); failure: \(String(describing: verified.failure)); offsets: \(verified.placements.map(\.offset))")
                 if verified.placements.last?.offset == placed.offset {
                     let start = max(proposed.lowerBound, selection.rows.lowerBound - safeOffset)
@@ -312,9 +314,9 @@ actor ScrollingCaptureEngine {
             }
         }
         note("registration: \(event.state); failure: \(String(describing: event.failure)); pending: \(String(describing: event.pendingReason))")
-        note("retained: \(buffer!.pendingCount); bytes: \(buffer!.bufferedBytes)")
+        note("retained: \(buffer!.pendingCount); bytes: \(buffer!.bufferedBytes); settled: \(buffer!.settledPageRows.sorted())")
         for placement in event.placements {
-            note("placement: \(placement.index) at \(placement.offset); content: \(placement.contentRows); stable: \(placement.stableRows.sorted()); motion: \(placement.motionRows.sorted())")
+            note("placement: \(placement.index) at \(placement.offset); content: \(placement.contentRows); stable: \(placement.stableRows.sorted()); motion: \(placement.motionRows.sorted()); corroborating: \(placement.corroboratingRows.sorted())")
         }
         if event.state == .lost {
             recovering = true

@@ -4,6 +4,8 @@ Scrolling failure traces are opt-in (`ScrollingCaptureTrace` in the app's defaul
 
 `ScrollingTraceTests.externalTrace` reads `SUKUSHO_SCROLL_TRACE=/absolute/path/session.scrolltrace` from the test runner environment and is skipped when unset. Set `TEST_RUNNER_SUKUSHO_SCROLL_TRACE` to forward that value through `xcodebuild test`. Replay checks every recorded event, mask, placement, recovery patch, height and the final output checksum. Generated traces exercise the same reader without screen access.
 
+`ScrollingSettleTests` checks three registered observations before media can corroborate a position, immediate revocation on change, and refusal when media is the sole evidence. At least eight distinct non-blank page rows remain required; settled rows never enter the idle witness. Moving unresolved samples are kept within the registration byte budget and a two-second sample-time window, then either registered exactly against verified keys or discarded on recovery.
+
 Run the shared `Screendrop` or `Screendrop Dev` scheme's Test action. On this fork's build Mac:
 
 ```sh
