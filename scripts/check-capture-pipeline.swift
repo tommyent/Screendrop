@@ -1,5 +1,5 @@
 // swiftc -parse-as-library -default-isolation MainActor scripts/check-capture-pipeline.swift \
-//   Screendrop/{ScreenshotManager,ScreenshotClipboardImage,CaptureLibraryThumbnails}.swift -o /tmp/check-capture-pipeline
+//   Screendrop/{ScreenshotManager,ScreenshotClipboardImage,CaptureLibraryThumbnails,CaptureThumbnailDiskCache}.swift -o /tmp/check-capture-pipeline
 import AppKit
 import ImageIO
 
@@ -48,7 +48,9 @@ nonisolated struct CaptureLibraryItem: Sendable {
             precondition(pixels(decoded) == pixels(image))
         }
 
-        let thumbnails = CaptureLibraryThumbnails()
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("thumbnail-check-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let thumbnails = CaptureLibraryThumbnails(disk: CaptureThumbnailDiskCache(directory: folder))
         let modified = try a.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate!
         let capture = CaptureLibraryItem(fileURL: a, thumbnailKey: "\(a.path):\(modified.timeIntervalSince1970)")
         async let preview = thumbnails.image(at: a)
