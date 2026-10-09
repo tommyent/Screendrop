@@ -175,15 +175,18 @@ struct AnnotationEditorWindow: View {
             if isSaving {
                 ProgressView().controlSize(.small)
             } else {
-                Image(systemName: "square.and.arrow.down")
+                Label("Save", systemImage: "square.and.arrow.down")
+                    .labelStyle(.iconOnly)
             }
         }
         .keyboardShortcut("s", modifiers: .command)
         .disabled(!model.hasUnsavedChanges || isSaving || isFinishing)
         .help("Save annotations (⌘S)")
 
+        // Labels, shown as icons, so VoiceOver and the toolbar's overflow menu name them.
         Button(action: finishEditing) {
-            Image(systemName: "checkmark.circle")
+            Label("Done", systemImage: "checkmark.circle")
+                .labelStyle(.iconOnly)
         }
         .keyboardShortcut(.return, modifiers: .command)
         .help("Finish editing and save (⌘↩; ⌘C also copies the image)")
@@ -192,7 +195,8 @@ struct AnnotationEditorWindow: View {
             clearInspectorFocus()
             isInspectorPresented.toggle()
         } label: {
-            Image(systemName: "sidebar.right")
+            Label(isInspectorPresented ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
+                .labelStyle(.iconOnly)
         }
         .help(isInspectorPresented ? "Hide Inspector" : "Show Inspector")
     }
