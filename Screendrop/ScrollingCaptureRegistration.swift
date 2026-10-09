@@ -368,10 +368,16 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
 
     /// Settled media can veto conflicting evidence, never create a position or an idle witness.
     private func corroborates(_ offset: Int, _ sample: Sample) -> Bool {
+        let settled = settledPageRows
+        guard !settled.isEmpty else { return true }
+        var currentRows: [Int: [Int]] = [:]
+        for y in contentRows where !sample.frame.isBlank(y) {
+            currentRows[sample.frame.rowHash(y), default: []].append(y)
+        }
         for key in keys {
             var votes: [Int: Set<Int>] = [:]
-            for oldY in key.corroboratingRows where settledPageRows.contains(key.offset + oldY) && !key.frame.isBlank(oldY) {
-                for y in contentRows where !sample.frame.isBlank(y) && key.frame.sameRow(oldY, as: sample.frame, at: y) {
+            for oldY in key.corroboratingRows where settled.contains(key.offset + oldY) && !key.frame.isBlank(oldY) {
+                for y in currentRows[key.frame.rowHash(oldY), default: []] where key.frame.sameRow(oldY, as: sample.frame, at: y) {
                     votes[key.offset + oldY - y, default: []].insert(sample.frame.rowHash(y))
                 }
             }

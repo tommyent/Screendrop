@@ -47,6 +47,24 @@ import Testing
         #expect(placement.motionRows == Set(40..<100))
     }
 
+    @Test("Settled media conflicting with the page vetoes a position; agreement still registers")
+    func settledConflict() throws {
+        let video = 100..<160
+        let first = F.frame(0, phase: 2, video: video)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, observedMotionRows: Set(video),
+            pageWitnessRows: Set(0..<100).union(160..<200)))
+        for (index, offset) in [20, 30, 40, 50, 60].enumerated() {
+            #expect(buffer.add(F.frame(offset, phase: 2, video: video), at: index + 1).placements.last?.offset == offset)
+        }
+        let moved = F.frame(80, phase: 2, video: video), old = F.frame(60, phase: 2, video: video)
+        var pixels = moved.pixels
+        for y in 40..<100 { pixels.replaceSubrange((y * F.width)..<((y + 1) * F.width), with: old.row(y)) }
+        let pinned = try #require(ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels))
+        #expect(buffer.add(pinned, at: 6).state != .appended && buffer.lastVerifiedOffset == 60)
+        #expect(buffer.add(moved, at: 7).placements.last?.offset == 80)
+    }
+
     private func primed(bytes: Int = 128 * 1024 * 1024) throws -> ScrollingCaptureRegistrationBuffer {
         let video = 20..<180
         var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: F.frame(0, phase: 1, video: video),
