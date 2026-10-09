@@ -161,40 +161,28 @@ enum VideoFileActions {
         return destination
     }
 
+    /// `recording_<date>_<time>` in the export's container, dated from when
+    /// the recording was made, whatever the internal file is called.
     static func exportFileName(
         for sourceURL: URL,
         container: VideoExportContainer = .default
     ) -> String {
-        sourceURL
-            .deletingPathExtension()
-            .appendingPathExtension(container.fileExtension)
-            .lastPathComponent
+        ScreenshotFileNaming.recordingFileName(date: recordingDate(for: sourceURL), extension: container.fileExtension)
+    }
+
+    /// When the recording was made: its session package's creation, or the
+    /// movie file's own, for a recording kept as a bare movie.
+    static func recordingDate(for url: URL) -> Date {
+        var candidate = url
+        for _ in 0..<3 where !RecordingSession.isSessionDirectory(candidate) {
+            candidate = candidate.deletingLastPathComponent()
+        }
+        let dated = RecordingSession.isSessionDirectory(candidate) ? candidate : url
+        return (try? dated.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
     }
 
     static func uniqueDestinationURL(for fileName: String, in directory: URL) -> URL {
-        let originalURL = directory.appendingPathComponent(fileName)
-
-        guard FileManager.default.fileExists(atPath: originalURL.path) else {
-            return originalURL
-        }
-
-        let baseName = originalURL.deletingPathExtension().lastPathComponent
-        let pathExtension = originalURL.pathExtension
-
-        for index in 1...10_000 {
-            let numberedName = "\(baseName) \(index)"
-            let candidateURL = directory
-                .appendingPathComponent(numberedName)
-                .appendingPathExtension(pathExtension)
-
-            if !FileManager.default.fileExists(atPath: candidateURL.path) {
-                return candidateURL
-            }
-        }
-
-        return directory
-            .appendingPathComponent("\(baseName) \(UUID().uuidString)")
-            .appendingPathExtension(pathExtension)
+        ScreenshotFileNaming.uniqueURL(for: fileName, in: directory)
     }
 }
 
