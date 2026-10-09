@@ -380,6 +380,8 @@ struct PreviewCardView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        // A bare glyph has no name of its own for VoiceOver.
+        .accessibilityLabel(help)
     }
 
     private func actionPill(_ title: String, action: @escaping () -> Void) -> some View {
