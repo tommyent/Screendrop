@@ -22,13 +22,13 @@ struct PixelColorRow: View {
                     Spacer(minLength: 4)
                     Text(probe?.copiedHex != nil ? "Copied" : "Tab to copy")
                         .font(.inspectorLabel)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InspectorControlPalette.label)
                 }
             } else {
                 // An empty swatch and a dash read as a colour control set to nothing.
                 Text("Hover the image")
                     .font(.inspectorLabel)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(InspectorControlPalette.label)
             }
         }
         .help("The colour under the pointer. Tab copies its hex.")

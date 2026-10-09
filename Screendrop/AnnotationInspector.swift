@@ -319,12 +319,12 @@ struct AnnotationEditorInspector: View {
                         .controlSize(.small)
                     Text("Scanning screenshot…")
                         .font(.inspectorLabel)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InspectorControlPalette.label)
                 }
             } else if let message = model.smartRedactionMessage {
                 Text(message)
                     .font(.inspectorLabel)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InspectorControlPalette.label)
             }
         }
     }
@@ -335,7 +335,7 @@ struct AnnotationEditorInspector: View {
             if model.selectionCount > 1 {
                 Text("\(model.selectionCount) annotations selected")
                     .font(.inspectorLabel)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InspectorControlPalette.label)
             }
 
             if model.isTextStyleAvailable {

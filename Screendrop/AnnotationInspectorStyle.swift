@@ -83,6 +83,16 @@ enum InspectorControlPalette {
         colorScheme == .dark ? .clear : Color.black.opacity(0.14)
     }
 
+    /// Every inspector label, header and hint. macOS's secondary label in
+    /// dark mode (6.9:1 on the panel); in light mode that measures 3.1:1
+    /// against white, under AA's 4.5:1, so it's darker there (5.4:1).
+    /// Measured off-screen, design pass choice 10.
+    static let label = Color(nsColor: NSColor(name: "InspectorLabel") { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? .secondaryLabelColor
+            : NSColor.black.withAlphaComponent(0.66)
+    })
+
     static var hoverFill: Color { Color.primary.opacity(0.04) }
     static var border: Color { Color.primary.opacity(0.10) }
     static var selectedForeground: Color { Color.primary.opacity(0.92) }
@@ -153,7 +163,7 @@ struct InspectorSection<Content: View, Accessory: View>: View {
                 HStack(spacing: 6) {
                     Text(title)
                         .font(.inspectorSectionHeader)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InspectorControlPalette.label)
 
                     Spacer(minLength: 0)
 
@@ -224,13 +234,13 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
                                 .font(.inspectorSectionHeader)
                                 // Stay the lighter grey when expanded. Hover is the
                                 // clickable cue, so it still darkens.
-                                .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : Color.secondary)
+                                .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : InspectorControlPalette.label)
                                 .fixedSize()
 
                             if let summary, !isExpanded {
                                 Text(summary)
                                     .font(.inspectorLabel)
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(InspectorControlPalette.label)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                                     .transition(.opacity)
@@ -410,7 +420,7 @@ struct InspectorToggleRow: View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.inspectorLabel)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InspectorControlPalette.label)
 
             Spacer(minLength: 8)
 
@@ -486,7 +496,7 @@ struct InspectorHint: View {
     var body: some View {
         Text(text)
             .font(.inspectorLabel)
-            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(InspectorControlPalette.label))
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -557,7 +567,7 @@ struct InspectorGroupLabel: View {
     var body: some View {
         Text(title)
             .font(.inspectorLabel)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(InspectorControlPalette.label)
     }
 }
 
@@ -577,7 +587,7 @@ struct InspectorRow<Content: View>: View {
         HStack(alignment: .top, spacing: 10) {
             Text(title)
                 .font(.inspectorLabel)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InspectorControlPalette.label)
                 .frame(width: InspectorMetrics.labelColumnWidth, height: InspectorMetrics.controlHeight, alignment: .leading)
 
             content()
