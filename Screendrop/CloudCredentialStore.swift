@@ -25,7 +25,7 @@ final class CloudCredentialStore {
     static let shared = CloudCredentialStore()
 
     private let defaults = UserDefaults.standard
-    private static let keychainService = "com.fayazahmed.Screendrop"
+    private static let keychainService = ScreendropStorage.keychainService
 
     // MARK: - Keys
 
@@ -77,10 +77,11 @@ final class CloudCredentialStore {
         _uploadToken = Self.getKeychainItem(key: Keys.uploadToken) ?? ""
         _workerURL = defaults.string(forKey: Keys.workerURL) ?? ""
 
-        // Migrate from old UserDefaults-based cloud token if present
-        migrateFromLegacyDefaults()
-        // Clean up leftover S3 credentials from previous versions
-        migrateFromLegacyS3Credentials()
+        // Only the personal app migrates its historical credentials.
+        if ScreendropStorage.isPersonalBuild {
+            migrateFromLegacyDefaults()
+            migrateFromLegacyS3Credentials()
+        }
     }
 
     private func migrateFromLegacyDefaults() {
