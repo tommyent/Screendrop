@@ -186,7 +186,6 @@ final class AnnotationEditorModel {
 
     var shapes: [AnnoShape] { engine.shapes }
     var bindings: [ArrowBinding] { engine.document.bindings }
-    var hasAnnotations: Bool { !engine.shapes.isEmpty }
     var selectionCount: Int { engine.selectedIds.count }
     var editingTextID: AnnoShapeID? { engine.editingTextId }
 
@@ -572,10 +571,6 @@ final class AnnotationEditorModel {
         return engine.handle(at: Vec(location))
     }
 
-    func containsInteractionPoint(_ location: CGPoint, imageFrame: CGRect, boundaryFrame: CGRect) -> Bool {
-        boundaryFrame.contains(location)
-    }
-
     // MARK: - Tools and style
 
     func selectTool(_ tool: AnnotationTool) {
@@ -743,10 +738,6 @@ final class AnnotationEditorModel {
 
     func commitTextEditing() {
         engine.stopEditingText()
-    }
-
-    func setText(_ text: String, for id: AnnoShapeID) {
-        engine.updateEditingText(id, to: text)
     }
 
     func undo() {
@@ -993,11 +984,6 @@ extension AnnotationEditorModel {
     private var isCropCenterResizeModifierPressed: Bool {
         let flags = NSEvent.modifierFlags
         return flags.contains(.option) || (flags.contains(.command) && flags.contains(.shift))
-    }
-
-    func moveCrop(byNormalized delta: CGSize) {
-        guard isCropping else { return }
-        cropRect = CropRectEditor.move(cropRect, by: delta)
     }
 
     /// Bake the crop into a new full-resolution base image, move the shapes with it, and exit crop

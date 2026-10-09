@@ -717,11 +717,6 @@ final class RecordingStudioModel {
         )
     }
 
-    func splitClipAtHover() {
-        guard let timelineHoverTime else { return }
-        splitClip(at: timelineHoverTime)
-    }
-
     func deleteSelectedClip() {
         guard let selectedClipID,
               let deletedRange = clipTimeline.editorRange(for: selectedClipID),

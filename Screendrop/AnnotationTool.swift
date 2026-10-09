@@ -105,14 +105,6 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         return "\(title) (\(shortcut))"
     }
 
-    var isFilledShape: Bool {
-        self == .filledRectangle
-    }
-
-    var usesEndpoints: Bool {
-        self == .line || self == .arrow
-    }
-
     var isRedactionTool: Bool {
         self == .pixelate || self == .blur
     }
@@ -141,15 +133,6 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsHandDrawnStyle: Bool {
         [.rectangle, .filledRectangle, .ellipse, .line, .arrow].contains(self)
-    }
-
-    var supportsAspectLock: Bool {
-        switch self {
-        case .rectangle, .filledRectangle, .ellipse, .highlight:
-            true
-        case .select, .line, .arrow, .freehand, .numberedCircle, .pixelate, .blur, .text, .magnifier:
-            false
-        }
     }
 
     var createsAnnotation: Bool {

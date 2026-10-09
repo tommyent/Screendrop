@@ -91,10 +91,6 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         return nil
     }
 
-    var hasFinalVideo: Bool {
-        existingFinalURL != nil
-    }
-
     /// Uses an existing flattened cache when one is available; otherwise
     /// history previews the screen master so the project can appear without
     /// turning Stop into an implicit export.

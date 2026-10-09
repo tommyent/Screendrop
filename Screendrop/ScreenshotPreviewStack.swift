@@ -61,10 +61,6 @@ final class ScreenshotPreviewStack {
         items.filter { $0.autoSavedURL == nil }
     }
 
-    var hasUnsavedItems: Bool {
-        !unsavedItems.isEmpty
-    }
-
     private init() {}
 
     /// Tuck the overlay into the peek tab (no-op when there's nothing to show).

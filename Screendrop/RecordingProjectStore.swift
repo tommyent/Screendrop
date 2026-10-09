@@ -46,10 +46,6 @@ final class RecordingProjectStore {
     /// most sessions never open the Recordings menu.
     private init() {}
 
-    var totalSizeOnDisk: Int64 {
-        projects.reduce(0) { $0 + $1.sizeOnDisk }
-    }
-
     /// The Recordings menu shows only a handful; the rest live in Library.
     var recentProjects: [RecordingProjectSummary] {
         Array(projects.prefix(8))

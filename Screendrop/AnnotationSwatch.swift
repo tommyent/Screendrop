@@ -31,16 +31,8 @@ struct AnnotationSwatch: Identifiable, Equatable, Hashable {
         NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
     }
 
-    var numberedCircleTextColor: Color {
-        isLight ? .black : .white
-    }
-
     var numberedCircleTextNSColor: NSColor {
         isLight ? .black : .white
-    }
-
-    var numberedCircleOutlineColor: Color {
-        isLight ? Color.black.opacity(0.22) : Color.white.opacity(0.42)
     }
 
     var numberedCircleOutlineNSColor: NSColor {

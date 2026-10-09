@@ -57,21 +57,3 @@ final class PreviewWindowCaptureExclusion {
         window.sharingType = Self.includesAppWindowsInCaptures ? .readOnly : .none
     }
 }
-
-struct PreviewWindowCaptureExclusionView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        updateWindow(for: view)
-        return view
-    }
-    
-    func updateNSView(_ nsView: NSView, context: Context) {
-        updateWindow(for: nsView)
-    }
-    
-    private func updateWindow(for view: NSView) {
-        DispatchQueue.main.async {
-            PreviewWindowCaptureExclusion.shared.attach(window: view.window)
-        }
-    }
-}

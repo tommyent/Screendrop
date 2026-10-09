@@ -127,14 +127,6 @@ final class RecordingBarPresenter {
         mode = .picker
     }
 
-    func containsScreenPoint(_ point: CGPoint) -> Bool {
-        guard let panel, panel.isVisible else { return false }
-        return containsPanelPoint(CGPoint(
-            x: point.x - panel.frame.minX,
-            y: panel.frame.maxY - point.y
-        ))
-    }
-
     // MARK: Geometry
 
     /// Where the bar currently sits on screen, so satellite windows (the

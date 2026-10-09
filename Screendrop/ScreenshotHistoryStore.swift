@@ -401,14 +401,6 @@ final class ScreenshotHistoryStore {
         saveMetadata()
     }
 
-    /// Clears a previously-set cloud URL, e.g. after deleting the upload from the cloud.
-    func clearCloudURL(for fileURL: URL) {
-        guard let index = index(for: fileURL) else { return }
-        items[index].cloudURL = nil
-        items[index].updatedAt = Date()
-        saveMetadata()
-    }
-
     func reveal(_ item: ScreenshotHistoryItem) {
         NSWorkspace.shared.activateFileViewerSelecting([
             item.recordingSession?.directoryURL ?? item.url
