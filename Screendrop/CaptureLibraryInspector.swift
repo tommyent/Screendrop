@@ -38,7 +38,7 @@ struct CaptureLibraryInspector: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !items.isEmpty { actionBar }
+            if !items.isEmpty { actionBar.modifier(LibraryInspectorBarSurface()) }
         }
         .environment(tooltip)
         .onChange(of: items.map(\.id)) { _, _ in
@@ -449,5 +449,32 @@ struct LibraryInspectorPlaceholder: View {
                 .multilineTextAlignment(.center)
         }
         .padding(DS.Space.xxl)
+    }
+}
+
+/// A Library inspector's bottom action bar on its own opaque strip, in the
+/// inspector column's colour, with the hairline the editor's preset bar has.
+/// The content still scrolls fully above it (it's a safe-area inset); while
+/// it scrolls past, the bar covers it instead of its text showing through
+/// the icons (sd-305).
+struct LibraryInspectorBarSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity)
+            .background {
+                Group {
+                    if #available(macOS 27.0, *) {
+                        WorkspaceChrome.background
+                    } else {
+                        Color(nsColor: .windowBackgroundColor)
+                    }
+                }
+                .ignoresSafeArea(.container, edges: .bottom)
+            }
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Color(nsColor: .separatorColor).opacity(0.45))
+                    .frame(height: 0.5)
+            }
     }
 }
