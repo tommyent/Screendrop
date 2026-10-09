@@ -20,7 +20,7 @@ struct CaptureLibraryInspector: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: InspectorMetrics.sectionVerticalPadding) {
                         if items.count == 1, let item = items.first {
                             header(item)
                             Divider()
@@ -31,7 +31,8 @@ struct CaptureLibraryInspector: View {
                         Divider()
                         tagsSection
                     }
-                    .padding(18)
+                    .padding(.horizontal, InspectorMetrics.horizontalPadding)
+            .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
@@ -204,9 +205,9 @@ struct CaptureLibraryInspector: View {
     }
 
     private func information(_ item: CaptureLibraryItem) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
             sectionTitle("Information")
-            VStack(spacing: 11) {
+            VStack(spacing: InspectorMetrics.rowSpacing) {
                 detailRow("Dimensions", value: item.dimensions)
                 if item.isVideo { detailRow("Duration", value: item.durationText) }
                 detailRow("Size on disk", value: sizeText)
@@ -217,7 +218,7 @@ struct CaptureLibraryInspector: View {
     }
 
     private var multipleSelection: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: InspectorMetrics.sectionVerticalPadding) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 6) {
                     ForEach(Array(items.prefix(3))) { item in
@@ -235,9 +236,9 @@ struct CaptureLibraryInspector: View {
                     .font(.system(size: 16, weight: .semibold))
             }
             Divider()
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                 sectionTitle("Selection")
-                VStack(spacing: 11) {
+                VStack(spacing: InspectorMetrics.rowSpacing) {
                     detailRow("Screenshots", value: "\(items.filter { !$0.isVideo }.count)")
                     detailRow("Recordings", value: "\(items.filter(\.isVideo).count)")
                     detailRow("Size on disk", value: sizeText)
@@ -283,7 +284,7 @@ struct CaptureLibraryInspector: View {
         let shared = items.dropFirst().reduce(Set(items.first?.tags ?? [])) { $0.intersection($1.tags) }
         let tags = (items.first?.tags ?? []).filter(shared.contains)
         let suggestions = model.tags.filter { !shared.contains($0) }
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
             sectionTitle("Tags")
             ForEach(tags, id: \.self) { tag in
                 HStack(spacing: 6) {
@@ -325,7 +326,7 @@ struct CaptureLibraryInspector: View {
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.inspectorSectionHeader)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(InspectorControlPalette.label)
     }
 
     /// Label primary, value secondary, as Preview's Info inspector reads.
@@ -333,7 +334,7 @@ struct CaptureLibraryInspector: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title).fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
-            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing).textSelection(.enabled)
+            Text(value).foregroundStyle(InspectorControlPalette.label).multilineTextAlignment(.trailing).textSelection(.enabled)
         }
         .font(.system(size: 12))
     }

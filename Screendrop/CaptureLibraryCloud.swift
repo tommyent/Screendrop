@@ -766,7 +766,7 @@ struct CloudUploadInspector: View {
         } else if let upload = selected.first {
             let local = cloud.localItems[upload.id]
             ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: InspectorMetrics.sectionVerticalPadding) {
                     VStack(alignment: .leading, spacing: 14) {
                         Button { cloud.quickLook(toggling: false) } label: {
                             CloudUploadThumbnail(upload: upload, local: local)
@@ -799,9 +799,9 @@ struct CloudUploadInspector: View {
                         }
                     }
                     Divider()
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                         sectionTitle("Information")
-                        VStack(spacing: 11) {
+                        VStack(spacing: InspectorMetrics.rowSpacing) {
                             detailRow("Link", value: upload.url)
                             detailRow("Uploaded", value: upload.createdAt.formatted(date: .abbreviated, time: .shortened))
                             if upload.isVideo, let duration = upload.duration {
@@ -818,7 +818,7 @@ struct CloudUploadInspector: View {
                     Divider()
                     sharing(upload)
                     Divider()
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                         sectionTitle("On This Mac")
                         if let local {
                             detailRow("Capture", value: local.name)
@@ -832,7 +832,8 @@ struct CloudUploadInspector: View {
                         }
                     }
                 }
-                .padding(18)
+                .padding(.horizontal, InspectorMetrics.horizontalPadding)
+            .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -856,7 +857,7 @@ struct CloudUploadInspector: View {
 
     /// The link's expiry and anonymous comments, changed on the Worker.
     private func sharing(_ upload: CloudUpload) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
             sectionTitle("Sharing")
             if upload.supportsShareSettings {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -931,13 +932,13 @@ struct CloudUploadInspector: View {
         let local = cloud.localItems
         let sizes = uploads.compactMap(\.size)
         return ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: InspectorMetrics.sectionVerticalPadding) {
                 Text("\(uploads.count) uploads selected")
                     .font(.system(size: 16, weight: .semibold))
                 Divider()
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                     sectionTitle("Selection")
-                    VStack(spacing: 11) {
+                    VStack(spacing: InspectorMetrics.rowSpacing) {
                         detailRow("Screenshots", value: "\(uploads.filter { !$0.isVideo }.count)")
                         detailRow("Recordings", value: "\(uploads.filter(\.isVideo).count)")
                         detailRow("Cloud only", value: "\(uploads.filter { local[$0.id] == nil }.count)")
@@ -947,7 +948,8 @@ struct CloudUploadInspector: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(.horizontal, InspectorMetrics.horizontalPadding)
+            .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -980,14 +982,14 @@ struct CloudUploadInspector: View {
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.inspectorSectionHeader)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(InspectorControlPalette.label)
     }
 
     private func detailRow(_ title: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title).fixedSize(horizontal: true, vertical: false)
             Spacer(minLength: 0)
-            Text(value).foregroundStyle(.secondary).multilineTextAlignment(.trailing).textSelection(.enabled)
+            Text(value).foregroundStyle(InspectorControlPalette.label).multilineTextAlignment(.trailing).textSelection(.enabled)
         }
         .font(.system(size: 12))
     }
