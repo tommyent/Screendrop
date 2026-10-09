@@ -96,13 +96,14 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private var lastIndex = 0
     private var lastWitness: ScrollingCapturePlacement?
     private var movingPageRows: Set<Int>
+    private var pageWitnessRows: Set<Int>?
     private var noOverlapSince: Int?
     private let contentRows: Range<Int>
     private let minimumRows = 8
 
     init?(first: ScrollingCaptureRaster, confirmation: ScrollingCaptureRaster,
           contentRows: Range<Int>, maximumBufferedBytes: Int = 128 * 1024 * 1024,
-          observedMotionRows: Set<Int> = []) {
+          observedMotionRows: Set<Int> = [], pageWitnessRows: Set<Int>? = nil) {
         guard first.width == confirmation.width, first.height == confirmation.height,
               first.matchingColumns == confirmation.matchingColumns,
               contentRows.lowerBound >= 0, contentRows.upperBound <= first.height,
@@ -116,6 +117,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         self.contentRows = contentRows
         self.maximumBufferedBytes = maximumBufferedBytes
         movingPageRows = motion
+        self.pageWitnessRows = pageWitnessRows
     }
 
     // Count conservatively: two working frames plus every queued/registered frame.
@@ -136,13 +138,16 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         let sample = Sample(index: index, frame: frame, stable: stable,
                             motion: Set(contentRows).subtracting(stable))
         previous = frame
-        switch locate(sample) {
+        var match = locate(sample)
+        if case .absent = match, let displaced = movingOffset(sample) { match = .offset(displaced) }
+        switch match {
         case .offset(let offset):
             noOverlapSince = nil
             guard offset.magnitude <= 16_384 else { return lose(.invalidSample) }
             // A fresh zero subset is never page-position authority. Keep the baseline.
             if offset == lastVerifiedOffset {
                 guard let witness = lastWitness,
+                      hasPageWitness(witness),
                       witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: frame, at: $0) }),
                       !hasMovingChanges(from: witness.frame, to: frame) else {
                     return Event(state: .pending)
@@ -150,7 +155,10 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             }
             let placement = placed(sample, at: offset)
             var resolved = [placement]
-            movingPageRows.formUnion(sample.motion.map { $0 + offset })
+            movingPageRows.formUnion(placement.motionRows.map { $0 + offset })
+            if pageWitnessRows != nil {
+                pageWitnessRows!.formUnion(placement.stableRows.map { $0 + offset })
+            }
             keys.append(placement)
             for waiting in unresolved {
                 if case .offset(let position) = locate(waiting, requiringDisplacement: true) {
@@ -161,7 +169,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             unresolved.removeAll()
             let highest = resolved.map(\.offset).max() ?? offset
             let advanced = highest > frontier
-            if offset != lastVerifiedOffset { lastWitness = placement }
+            if offset != lastVerifiedOffset, hasPageWitness(placement) { lastWitness = placement }
             frontier = max(frontier, highest)
             lastVerifiedOffset = offset
             trimKeys()
@@ -198,8 +206,57 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         return Event(state: .lost, failure: failure)
     }
     private func placed(_ sample: Sample, at offset: Int) -> ScrollingCapturePlacement {
-        ScrollingCapturePlacement(index: sample.index, offset: offset, frame: sample.frame,
+        if pageWitnessRows != nil {
+            var stable = Set<Int>(), motion = Set<Int>()
+            for y in contentRows {
+                let pageY = offset + y
+                if movingPageRows.contains(pageY) { motion.insert(y); continue }
+                for key in keys {
+                    let oldY = pageY - key.offset
+                    guard contentRows.contains(oldY) else { continue }
+                    if !key.frame.sameRow(oldY, as: sample.frame, at: y) { motion.insert(y) }
+                    else if pageWitnessRows!.contains(pageY)
+                        || (offset != key.offset && !key.frame.sameRow(y, as: sample.frame, at: y)) {
+                        stable.insert(y)
+                    }
+                }
+            }
+            // Unseen incoming rows stay provisional; scrolling itself is not animation.
+            return ScrollingCapturePlacement(index: sample.index, offset: offset, frame: sample.frame,
+                stableRows: stable.subtracting(motion), motionRows: motion, contentRows: contentRows)
+        }
+        return ScrollingCapturePlacement(index: sample.index, offset: offset, frame: sample.frame,
             stableRows: sample.stable, motionRows: sample.motion, contentRows: contentRows)
+    }
+    /// Positive registration uses previously proven page rows even while the view moves.
+    private func movingOffset(_ sample: Sample) -> Int? {
+        guard let pageWitnessRows else { return nil }
+        var offsets: [Int: Set<Int>] = [:]
+        for key in keys {
+            var oldRows: [Int: [Int]] = [:]
+            for y in key.stableRows where pageWitnessRows.contains(key.offset + y)
+                && !movingPageRows.contains(key.offset + y) && !key.frame.isBlank(y) {
+                oldRows[key.frame.rowHash(y), default: []].append(y)
+            }
+            for y in contentRows where !sample.frame.isBlank(y) {
+                for oldY in oldRows[sample.frame.rowHash(y), default: []]
+                    where key.frame.sameRow(oldY, as: sample.frame, at: y) {
+                    offsets[key.offset + oldY - y, default: []].insert(sample.frame.rowHash(y))
+                }
+            }
+        }
+        let candidates = offsets.filter { $0.value.count >= minimumRows }.keys
+        guard candidates.count == 1, let offset = candidates.first,
+              offsets.keys.allSatisfy({ $0 == offset }) else { return nil }
+        if offset == lastVerifiedOffset {
+            guard let witness = lastWitness, hasPageWitness(witness),
+                  witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }),
+                  !hasMovingChanges(from: witness.frame, to: sample.frame) else { return nil }
+            return offset
+        }
+        if let witness = lastWitness, hasPageWitness(witness),
+           witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }) { return nil }
+        return offset
     }
     private func locate(_ sample: Sample, requiringDisplacement: Bool = false) -> Match {
         var offsets = Set<Int>()
@@ -218,7 +275,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         }
         guard !requiringDisplacement || hasDisplacement else { return .absent }
         // A stationary whole historical witness vetoes displacement from a new subset.
-        if offset != lastVerifiedOffset, let witness = lastWitness,
+        if offset != lastVerifiedOffset, let witness = lastWitness, hasPageWitness(witness),
            witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }) {
             return .ambiguous
         }
@@ -252,6 +309,9 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     }
     private func hasNonzeroEvidence(_ sample: Sample) -> Bool {
         keys.contains { key in votes(key, sample).contains { $0.key != 0 && !$0.value.isEmpty } }
+    }
+    private func hasPageWitness(_ placement: ScrollingCapturePlacement) -> Bool {
+        Set(placement.stableRows.filter { !placement.frame.isBlank($0) }.map { placement.frame.rowHash($0) }).count >= minimumRows
     }
     /// Even sub-threshold translated content must veto an idle classification.
     private func hasMovingChanges(from old: ScrollingCaptureRaster, to new: ScrollingCaptureRaster) -> Bool {
