@@ -8,9 +8,6 @@
 //  to the new width while the controls cross-fade - rather than one window
 //  vanishing and another appearing somewhere near it.
 //
-//  RecordingPickerPresenter and RecordingControlPresenter are the entry
-//  points callers still use; both forward here.
-//
 
 import AppKit
 import SwiftUI
