@@ -6,92 +6,28 @@
 import AppKit
 import SwiftUI
 
-/// An inline row of color swatches with the shared tile selection treatment
-/// (hairline border at rest, accent ring when selected) and a trailing
-/// "custom" well that opens the system color panel. Replaces the old
-/// dropdown-plus-popover color menu so the Style section reads like the rest
-/// of the inspector.
+/// The color swatches, with the shared tile selection treatment (hairline
+/// border at rest, accent ring when selected) and a last "custom" well that
+/// opens the system color panel. Two rows of six, like the tool grid, so
+/// every color shows even at the inspector's narrowest; a single scrolling
+/// row hid the last three behind a fade.
 struct AnnotationSwatchStrip: View {
     let selectedSwatch: AnnotationSwatch
     let onSelect: (AnnotationSwatch) -> Void
 
-    private static let swatchDiameter: CGFloat = 17
-    private static let edgeFadeWidth: CGFloat = 16
-    private static let customWellID = "custom-well"
-
-    @State private var edgeOverflow = EdgeOverflow(leading: 0, trailing: 0)
-
-    private struct EdgeOverflow: Equatable {
-        var leading: CGFloat
-        var trailing: CGFloat
-    }
+    private static let swatchDiameter: CGFloat = 19
+    private static let columns = Array(
+        repeating: GridItem(.flexible(minimum: 24, maximum: 28), spacing: 2), count: 6
+    )
 
     var body: some View {
-        ScrollViewReader { scrollProxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 3) {
-                    ForEach(AnnotationSwatch.allCases) { swatch in
-                        swatchButton(for: swatch)
-                            .id(swatch.id)
-                    }
-
-                    customWell
-                        .id(Self.customWellID)
-                }
+        LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 0) {
+            ForEach(AnnotationSwatch.allCases) { swatch in
+                swatchButton(for: swatch)
             }
-            .onScrollGeometryChange(for: EdgeOverflow.self) { geometry in
-                EdgeOverflow(
-                    leading: max(0, geometry.contentOffset.x + geometry.contentInsets.leading),
-                    trailing: max(
-                        0,
-                        geometry.contentSize.width
-                            - geometry.containerSize.width
-                            - geometry.contentOffset.x
-                    )
-                )
-            } action: { _, newValue in
-                edgeOverflow = newValue
-            }
-            .mask(edgeFadeMask)
-            .onAppear {
-                scrollProxy.scrollTo(
-                    isCustomSelected ? Self.customWellID : selectedSwatch.id
-                )
-            }
+            customWell
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// Fades the strip out at whichever edge still has content beyond it, so
-    /// overflow reads as "more colors this way" instead of a hard clip.
-    private var edgeFadeMask: some View {
-        HStack(spacing: 0) {
-            LinearGradient(
-                colors: [
-                    .black.opacity(1 - fadeStrength(for: edgeOverflow.leading)),
-                    .black
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: Self.edgeFadeWidth)
-
-            Rectangle().fill(.black)
-
-            LinearGradient(
-                colors: [
-                    .black,
-                    .black.opacity(1 - fadeStrength(for: edgeOverflow.trailing))
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: Self.edgeFadeWidth)
-        }
-    }
-
-    private func fadeStrength(for overflow: CGFloat) -> CGFloat {
-        min(max(overflow / Self.edgeFadeWidth, 0), 1)
     }
 
     private func swatchButton(for swatch: AnnotationSwatch) -> some View {
@@ -144,7 +80,9 @@ struct AnnotationSwatchStrip: View {
                     Circle().strokeBorder(Color.accentColor, lineWidth: 2)
                 }
             }
-            .contentShape(Circle().inset(by: -2))
+            // The whole grid cell clicks, so neighbours never overlap.
+            .frame(maxWidth: .infinity, minHeight: InspectorMetrics.controlHeight)
+            .contentShape(Rectangle())
     }
 
     private var isCustomSelected: Bool {
