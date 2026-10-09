@@ -60,32 +60,43 @@ struct CaptureLibraryView: View {
                         } icon: { Image(systemName: filter.symbol) }
                         .tag(CaptureLibrarySidebarSelection.kind(filter))
                     }
-                    Label {
-                        HStack {
-                            Text("Cloud")
-                            Spacer()
-                            if cloud.hasLoaded, CloudUploader.shared.isConfigured {
-                                Text(cloud.uploads.count, format: .number)
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption.monospacedDigit())
+                }
+                // Uploads and their comments live on the Worker, apart from
+                // the captures on this Mac. Until a Worker is set up, one row
+                // leads to setup instead of two that both end there (design
+                // pass choice 7).
+                Section("Cloud") {
+                    if CloudUploader.shared.isConfigured {
+                        Label {
+                            HStack {
+                                Text("Uploads")
+                                Spacer()
+                                if cloud.hasLoaded {
+                                    Text(cloud.uploads.count, format: .number)
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption.monospacedDigit())
+                                }
                             }
-                        }
-                    } icon: { Image(systemName: "cloud") }
-                    .tag(CaptureLibrarySidebarSelection.cloud)
-                    Label {
-                        HStack {
-                            Text("Comments")
-                            Spacer()
-                            // New since the page was last opened, as Mail counts unread mail.
-                            if comments.unreadCount > 0 {
-                                Text(comments.unreadCount > 99 ? "99+" : comments.unreadCount.formatted())
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption.monospacedDigit().weight(.semibold))
-                                    .accessibilityLabel("\(comments.unreadCount) new")
+                        } icon: { Image(systemName: "cloud") }
+                        .tag(CaptureLibrarySidebarSelection.cloud)
+                        Label {
+                            HStack {
+                                Text("Comments")
+                                Spacer()
+                                // New since the page was last opened, as Mail counts unread mail.
+                                if comments.unreadCount > 0 {
+                                    Text(comments.unreadCount > 99 ? "99+" : comments.unreadCount.formatted())
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption.monospacedDigit().weight(.semibold))
+                                        .accessibilityLabel("\(comments.unreadCount) new")
+                                }
                             }
-                        }
-                    } icon: { Image(systemName: "bubble.left.and.bubble.right") }
-                    .tag(CaptureLibrarySidebarSelection.comments)
+                        } icon: { Image(systemName: "bubble.left.and.bubble.right") }
+                        .tag(CaptureLibrarySidebarSelection.comments)
+                    } else {
+                        Label("Set Up Cloud", systemImage: "cloud")
+                            .tag(CaptureLibrarySidebarSelection.cloud)
+                    }
                 }
                 if !model.tags.isEmpty {
                     Section("Tags", isExpanded: $tagsExpanded) {
@@ -154,7 +165,7 @@ struct CaptureLibraryView: View {
                 .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
             }
             .modifier(LibraryWindowSurface())
-            .navigationTitle(comments.isShown ? "Comments" : cloud.isShown ? "Cloud" : model.tagFilter ?? activeFilter.title)
+            .navigationTitle(comments.isShown ? "Comments" : cloud.isShown ? (CloudUploader.shared.isConfigured ? "Uploads" : "Cloud") : model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
