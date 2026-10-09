@@ -269,7 +269,6 @@ private struct CommentRow: View {
     let selected: Bool
     let fresh: Bool
     let deleting: Bool
-    @Environment(\.colorSchemeContrast) private var contrast
     @State private var isHovering = false
 
     var body: some View {
@@ -310,11 +309,7 @@ private struct CommentRow: View {
         )
         .background(WorkspaceChrome.background, in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .strokeBorder(
-                    Color.primary.opacity(selected ? (contrast == .increased ? 0.65 : 0.28) : 0.08),
-                    lineWidth: selected ? 1 : 0.5
-                )
+            LibraryCardBorder(selected: selected)
         }
         .opacity(deleting ? 0.5 : 1)
         .onHover { isHovering = $0 }
@@ -404,11 +399,12 @@ struct CommentInspector: View {
     var body: some View {
         let selected = comments.selectedComments
         if selected.count > 1 {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: InspectorMetrics.sectionVerticalPadding) {
                 Text("\(selected.count) comments selected").font(.system(size: 16, weight: .semibold))
                 Spacer()
             }
-            .padding(18)
+            .padding(.horizontal, InspectorMetrics.horizontalPadding)
+            .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 0) {
@@ -434,7 +430,7 @@ struct CommentInspector: View {
         let cloud = CloudLibraryModel.shared
         let upload = cloud.uploads.first { $0.id == comment.uploadId }
         return ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: InspectorMetrics.sectionVerticalPadding) {
                 HStack(spacing: 10) {
                     CommentAuthorAvatar(comment: comment, size: 30)
                     VStack(alignment: .leading, spacing: 2) {
@@ -450,8 +446,8 @@ struct CommentInspector: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Upload").font(.inspectorSectionHeader).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
+                    Text("Upload").font(.inspectorSectionHeader).foregroundStyle(InspectorControlPalette.label)
                     CommentUploadThumbnail(comment: comment, upload: upload, local: cloud.localItems[comment.uploadId])
                         .aspectRatio(1.45, contentMode: .fit)
                         .clipShape(.rect(cornerRadius: 11))
@@ -462,7 +458,8 @@ struct CommentInspector: View {
                     }
                 }
             }
-            .padding(18)
+            .padding(.horizontal, InspectorMetrics.horizontalPadding)
+            .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

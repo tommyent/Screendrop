@@ -14,6 +14,7 @@ struct CaptureLibraryView: View {
     @AppStorage("captureLibrary.tagsExpanded") private var tagsExpanded = true
     @AppStorage("captureLibrary.cardWidth") private var cardWidth = 220.0
     @AppStorage("captureLibrary.sort") private var savedSort: CaptureLibrarySort = .newest
+    @State private var pendingCloudUpload: CaptureLibraryItem?
 
     private var activeFilter: CaptureLibraryFilter { model.filter ?? .all }
 
@@ -60,32 +61,43 @@ struct CaptureLibraryView: View {
                         } icon: { Image(systemName: filter.symbol) }
                         .tag(CaptureLibrarySidebarSelection.kind(filter))
                     }
-                    Label {
-                        HStack {
-                            Text("Cloud")
-                            Spacer()
-                            if cloud.hasLoaded, CloudUploader.shared.isConfigured {
-                                Text(cloud.uploads.count, format: .number)
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption.monospacedDigit())
+                }
+                // Uploads and their comments live on the Worker, apart from
+                // the captures on this Mac. Until a Worker is set up, one row
+                // leads to setup instead of two that both end there (design
+                // pass choice 7).
+                Section("Cloud") {
+                    if CloudUploader.shared.isConfigured {
+                        Label {
+                            HStack {
+                                Text("Uploads")
+                                Spacer()
+                                if cloud.hasLoaded {
+                                    Text(cloud.uploads.count, format: .number)
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption.monospacedDigit())
+                                }
                             }
-                        }
-                    } icon: { Image(systemName: "cloud") }
-                    .tag(CaptureLibrarySidebarSelection.cloud)
-                    Label {
-                        HStack {
-                            Text("Comments")
-                            Spacer()
-                            // New since the page was last opened, as Mail counts unread mail.
-                            if comments.unreadCount > 0 {
-                                Text(comments.unreadCount > 99 ? "99+" : comments.unreadCount.formatted())
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption.monospacedDigit().weight(.semibold))
-                                    .accessibilityLabel("\(comments.unreadCount) new")
+                        } icon: { Image(systemName: "cloud") }
+                        .tag(CaptureLibrarySidebarSelection.cloud)
+                        Label {
+                            HStack {
+                                Text("Comments")
+                                Spacer()
+                                // New since the page was last opened, as Mail counts unread mail.
+                                if comments.unreadCount > 0 {
+                                    Text(comments.unreadCount > 99 ? "99+" : comments.unreadCount.formatted())
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption.monospacedDigit().weight(.semibold))
+                                        .accessibilityLabel("\(comments.unreadCount) new")
+                                }
                             }
-                        }
-                    } icon: { Image(systemName: "bubble.left.and.bubble.right") }
-                    .tag(CaptureLibrarySidebarSelection.comments)
+                        } icon: { Image(systemName: "bubble.left.and.bubble.right") }
+                        .tag(CaptureLibrarySidebarSelection.comments)
+                    } else {
+                        Label("Set Up Cloud", systemImage: "cloud")
+                            .tag(CaptureLibrarySidebarSelection.cloud)
+                    }
                 }
                 if !model.tags.isEmpty {
                     Section("Tags", isExpanded: $tagsExpanded) {
@@ -154,7 +166,7 @@ struct CaptureLibraryView: View {
                 .inspectorColumnWidth(min: 240, ideal: 280, max: 360)
             }
             .modifier(LibraryWindowSurface())
-            .navigationTitle(comments.isShown ? "Comments" : cloud.isShown ? "Cloud" : model.tagFilter ?? activeFilter.title)
+            .navigationTitle(comments.isShown ? "Comments" : cloud.isShown ? (CloudUploader.shared.isConfigured ? "Uploads" : "Cloud") : model.tagFilter ?? activeFilter.title)
             .navigationSubtitle("Screendrop")
         }
         .navigationSplitViewStyle(.balanced)
@@ -396,13 +408,13 @@ struct CaptureLibraryView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
-            Picker("View", selection: $layout) {
+            // Comments are always a list, so the picker says so there.
+            Picker("View", selection: Binding(get: { comments.isShown ? .list : layout }, set: { layout = $0 })) {
                 Label("Grid View", systemImage: "square.grid.2x2").tag(CaptureLibraryLayout.grid).help("Grid view")
                 Label("List View", systemImage: "list.bullet").tag(CaptureLibraryLayout.list).help("List view")
             }
             .labelStyle(.iconOnly)
             .pickerStyle(.segmented)
-            // Comments are always a list.
             .disabled(comments.isShown)
             .help("Switch between grid and list")
         }
@@ -422,7 +434,11 @@ struct CaptureLibraryView: View {
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .primaryAction) {
-            if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
+            pageActions
+        }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(placement: .primaryAction) {
+            shareMenu
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
@@ -447,11 +463,59 @@ struct CaptureLibraryView: View {
         .help("Comment actions")
     }
 
+    /// The same three slots on every page (Quick Look, Edit, Actions), so
+    /// the toolbar never shifts when the page changes; each does what fits
+    /// its page or is dimmed (design pass choice 5).
+    @ViewBuilder private var pageActions: some View {
+        Button {
+            if cloud.isShown { cloud.quickLook() } else { model.perform(.preview) }
+        } label: { Label("Quick Look", systemImage: "eye") }
+            .disabled(comments.isShown || (cloud.isShown ? cloud.selection.isEmpty : model.selection.count != 1 || model.isBusy))
+            .help("Quick Look (Space)")
+        Button { model.perform(.edit) } label: { Label("Edit", systemImage: "pencil.tip.crop.circle") }
+            .disabled(cloud.isShown || comments.isShown || model.selection.count != 1 || model.isBusy)
+            .help(cloud.isShown || comments.isShown
+                  ? "Uploads can't be edited; edit the capture in the Library"
+                  : "Open in the screenshot or recording editor")
+        if comments.isShown { commentActions } else if cloud.isShown { cloudActions } else { captureActions }
+    }
+
+    /// One place to share from, on every page (design pass choice 6):
+    /// links, the cloud, the system Share menu and Export.
+    @ViewBuilder private var shareMenu: some View {
+        let items = model.selectedItems
+        let item = items.count == 1 ? items.first : nil
+        let uploads = cloud.selectedUploads
+        Menu {
+            if cloud.isShown {
+                Button(uploads.count > 1 ? "Copy Links" : "Copy Link", systemImage: "link") { cloud.copyLinks(uploads) }
+                ShareLink(items: uploads.compactMap { URL(string: $0.url) }) {
+                    Label("Share…", systemImage: "square.and.arrow.up")
+                }
+            } else {
+                Button("Copy Link", systemImage: "link") { if let item { model.copyLink(item) } }
+                    .disabled(item?.cloudURL == nil)
+                Button("Share to Cloud…", systemImage: "arrow.up.circle") { pendingCloudUpload = item }
+                    .disabled(item == nil || item?.cloudURL != nil || !CloudUploader.shared.isConfigured || model.isBusy)
+                ShareLink(items: items.map(\.fileURL)) {
+                    Label("Share…", systemImage: "square.and.arrow.up")
+                }
+                Divider()
+                Button("Export…", systemImage: "arrow.down.doc") { model.perform(.export) }
+                    .disabled(model.isBusy)
+            }
+        } label: { Label("Share", systemImage: "square.and.arrow.up") }
+        .disabled(comments.isShown || (cloud.isShown ? uploads.isEmpty : items.isEmpty))
+        .help("Share")
+        .popover(item: $pendingCloudUpload, arrowEdge: .bottom) { item in
+            CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
+                model.upload(item, options: options)
+            }
+        }
+    }
+
     /// Uploads are final, so the Cloud page has no Edit.
     @ViewBuilder private var cloudActions: some View {
-        Button { cloud.quickLook() } label: { Label("Quick Look", systemImage: "eye") }
-            .disabled(cloud.selection.isEmpty)
-            .help("Quick Look (Space)")
         Menu {
             ForEach(Array(cloud.menuItems().enumerated()), id: \.offset) { _, item in
                 if item.startsGroup { Divider() }
@@ -463,12 +527,6 @@ struct CaptureLibraryView: View {
     }
 
     @ViewBuilder private var captureActions: some View {
-        Button { model.perform(.preview) } label: { Label("Quick Look", systemImage: "eye") }
-            .disabled(model.selection.count != 1 || model.isBusy)
-            .help("Quick Look (Space)")
-        Button { model.perform(.edit) } label: { Label("Edit", systemImage: "slider.horizontal.3") }
-            .disabled(model.selection.count != 1 || model.isBusy)
-            .help("Open in the screenshot or recording editor")
         Menu {
             Button("Copy", systemImage: "doc.on.doc") { model.perform(.copy) }
             Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
