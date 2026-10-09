@@ -60,10 +60,30 @@ nonisolated struct CaptureLibraryItem: Sendable {
         precondition(card!.width == 320 && card!.height == 640)
 
         let item = try await ScreenshotClipboardImage.item(from: a, dataType: .png)
-        precondition(Set(item.types) == [.fileURL, .png], "No eager uncompressed TIFF")
+        precondition(Set(item.types) == [.fileURL, .png, .tiff], "Normal captures retain TIFF compatibility")
         precondition(item.string(forType: .fileURL) == a.absoluteString)
         let encoded = try Data(contentsOf: a)
         precondition(item.data(forType: .png) == encoded)
+        let tiffSource = CGImageSourceCreateWithData(item.data(forType: .tiff)! as CFData, nil)!
+        precondition(pixels(CGImageSourceCreateImageAtIndex(tiffSource, 0, nil)!) == pixels(image))
+
+        // A real grayscale PNG just above the cap, using 1 byte/pixel for the
+        // fixture so the test itself doesn't need a 100 MB RGBA bitmap.
+        let tallURL = a.appendingPathExtension("over-cap.png")
+        defer { try? FileManager.default.removeItem(at: tallURL) }
+        autoreleasepool {
+            let gray = CGContext(data: nil, width: 5001, height: 5000, bitsPerComponent: 8, bytesPerRow: 5001,
+                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+            gray.setFillColor(gray: 1, alpha: 1)
+            gray.fill(CGRect(x: 0, y: 0, width: 5001, height: 5000))
+            let destination = CGImageDestinationCreateWithURL(tallURL as CFURL, "public.png" as CFString, 1, nil)!
+            CGImageDestinationAddImage(destination, gray.makeImage()!, nil)
+            precondition(CGImageDestinationFinalize(destination))
+        }
+        let tall = try await ScreenshotClipboardImage.item(from: tallURL, dataType: .png)
+        precondition(Set(tall.types) == [.fileURL, .png], "Above 25 MP, skip TIFF before decoding pixels")
+        let tallBytes = try Data(contentsOf: tallURL)
+        precondition(tall.data(forType: .png) == tallBytes)
         let cancelled = Task { _ = try await ScreenshotClipboardImage.item(from: a, dataType: .png) }
         cancelled.cancel()
         do { _ = try await cancelled.value; preconditionFailure("Cancelled copy prepared an item") }
@@ -72,6 +92,6 @@ nonisolated struct CaptureLibraryItem: Sendable {
             _ = try await ScreenshotClipboardImage.item(from: a.appendingPathExtension("missing"), dataType: .png)
             preconditionFailure("Missing file must fail before publishing")
         } catch is CocoaError {}
-        print("PASS: concurrent lossless PNGs and DPI; shared thumbnail; encoded clipboard bytes, no TIFF; cancellation and read errors")
+        print("PASS: concurrent lossless PNGs and DPI; shared thumbnail; normal PNG+TIFF and >25 MP PNG-only; cancellation and read errors")
     }
 }
