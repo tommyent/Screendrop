@@ -268,6 +268,13 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         return false
     }
 
+    /// An imprinted measurement: an arrow whose label states its length.
+    /// It moves, but never bends or stretches, so the label stays true (sd-xoh).
+    var isMeasurement: Bool {
+        if case let .arrow(props) = kind { return !(props.label ?? "").isEmpty }
+        return false
+    }
+
     var isText: Bool {
         if case .text = kind { return true }
         return false

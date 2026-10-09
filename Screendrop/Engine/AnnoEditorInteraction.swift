@@ -624,6 +624,9 @@ extension AnnoEditor {
             case var .draw(props):
                 props.points = props.points.map { Vec($0.x * sx, $0.y * sy, $0.z) }
                 shape.kind = .draw(props)
+            case .arrow where shape.isMeasurement:
+                // Resizing a group moves a measurement but keeps its length, so its label stays true.
+                break
             case var .arrow(props):
                 props.start = Vec(props.start.x * sx, props.start.y * sy)
                 props.end = Vec(props.end.x * sx, props.end.y * sy)

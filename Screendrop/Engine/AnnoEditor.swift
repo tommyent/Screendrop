@@ -369,6 +369,8 @@ final class AnnoEditor {
         // A lone arrow gets its own three handles instead of a resize frame.
         if selectedIds.count == 1, let shape = selectedShapes.first, shape.isArrow,
            let info = document.arrowInfo(shape.id) {
+            // A measurement has none: its body moves it, and nothing reshapes it.
+            if shape.isMeasurement { return nil }
             let transform = shape.pageTransform
             let candidates: [(AnnoSelectionHandle, Vec)] = [
                 (.arrowStart, info.start.handle),

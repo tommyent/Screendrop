@@ -89,6 +89,9 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var onNudge: ((CGVector) -> Bool)?
     var onEscape: (() -> Void)?
 
+    /// An arrow key went down to measure and hasn't come up: its repeats keep
+    /// measuring even once something is selected, never nudging (sd-xoh).
+    private var isMeasuringHold = false
     private var localKeyMonitor: Any?
     private var localKeyUpMonitor: Any?
     private var resignKeyObserver: NSObjectProtocol?
@@ -100,9 +103,14 @@ final class AnnotationKeyCommandHandlerView: NSView {
         if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
         resignKeyObserver = window.map { window in
             NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { _ = self?.onMeasure?(nil) }
+                MainActor.assumeIsolated { self?.endMeasuring() }
             }
         }
+    }
+
+    private func endMeasuring() {
+        isMeasuringHold = false
+        _ = onMeasure?(nil)
     }
 
     deinit {
@@ -167,8 +175,9 @@ final class AnnotationKeyCommandHandlerView: NSView {
             }
 
             // With annotations selected the arrows nudge them, 1 pt or 10
-            // with Shift. Otherwise they measure, below.
-            if nothingFocused, let step = Self.nudgeStep(event), self.onNudge?(step) == true {
+            // with Shift, unless this hold began as a measurement. Otherwise
+            // they measure, below.
+            if nothingFocused, !self.isMeasuringHold, let step = Self.nudgeStep(event), self.onNudge?(step) == true {
                 return nil
             }
 
@@ -176,6 +185,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
             // up or down the height under the pointer, left or right the
             // width. Shift may be held too; it includes the border.
             if nothingFocused, let axis = Self.measureAxis(event), self.onMeasure?(axis) == true {
+                self.isMeasuringHold = true
                 return nil
             }
 
@@ -246,7 +256,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
             // Any arrow released ends a measurement, even with a modifier
             // pressed since it went down.
             if Self.isArrow(event), self?.window?.isKeyWindow == true {
-                _ = self?.onMeasure?(nil)
+                self?.endMeasuring()
             }
             return event
         }
