@@ -20,14 +20,6 @@ import AVFoundation
 import Observation
 import ScreenCaptureKit
 
-enum ScreenRecordingState: Equatable {
-    case idle
-    case starting
-    case recording
-    case paused
-    case finishing
-}
-
 enum ScreenRecordingSourceMode: String, CaseIterable, Identifiable {
     case fullscreen
     case window
@@ -335,12 +327,7 @@ final class ScreenRecordingManager {
     }
 
     func deleteRecording() {
-        guard state != .idle else {
-            RecordingControlPresenter.shared.hide()
-            RecordingAreaHighlightPresenter.shared.hide()
-            return
-        }
-
+        guard state.canDiscard else { return }
         finishAction = .discard
         stopCaptureAndFinish()
     }
@@ -430,7 +417,8 @@ final class ScreenRecordingManager {
 
         guard let session, result.fileIsUsable else {
             if let session {
-                RecordingSessionStore.deleteSession(session)
+                do { try RecordingSessionStore.deleteSession(session) }
+                catch { NSLog("[Screendrop] Could not move incomplete recording to Trash: %@", error.localizedDescription) }
             }
             errorMessage = result.error.map { "Recording failed: \($0.localizedDescription)" }
                 ?? "Failed to finish recording."
@@ -469,11 +457,17 @@ final class ScreenRecordingManager {
             }
             onFinishRecording?(session, restartDisplayID)
         case .discard:
-            RecordingSessionStore.deleteSession(session)
+            let trashed = trashRecordingSession(session)
             RecordingControlPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
+            if !trashed { onFinishRecording?(session, restartDisplayID) }
         case .restart:
-            RecordingSessionStore.deleteSession(session)
+            guard trashRecordingSession(session) else {
+                RecordingControlPresenter.shared.hide()
+                RecordingAreaHighlightPresenter.shared.hide()
+                onFinishRecording?(session, restartDisplayID)
+                return
+            }
             if let restartSource {
                 startRecording(source: restartSource)
             }
@@ -481,6 +475,17 @@ final class ScreenRecordingManager {
             RecordingControlPresenter.shared.hide()
             RecordingAreaHighlightPresenter.shared.hide()
             terminationCompletion?(session)
+        }
+    }
+
+    private func trashRecordingSession(_ session: RecordingSession) -> Bool {
+        do {
+            try RecordingSessionStore.deleteSession(session)
+            return true
+        } catch {
+            FailureAlert.present(message: "The recording could not be moved to the Trash", error: error,
+                detail: "Your footage is still at \(session.directoryURL.path).")
+            return false
         }
     }
 
@@ -518,7 +523,8 @@ final class ScreenRecordingManager {
         await CameraRecordingManager.shared.cancel()
         pointerActivityRecorder.stop()
         if let session {
-            RecordingSessionStore.deleteSession(session)
+            do { try RecordingSessionStore.deleteSession(session) }
+            catch { NSLog("[Screendrop] Could not move incomplete recording to Trash: %@", error.localizedDescription) }
         }
         cleanupAfterRecording()
         RecordingControlPresenter.shared.hide()

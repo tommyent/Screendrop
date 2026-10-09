@@ -242,8 +242,7 @@ private struct RecordingStudioContent: View {
                     done(true)
                 }
             case .delete:
-                model.deleteProject()
-                done(true)
+                done(model.deleteProject())
             case .cancel:
                 break
             }

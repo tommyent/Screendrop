@@ -62,6 +62,7 @@
 		AA6200000000000000000002 /* Screendrop/AnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */; };
 		AA6200000000000000000003 /* Screendrop/AnnotationBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */; };
 		AA6200000000000000000004 /* Screendrop/AnnotationShadowStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000014 /* Screendrop/AnnotationShadowStyle.swift */; };
+		AA6200000000000000000005 /* Screendrop/ScreenRecordingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000015 /* Screendrop/ScreenRecordingState.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -120,6 +121,7 @@
 		AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationDocument.swift; sourceTree = SOURCE_ROOT; };
 		AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationBackground.swift; sourceTree = SOURCE_ROOT; };
 		AA6200000000000000000014 /* Screendrop/AnnotationShadowStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationShadowStyle.swift; sourceTree = SOURCE_ROOT; };
+		AA6200000000000000000015 /* Screendrop/ScreenRecordingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScreenRecordingState.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -180,6 +182,7 @@
 				AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */,
 				AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */,
 				AA6200000000000000000014 /* Screendrop/AnnotationShadowStyle.swift */,
+				AA6200000000000000000015 /* Screendrop/ScreenRecordingState.swift */,
 				AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */,
 				AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */,
 				AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */,
@@ -343,6 +346,7 @@
 				AA6200000000000000000002 /* Screendrop/AnnotationDocument.swift in Sources */,
 				AA6200000000000000000003 /* Screendrop/AnnotationBackground.swift in Sources */,
 				AA6200000000000000000004 /* Screendrop/AnnotationShadowStyle.swift in Sources */,
+				AA6200000000000000000005 /* Screendrop/ScreenRecordingState.swift in Sources */,
 				AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */,
 				AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */,
 				AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */,

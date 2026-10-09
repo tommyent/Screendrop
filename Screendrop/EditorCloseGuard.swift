@@ -25,9 +25,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     var canClose: () -> Bool = { true }
     /// An export or upload that closing would cancel; asked about first.
     var hasRunningWork: () -> Bool = { false }
-    /// Only a project that was never saved offers "Delete and close":
-    /// discarding a project the user already committed to is unrecoverable,
-    /// so that case reverts to the saved state instead.
+    /// Never-saved projects can move to Trash; saved projects revert to their saved state.
     var offersDelete: () -> Bool = { false }
     /// False when the edits have nowhere to be saved (a plain movie rather
     /// than a project), so the prompt can only warn before discarding them.
@@ -179,14 +177,14 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = offersDelete()
-            ? "Do you want to save your project before closing or delete it?"
+            ? "Do you want to save your project before closing or move it to the Trash?"
             : "Do you want to save the changes to “\(projectName())”?"
         alert.informativeText = offersDelete()
-            ? "This recording has never been saved. Deleting it removes the footage as well."
+            ? "This recording has never been saved. Its footage will move to the Trash, where you can recover it."
             : "Your changes since the last save will be lost if you don't save them."
 
         alert.addButton(withTitle: "Save and Close")
-        alert.addButton(withTitle: offersDelete() ? "Delete and Close" : "Discard Changes")
+        alert.addButton(withTitle: offersDelete() ? "Move to Trash and Close" : "Discard Changes")
         alert.addButton(withTitle: "Cancel")
         // Escape and ⌘. land on Cancel rather than destroying anything.
         alert.buttons[2].keyEquivalent = "\u{1b}"

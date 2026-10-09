@@ -79,18 +79,16 @@ final class RecordingProjectStore {
         reload()
     }
 
-    /// Removes the package, the History row, and any preview card together, so
-    /// no surface can disagree about whether a recording exists. The card goes
-    /// first, while its files are still on disk.
-    func delete(_ session: RecordingSession) {
+    /// Drop references only after the entire package has safely reached the Trash.
+    func delete(_ session: RecordingSession) throws {
+        try RecordingSessionStore.deleteSession(session)
         ScreenshotPreviewStack.shared.dismissRecordingSession(session.directoryURL)
         ScreenshotHistoryStore.shared.deleteRecordingSession(session)
-        RecordingSessionStore.deleteSession(session)
         reload()
     }
 
-    func delete(_ project: RecordingProjectSummary) {
-        delete(project.session)
+    func delete(_ project: RecordingProjectSummary) throws {
+        try delete(project.session)
     }
 
     func reveal(_ project: RecordingProjectSummary) {
