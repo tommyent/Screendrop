@@ -55,6 +55,8 @@ import Testing
         #expect(document.records.contains { $0.recoveryAttempt })
         #expect(document.records.contains { $0.recoveryPatch != nil })
         #expect(document.records.contains { $0.events.contains { $0.contains("failure:") } })
+        #expect(document.records.flatMap(\.events).contains("registration: lost; failure: noOverlap; pending: none"))
+        #expect(document.records.flatMap(\.events).allSatisfy { !$0.contains(".ScrollingCapture") })
         #expect(document.records.allSatisfy { $0.changedInPlace.count == F.height && $0.maximumChannelDifference.count == F.height })
         #expect(document.records.last?.input.columns == document.records.last?.matchingColumns)
         try await replay(document)

@@ -265,7 +265,7 @@ actor ScrollingCaptureEngine {
             } ?? []).intersection(rows)
             if sameBounds, var candidate = buffer, candidate.initial.contentRows == viewport {
                 let verified = candidate.add(frame, at: sampleIndex, time: time)
-                note("recovery registration: \(verified.state); \(String(describing: verified.failure))")
+                note("recovery registration: \(verified.state); \(verified.failure.map { String(describing: $0) } ?? "none")")
                 if verified.placements.last.map({ $0.offset + registrationOrigin == offset - baseOffset }) == true {
                     buffer = candidate
                     recoveryEvent = verified
@@ -297,7 +297,7 @@ actor ScrollingCaptureEngine {
                let preceding = previous.using(columns: matchingColumns) {
                 _ = candidate.add(preceding, at: sampleIndex - 1, time: previousTime ?? time - 0.05)
                 let verified = candidate.add(matching, at: sampleIndex, time: time)
-                note("wider registration: \(verified.state); failure: \(String(describing: verified.failure)); offsets: \(verified.placements.map(\.offset))")
+                note("wider registration: \(verified.state); failure: \(verified.failure.map { String(describing: $0) } ?? "none"); offsets: \(verified.placements.map(\.offset))")
                 if verified.placements.last?.offset == placed.offset {
                     let start = max(proposed.lowerBound, selection.rows.lowerBound - safeOffset)
                     if let output = ScrollingCaptureBandCompositor(initial: candidate.initial,
@@ -313,7 +313,7 @@ actor ScrollingCaptureEngine {
                 }
             }
         }
-        note("registration: \(event.state); failure: \(String(describing: event.failure)); pending: \(String(describing: event.pendingReason))")
+        note("registration: \(event.state); failure: \(event.failure.map { String(describing: $0) } ?? "none"); pending: \(event.pendingReason.map { String(describing: $0) } ?? "none")")
         note("retained: \(buffer!.pendingCount); bytes: \(buffer!.bufferedBytes); settled: \(buffer!.settledPageRows.sorted())")
         for placement in event.placements {
             note("placement: \(placement.index) at \(placement.offset); content: \(placement.contentRows); stable: \(placement.stableRows.sorted()); motion: \(placement.motionRows.sorted()); corroborating: \(placement.corroboratingRows.sorted())")
@@ -347,7 +347,7 @@ actor ScrollingCaptureEngine {
             } else {
                 compositor?.resume()
                 let composed = compositor!.add(placements)
-                note("compositor: \(composed.state); failure: \(String(describing: composed.failure))")
+                note("compositor: \(composed.state); failure: \(composed.failure.map { String(describing: $0) } ?? "none")")
                 note("bands: \(compositor!.bands.map { "\($0.rows): owner \(String(describing: $0.owner?.index)), locked \($0.locked)" })")
                 if composed.state == .lost {
                     recovering = true
