@@ -5,445 +5,145 @@
   </picture>
 </h1>
 
-Sukusho is a fork of [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed. The download and release links below are Screendrop's own.
+Sukusho is a native macOS app for screenshots, scrolling captures and screen recordings, with an editor, a Library for everything you capture, and share links served from your own Cloudflare Worker. It is a fork of [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed.
 
-A beautiful screenshot + screen recording + Loom alternative - all native, self hostable and free.
-
-<p>
-  <a href="https://github.com/fayazara/Screendrop/releases/latest/download/Screendrop.dmg">
-    <img src="download-button.png" alt="Download the latest version of Screendrop" width="220">
-  </a>
-</p>
-
-<img width="3494" height="2206" alt="Screendrop_2026-08-17-09-17-20-compressed-550B05" src="https://github.com/user-attachments/assets/e4c2ef6c-97af-4ad4-8885-442c7fbb07b7" />
-
-
-
-<br />
-<br />
-
-
-
-> [!IMPORTANT]
-> Screendrop is under active development. Expect rough edges and occasional breaking changes
-
-
-<p>
-  <a href="https://github.com/fayazara/Screendrop/releases/latest">Latest release</a>
-  ·
-  <a href="https://github.com/fayazara/Screendrop/releases">All releases</a>
-</p>
-
+> [!NOTE]
+> There are no releases yet. To use Sukusho, [build it from source](#building-from-source). It is under active development, so expect rough edges.
 
 ## Features
 
-- Capture a display, window, or selected area as a screenshot or recording.
-- Configure global hotkeys, timers, file formats, save behavior, and complete after-capture workflows.
-- Copy, compress, save, pin, preview, annotate, edit, upload, or delete directly from a customizable floating preview stack.
-- Grab text off the screen with on-device OCR - no screenshot saved, just the text on your clipboard.
-- Open images from Finder with Screendrop and edit imported copies without touching the originals.
-- Annotate non-destructively with drawing tools, crop, smart redaction, backgrounds, wallpaper packs, perspective effects, progressive blur, borders, and watermarks.
-- Record camera, microphone, and system audio as separately editable sources.
-- Use a notch-native teleprompter that follows your narration with on-device speech recognition.
-- Edit recordings with smooth zooms, reconstructed cursors and clicks, keystroke captions, camera layouts, clip cuts, speed changes, social aspect ratios, and reusable style presets.
-- Transcribe narration on-device, burn in karaoke-style captions, or edit the video by cutting its transcript.
-- Share through your own Cloudflare account with a video player, scrub previews, searchable transcripts, comments, and rich link previews.
-- Automate screenshots and recordings with Apple Shortcuts, Siri, and App Intents.
+### Capture
 
-## Install
-
-### Download
-
-1. Download the latest `Screendrop.dmg` using the button above or from the [releases page](https://github.com/fayazara/Screendrop/releases/latest).
-2. Open the DMG and drag **Screendrop** into your Applications folder.
-3. Launch Screendrop. It lives in the menu bar at the top-right of the screen.
-
-The download button always points to the newest release.
-
-**Requirements:** macOS 26.4 or newer.
-
-
-### Homebrew
-
-Install from the Homebrew tap:
-
-```bash
-brew install --cask fayazara/tap/screendrop
-```
-
-Update later with:
-
-```bash
-brew upgrade --cask screendrop
-```
-
-Screendrop can also update itself through Sparkle.
-
-## Quick Start
-
-Screendrop can be controlled from its menu bar item or with global hotkeys.
+Capture a display, a window, an area, a scrolling region, or just the text in an area. Sukusho runs from its menu bar item and global shortcuts:
 
 | Default shortcut | Action |
 | --- | --- |
-| `Option + 1` | Capture full screen |
-| `Option + 2` | Capture a window |
-| `Option + 3` | Capture an area |
-| `Option + 4` | Open the screen-recording picker |
-| `Option + 5` | Capture text (OCR) to the clipboard |
+| `Control + Option + 1` | Capture full screen |
+| `Control + Option + 2` | Capture a window |
+| `Control + Option + 3` | Capture an area |
+| `Control + Option + 4` | Scrolling Capture |
+| `Control + Option + 5` | Screen recording |
+| `Control + Option + 6` | Capture Text to the clipboard |
 
-All five shortcuts are customizable under **Settings → Screenshots** and **Settings → Screen Recordings**. If a replacement shortcut cannot be registered, Settings explains the failure and keeps your previous working shortcut.
+Change any of them in **Settings → General**. If a shortcut can't be registered, Settings says why and keeps the previous one.
 
-You can also:
+- **Screenshot options:** a 3, 5 or 10 second timer, optional window shadows, PNG or JPEG, an export folder, and a Save action that can skip the save panel.
+- **After each capture**, choose any of: show the preview, copy, save, upload and copy the link, open the editor, or pin the screenshot above other windows.
+- **Floating preview cards** let you copy, drag, save, compress, pin, Quick Look, edit, upload or delete a capture. Their actions can be rearranged in **Settings → Overlay**.
+- **Capture Text** drags out an area, reads its text on-device with Vision, and puts the text on the clipboard. No image is saved.
+- **Open With → Sukusho** in Finder imports a copy of an image and opens the copy in the editor. The original file is never changed.
 
-- Run capture and recording actions from Apple Shortcuts, Siri, or Spotlight.
-- Right-click one or more images in Finder and choose **Open With → Screendrop**.
-- Browse screenshots and recordings together in the native Library, or reopen recent captures from the menu bar.
+### Scrolling Capture
 
-## Screenshots
-
-### Capture
-
-Capture an entire display, a window, or a freely selected area. Screenshots are taken at native display resolution and imported into the local Library before any optional automation runs.
-
-Screenshot preferences include:
-
-- A self-timer of 3, 5, or 10 seconds.
-- Optional window shadows.
-- Automatic trimming of the empty black menu-bar strip on notched Macs.
-- PNG or JPEG export with configurable JPEG quality.
-- A configurable export folder and a Save action that can bypass the save panel.
-- A lower-resolution editor preview to reduce memory use while preserving full-resolution exports.
-- An option to include Screendrop's own windows in screenshots and recordings; they are excluded by default.
-
-### Capture Text
-
-**Capture Text** (`Option + 5`, or the menu bar) drags out an area like a normal
-area capture, recognizes the text inside it with on-device Vision OCR, and puts
-that text on the clipboard. No image is saved, nothing is added to Library, and
-no preview card appears - a brief toast confirms what was copied.
-
-Recognized lines are returned in reading order, so multi-column screenshots
-paste in the order you read them rather than the order Vision happened to find
-them.
-
-### After-Capture Automation
-
-Choose exactly what happens after every screenshot:
-
-- Show the preview overlay.
-- Copy the image to the clipboard.
-- Save it to the export folder.
-- Upload it and copy the share link.
-- Open the annotation editor.
-- Pin it above other windows.
-
-Recording automation has its own independent settings for previewing, copying, saving, uploading, and opening Studio. Automatic uploading requires Cloud setup; the action links directly to **Settings → Cloud** when configuration is missing.
-
-### Floating Preview Stack
-
-New captures appear as floating cards on the active display. From a card you can:
-
-- Copy the capture or drag it into another app.
-- Save it to disk.
-- Create a smaller JPEG.
-- Pin a screenshot as an always-on-top reference.
-- Open Quick Look.
-- Annotate a screenshot or edit a recording.
-- Upload to your cloud and copy the link.
-- Delete the file or dismiss only the preview.
-- Copy recognized text from a screenshot using on-device OCR.
-
-The overlay can appear on the left or right, close automatically after a chosen delay, and dismiss after a drag. Its actions are completely rearrangeable: drag actions between four corner slots, the center buttons, and a hidden-actions tray in **Settings → Overlay**.
-
-Opening Save keeps a screenshot preview available if you cancel or saving fails. If a screenshot cannot be written to the configured export folder, choose another location or retry from the error dialog.
-
-A recording card is a quick handoff: it closes once Studio has loaded successfully or a manual Save or Upload from the card succeeds. Failed or cancelled actions keep the card available for retry. Exporting or sharing from Studio or Library also clears that recording's card; the recording remains in Library. Studio shows **Saved** with a Finder reveal action, or **Link Copied** with actions to copy or open the share link, without creating another overlay.
-
-When the stack is collapsed, it becomes a small peek tab instead of disappearing. This keeps captures close without covering the workspace.
+Draw a box over a scrolling view, scroll through it at your own pace, and click **Done**. Sukusho lines up each new frame with the last one and adds only the rows that scrolled into view, giving one tall image up to 16,384 pixels high. If it loses its place, it shows the last rows it kept so you can scroll back to them, and **Done** always keeps what has been captured so far.
 
 ### Library
 
-Library brings screenshots, videos, and complete recording projects into one native macOS window, replacing the History page and separate Recording Projects browser. The sidebar filters All Captures, Screenshots, and Recordings. Switch between thumbnail grid and list views, search by name, or sort by capture date, name, and last modification. The layout, sort order, and inspector visibility are remembered.
+One window for screenshots, recordings and recording projects:
 
-The browser uses reusable AppKit collection cells, background package discovery, and a bounded thumbnail cache with cancellable loading. The inspector shows dimensions, capture dates, duration, disk usage, editable-project state, file location, and cloud sharing actions. Recording packages and their History entries appear as one capture; existing files and edits stay where they are.
+- Grid or list view with an adjustable card size, search, sorting, and a filter for screenshots or recordings.
+- Tags with their own colours and icons.
+- An inspector with dimensions, dates, duration, disk use and cloud sharing.
+- **Space** for Quick Look, **Return** to rename, multi-select to copy, export, reveal or move to Trash.
+- A **Cloud** section with your **Uploads**, plus **Comments** and **Likes** from your share pages, newest first.
 
-- Double-click a capture or press **Space** for a large Quick Look preview. Use **Edit** to annotate a screenshot or reopen a recording in Studio.
-- Reopening an edited screenshot restores its preserved base image and saved annotations and background settings, including screenshots with only background or crop edits.
-- Use **Command-click**, **Shift-click**, or **Command-A** to select multiple captures, then copy, export, reveal in Finder, or move them to Trash. **Command-C** copies the selection and **Command-Delete** offers Move to Trash.
-- Press **Return** to rename a selected capture. Screenshot titles are stored separately from filenames, preserving annotation sidecars.
-- Recording previews, copies, and exports resolve the edited deliverable, including the cursor and camera. Preparing an uncached recording can take time; Library shows the operation in its status bar.
-- **Move to Trash** includes the capture's edits and recording tracks. Close a capture's editor first. Exported copies and cloud links are unaffected; deleting a cloud copy is a separate inspector action.
+Normal launches open the Library; launching at login stays quietly in the menu bar.
 
-Normal launches open Library, with a Dock icon while regular windows are open. Launch at login stays quietly in the menu bar. Open Library again from the menu bar, Finder, Spotlight, or **Command-Shift-L**. Closing it leaves capture shortcuts and the menu bar available. **Command-Option-I** toggles the inspector.
+### Editor
 
-### Open Images from Finder
+Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations can be reopened and changed later, and exports render at the image's full resolution.
 
-Screendrop registers as an image editor in Finder. Opening an image with Screendrop:
+- **Tools:** rectangle, circle, straight line, arrow, freehand, numbered circle, text, highlight, magnifier, pixelate and blur. Select, move, resize, undo and redo.
+- **Snapping:** shapes snap to each other and to the image's edges and centre, with alignment guides.
+- **Measuring:** hold an arrow key over the image to measure the width or height under the pointer; click to stamp that measurement onto the screenshot. **Tab** copies the colour under the pointer.
+- **Smart Redaction** finds sensitive text and blurs or pixelates it, and the strength stays editable.
+- **Crop** at full resolution with freeform and fixed ratios; annotations follow the crop.
+- **Backgrounds:** colours, gradients, your own images or wallpaper packs, padding, corner radius, shadow, border, watermark, perspective and progressive blur, saved as presets you can share as `.screendroppreset` files.
 
-1. Validates the image.
-2. Imports a copy into the Screendrop Library.
-3. Opens the copy in the annotation editor.
+### Screen recording and Studio
 
-The original file is never modified. Multiple selected images can be opened at once, each in its own editor window.
+- Record a display, a window or an area, with a camera, a microphone and system audio as separate sources, a start timer, and a teleprompter that follows your narration on-device.
+- A floating bar pauses, restarts, stops or discards the recording.
+- Every recording is a non-destructive project. In Studio, cut and trim clips, change speed, add automatic or manual zooms, a reconstructed cursor, click highlights and keystroke captions, move and resize the camera, and pick a background and an aspect ratio for social formats.
+- Transcribe narration on-device, edit captions, or cut the video by deleting words from its transcript.
+- Export the finished composition, or share it straight to your Worker.
 
-## Annotation Studio
+### Cloud sharing
 
-The annotation editor is non-destructive. Screendrop preserves the untouched base image and writes editable state to a neighboring `.screendrop` sidecar, so saved annotations can be reopened and changed later. Display previews are lightweight, while final renders use the source image's full pixel resolution.
+Sharing is optional and self-hosted: uploads go to a Cloudflare Worker you deploy, which keeps files in R2 and metadata in D1. Sukusho only needs the Worker's URL and an upload token.
 
-Save, Done, and Upload coordinate screenshot commits so conflicting saves cannot overlap. Failed commits keep the editor open with its changes unsaved; file replacements retain recovery copies until the image and editable files are written successfully. Upload also works on screenshots without annotations. Recording Studio likewise stays open when **Save and Close** cannot save the project.
+- **Share pages:** recordings get a video player with captions, a searchable transcript and scrub previews; screenshots get a clean viewer. Pages show view counts and rich link previews in chat apps.
+- **Comments and likes** from viewers, which you can turn on or off for each share, with or without anonymous comments.
+- **Share Options:** a title, a link expiry, an optional password, and whether comments and likes are allowed. **Settings → Cloud** sets the default link expiry and the share page's name, logo and favicon.
+- Edited recordings upload the finished cut, followed by its poster, transcript and scrub previews.
 
-### Drawing and Redaction
+### Automation
 
-Available tools include:
+Capture and recording actions are available in Shortcuts, Siri and Spotlight.
 
-- Rectangle and filled rectangle
-- Circle
-- Straight line and arrow
-- Freehand drawing
-- Numbered markers
-- Text with font, weight, alignment, and size controls
-- Highlight regions that dim everything outside the selection
-- Pixelate and blur
-- Select, move, resize, multi-select, delete, undo, and redo
+## Privacy and permissions
 
-Smart Redaction scans the screenshot for sensitive text and can add blur or pixelation automatically. Redaction strength remains editable after detection.
+- Captures, projects, edits and transcripts stay on your Mac. Transcription and text recognition run on-device.
+- The upload token is kept in the Keychain. Nothing is uploaded unless you or an after-capture action asks for it.
+- There is no Sukusho account or server, and no automatic app updates. The network is used only for your Worker, for checking whether your Worker has an update, for wallpaper downloads, and for the setup video in **Settings → Cloud** when you play it.
 
-### Crop
+macOS asks for **Screen & System Audio Recording** for captures and recordings, and, when you first use them, **Camera**, **Microphone** and **Input Monitoring** (for keystroke captions). Sukusho's own windows are left out of captures unless you turn on **Settings → General → Include Sukusho windows in captures**.
 
-Crop at full resolution with freeform, original, `1:1`, `16:9`, `9:16`, `4:3`, and `3:2` presets. Crops remap existing annotations into the new image coordinates and participate in undo and redo.
-
-### Backgrounds and Mockups
-
-Turn a plain screenshot into a finished visual without leaving Screendrop:
-
-- Apply solid colors, gradients, custom images, or downloadable wallpaper packs.
-- Save, import, export, and share background presets as versioned `.screendroppreset` JSON files.
-- Adjust padding, corner radius, shadow, aspect ratio, and nine-point alignment.
-- Add a configurable solid border around the screenshot.
-- Add a text watermark with placement and typography controls.
-- Use camera-style perspective, rotation, zoom, and pan controls for dimensional mockups.
-- Add radial or directional progressive blur, either clipped to the screenshot or bleeding into the surrounding scene.
-
-The editor keeps these effects live and re-editable instead of flattening them into the source.
-
-The canvas zoom menu offers Fit Canvas (⌘1), actual size (⌘0), and zoom in/out (⌘+/⌘−), up to 1000%. Fit leaves breathing room around the composition; zoomed content uses the full editor workspace. Pinch or hold ⌘/Option while scrolling to zoom around the pointer, and scroll to pan. Pinch zoom keeps its starting image point fixed until a canvas edge constrains the view. Menu and keyboard zoom use the center of your current view. Panning stops at the composition edges; axes that fit inside the viewport stay centered. Fit recenters the whole composition. These controls change only the editing view, not the exported image.
-
-Shared presets include portable colors, gradients, layout, camera, blur, border, and watermark settings. Local wallpaper images and their file paths are never exported or imported; a wallpaper-based preset uses no background when opened on another Mac.
-
-## Screen Recording
-
-### Before Recording
-
-The recording picker provides one place to prepare a session:
-
-- Choose a display, app window, or selected area.
-- Choose a camera, including external and Continuity Camera devices.
-- Choose a microphone.
-- Toggle system audio.
-- Set a 1, 3, or 5 second start timer.
-- Write and enable a teleprompter script.
-
-During the start countdown, click **Cancel**, press **Escape**, or close the recorder to cancel the pending recording. Source selection is disabled until the countdown finishes or is cancelled. The display control shows source-loading progress; if loading fails, it offers Retry and, when needed, a link to screen recording permissions.
-
-Turning on the camera starts a live preview before recording begins, giving the camera time to settle exposure and white balance. Camera permission failures or disconnected optional devices do not throw away the screen recording; Screendrop warns and continues without that input.
-
-For area recordings, the selected boundary remains visibly highlighted while the rest of the display is dimmed. The guide is click-through and excluded from the recording.
-
-### While Recording
-
-A floating control bar shows elapsed time and lets you:
-
-- Pause or resume.
-- Restart the same source.
-- Stop and keep the recording.
-- Delete the current recording.
-
-The screen, camera, cursor activity, clicks, keystrokes, microphone, and system audio are captured as coordinated inputs. Screendrop keeps the raw screen and camera masters separate so later edits do not permanently burn effects into the footage.
-
-### Teleprompter
-
-Paste or type a script from the pre-record bar, choose how many lines to show, and enable the teleprompter for the next recording.
-
-On a Mac with a notch, the script grows out of the hardware notch in a Dynamic Island-style panel. On other displays it appears as a floating pill below the menu bar. With a microphone enabled, Apple's on-device Speech Analyzer follows the spoken words, highlights progress, and advances the script automatically. Without a microphone, the script remains available as a static prompt.
-
-The teleprompter and its speech tracking are best-effort and never interrupt the recording if recognition is unavailable.
-
-## Recording Studio
-
-Every new recording is stored as a non-destructive session package. The package preserves the screen master, optional camera master, input timeline, metadata, and a small editable project document. The original media stays untouched, and the project can be reopened from Library.
-
-### Timeline Editing
-
-- Scrub with generated frame thumbnails.
-- Split clips at the playhead.
-- Trim or delete clips.
-- Change speed per clip.
-- Select zoom and clip blocks directly on the timeline.
-- Undo and redo project edits.
-
-### Background, Layout, and Social Formats
-
-- Use colors, gradients, or wallpapers behind the recording.
-- Adjust padding, corner radius, and shadow.
-- Export in the original aspect ratio, `16:9`, `9:16`, `1:1`, or `4:5`.
-- Choose **Fill** for a pointer-following reframed crop or **Fit** to keep the full recording visible on the background.
-- Crop only the screen-video card with freeform, original, `1:1`, `16:9`, `9:16`, `4:3`, or `3:2` handles; the background canvas and source recording remain unchanged.
-- Save the current background, layout, cursor, and camera design as a named preset.
-- Choose a preset as the default for future recordings.
-
-### Zooms, Cursor, Clicks, and Keystrokes
-
-Screendrop records interaction data separately from the screen pixels, so presentation effects remain editable:
-
-- **Auto Zoom** turns recorded clicks into smooth camera moves.
-- Add, remove, enable, resize, and retime zooms manually.
-- Let a zoom follow the pointer or give it a fixed focal point with a visual focus pad.
-- Adjust the reconstructed cursor size after recording.
-- Toggle click highlights.
-- Toggle keystroke captions and place them across six top or bottom positions.
-
-Because the operating-system cursor is not baked into the source video, Studio can reconstruct a smoother cursor using the artwork and pointer timeline captured during the session.
-
-### Camera
-
-The camera remains a separate video track:
-
-- Show or hide it at any time.
-- Drag it directly on the canvas.
-- Adjust its size and roundness.
-- Preserve camera edits as part of a reusable Studio preset.
-
-### Transcription, Captions, and Text-Based Editing
-
-Narrated recordings can be transcribed entirely on-device with Apple's Speech Analyzer.
-
-The result powers two workflows:
-
-- **Captions:** edit text line by line, click timestamps to seek, adjust position and size, and optionally highlight each spoken word for a karaoke-style effect.
-- **Edit Video:** click a word to seek, Shift-click to select a passage, and cut the selection to remove the matching footage. Screendrop can also remove filler words and trim narration silences automatically.
-
-Transcript cuts update the video timeline and captions together and remain undoable.
-
-### Export and Share
-
-Studio exports the complete composition-screen, camera, backgrounds, zooms, cursor, click effects, keystrokes, captions, edits, speed changes, and selected audio-in one render.
-
-Export Options includes quality, codec, resolution, format, **30 / 60 fps**, **Motion blur**, and audio. The defaults remain 60 fps with motion blur enabled. Choose 30 fps and turn motion blur off to reduce rendering work, or keep either feature independently. Confirmed options are remembered for new recordings and saved with the project; Share uses the same project settings. Existing projects retain their original 60 fps and blur behavior until you change them.
-
-Export and Share show progress, can be cancelled, and report completion. Renders are cached against the project state, including frame rate and motion blur, so exporting or sharing the same edit again can reuse finished work.
-
-Studio uses Metal to accelerate eligible motion-blur frames. Blur-on uses a one-frame shutter at the selected frame rate; blur-off draws the screen once at each frame's camera position. Core Graphics remains available for unsupported frames and devices. See [export performance](docs/export-performance.md) for the rendering policy, benchmarks, and comparison workflow.
-
-Screendrop also includes a lightweight trim-and-compress editor for regular video files.
-
-## Cloud Sharing
-
-Cloud sharing is optional, self-hosted, and Cloudflare-first:
-
-- A Cloudflare Worker receives authenticated uploads and returns share links.
-- [Cloudflare R2](https://developers.cloudflare.com/r2/) stores screenshots and recordings without egress-bandwidth charges.
-- [Cloudflare D1](https://developers.cloudflare.com/d1/) stores lightweight upload and share-page metadata.
-- Screendrop only needs the Worker URL and an upload token; it never needs R2 or S3 access keys.
-
-Shared recordings get a Loom-style page:
-
-- A video player with captions, playback speed, theater mode, and thumbnail previews while scrubbing.
-- A synced, searchable transcript that follows playback and seeks when clicked.
-- Comments that can be attached to moments in the video.
-- View counts, a poster image, and rich previews when the link is pasted into chat.
-
-Shared screenshots use a clean viewer with copy and download actions.
-
-The companion Worker lives at:
-
-[github.com/fayazara/screendrop-worker](https://github.com/fayazara/screendrop-worker)
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/fayazara/screendrop-worker)
-
-### Cloud Setup
-
-The fastest setup is built into Screendrop:
-
-1. Open **Settings → Cloud**.
-2. Copy the generated upload token.
-3. Click **Deploy to Cloudflare**.
-4. Paste the token when Cloudflare asks for the `UPLOAD_TOKEN` secret.
-5. After deployment, copy the Worker URL back into Screendrop.
-6. Click **Verify Connection**.
-
-The deploy flow provisions the R2 and D1 bindings used by the Worker. For a manual deployment, configure the Worker with those bindings and store the token as a Worker secret:
-
-```bash
-npx wrangler secret put UPLOAD_TOKEN
-```
-
-Screendrop verifies the Worker URL and token before enabling uploads.
-
-### How Uploads Work
-
-1. Screendrop sends the file to the Worker with `PUT /api/upload`.
-2. The Worker validates the bearer token, streams the file to R2, and writes its metadata to D1.
-3. The Worker returns a share URL. Screendrop copies it and stores it in the local Library.
-4. For edited recordings, Screendrop uploads the rendered final cut-not the raw screen master.
-5. Screendrop then adds best-effort video sidecars: a title, poster, transcript remapped to the edited timeline, and a storyboard sprite used for scrub previews.
-
-The share link works as soon as the main upload finishes and becomes richer as the sidecars arrive.
-
-## Privacy and Permissions
-
-Screendrop is local-first:
-
-- Captures, project files, editable annotation sidecars, and transcripts are stored on your Mac.
-- Speech transcription runs on-device. Apple may download the required language model when you first enable transcription or the speech-following teleprompter.
-- The cloud upload token is stored in Keychain.
-- Cloud uploads only happen when an upload action or configured after-capture action requests one.
-- Screendrop has no central account or hosted Screendrop server.
-- Network access is otherwise limited to explicit features such as update checks, cloud setup, and wallpaper downloads.
-
-macOS may request:
-
-- **Screen & System Audio Recording** for screenshots and screen recordings.
-- **Camera** for the separate camera track and preview.
-- **Microphone** for narration and speech-following teleprompter progress.
-- **Input Monitoring** for editable keystroke captions.
-
-Screendrop windows are excluded from captures by default. Enable **Settings → General → Include Screendrop windows in captures** when you intentionally want preview cards, recording controls, Settings, or other Screendrop UI in the result.
-
-While this setting is enabled, a reminder below the pre-record bar warns that Screendrop windows will be captured. Turn off its switch to disable capture visibility immediately; the reminder disappears when the setting is off or recording begins.
-
-## Building Locally
+## Building from source
 
 Requirements:
 
-- macOS 26.4 or newer
-- Xcode 26.4 beta toolchain
+- macOS 26.4 or newer.
+- Xcode 27 beta (installed as `Xcode-beta.app`), with its Metal Toolchain for the Studio motion-blur shader:
 
-Xcode resolves the Sparkle and DockProgress package dependencies automatically.
+  ```bash
+  xcodebuild -downloadComponent MetalToolchain
+  ```
 
-Build from the command line:
+- Your Apple Developer team ID, to sign the app.
 
-```bash
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild build \
-  -project Screendrop.xcodeproj \
-  -scheme Screendrop \
-  -configuration Debug \
-  -destination "platform=macOS"
-```
-
-There is no test target. A successful Xcode build is the automated verification gate.
-
-The standalone [motion-blur benchmark](docs/export-performance.md#standalone-check) also compares the Metal renderer with Core Graphics and checks encoder interoperability and settled screen reuse without launching Screendrop. [Editor performance](docs/editor-performance.md) documents image budgets, close/cancellation behavior, and standalone resource checks.
-
-## Releasing
-
-Screendrop includes a Go release helper. To run the complete archive, notarize, package, and publish flow:
+Build Sukusho with your team ID in place of `YOUR_TEAM_ID`:
 
 ```bash
-go run ./cmd/screendrop-release -build
+xcodebuild build -project Screendrop.xcodeproj -scheme Screendrop \
+  -configuration Release -destination "platform=macOS" \
+  DEVELOPMENT_TEAM=YOUR_TEAM_ID -allowProvisioningUpdates
 ```
 
-It creates a DMG, signs the update for Sparkle, creates the GitHub release, updates and pushes `appcast.xml`, and updates the Homebrew cask. Without `-build`, the helper expects an already exported `Screendrop.app` in `~/Downloads`.
+The `Screendrop` scheme builds `Sukusho.app` (`com.tommyent.Sukusho`). The `Screendrop Dev` scheme with the `Debug Dev` configuration builds `Sukusho Dev.app` (`com.tommyent.Sukusho.dev`), which keeps its own data folder and keychain item, apart from Sukusho's. The Xcode target, schemes and Swift module keep the name Screendrop.
 
-## License
+Run the test suite:
 
-This fork's own changes are licensed under the [MIT License](LICENSE). It is based on [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed, which is dedicated to the public domain under [CC0 1.0 Universal](LICENSE-CC0); see [NOTICE](NOTICE).
+```bash
+xcodebuild test -project Screendrop.xcodeproj -scheme "Screendrop Dev" \
+  -configuration "Debug Dev" -destination "platform=macOS" \
+  DEVELOPMENT_TEAM=YOUR_TEAM_ID -allowProvisioningUpdates
+```
+
+The tests use Swift Testing, need no app host, and never touch your captures or settings; see [ScreendropTests/README.md](ScreendropTests/README.md). Sparkle and DockProgress are the only package dependencies, and Xcode resolves them. [Editor performance](docs/editor-performance.md) and [export performance](docs/export-performance.md) describe the standalone checks and benchmarks.
+
+If Screendrop was installed before, Sukusho brings over its captures, recordings, settings and Cloud token once, the first time it opens. Screendrop's own copy is left unchanged.
+
+## Setting up the Worker
+
+Sukusho's share pages, comments, likes and passwords come from this fork's Worker, [tommyent/screendrop-worker](https://github.com/tommyent/screendrop-worker), built on Cloudflare Workers with R2 and D1.
+
+1. In Sukusho, open **Settings → Cloud** and copy the generated upload token.
+2. Deploy the Worker from its repository:
+
+   ```bash
+   git clone https://github.com/tommyent/screendrop-worker.git
+   cd screendrop-worker
+   pnpm install
+   npx wrangler secret put UPLOAD_TOKEN   # paste the token from step 1
+   pnpm run deploy
+   ```
+
+   The deploy provisions the R2 bucket and D1 database; the database schema sets itself up on first use.
+3. Paste the Worker's URL into **Settings → Cloud** and click **Verify Connection**.
+
+The Worker's README covers updating an existing deployment and its API.
+
+## Credits and licence
+
+Sukusho is based on [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed, which its author dedicated to the public domain under [CC0 1.0 Universal](LICENSE-CC0). Code that came from Screendrop remains available under CC0. This fork's own changes are licensed under the [MIT License](LICENSE). See [NOTICE](NOTICE) for the details and for the licences of third-party packages.
