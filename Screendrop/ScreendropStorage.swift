@@ -1,9 +1,17 @@
 import Foundation
 
-/// Keep test captures and their supporting files out of the personal Library.
+/// Keep development files and credentials separate from the personal app.
 nonisolated enum ScreendropStorage {
+    static var isPersonalBuild: Bool {
+        Bundle.main.bundleIdentifier == "com.fayazahmed.Screendrop"
+    }
+
     static var directoryName: String {
-        Bundle.main.bundleIdentifier == "com.fayazahmed.Screendrop" ? "Screendrop" : "Screendrop Dev"
+        isPersonalBuild ? "Screendrop" : "Screendrop Dev"
+    }
+
+    static var keychainService: String {
+        isPersonalBuild ? "com.fayazahmed.Screendrop" : "com.fayazahmed.Screendrop.dev"
     }
 
     static var applicationSupportDirectory: URL {
