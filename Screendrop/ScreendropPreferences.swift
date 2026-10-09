@@ -354,7 +354,7 @@ enum ScreenshotFileActions {
             withIntermediateDirectories: true
         )
         
-        let destinationURL = uniqueDestinationURL(
+        let destinationURL = ScreenshotFileNaming.uniqueURL(
             for: exportFileName(for: url),
             in: destinationDirectory
         )
@@ -485,9 +485,5 @@ enum ScreenshotFileActions {
         if type.conforms(to: .jpeg) { return .jpeg }
         if type.conforms(to: .heic) { return .heic }
         return type
-    }
-    
-    private static func uniqueDestinationURL(for fileName: String, in directory: URL) -> URL {
-        ScreenshotFileNaming.uniqueURL(for: fileName, in: directory)
     }
 }
