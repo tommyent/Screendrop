@@ -58,6 +58,7 @@
 		AA6100000000000000000092 /* Screendrop/CloudPreviewCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */; };
 		AA6100000000000000000093 /* Screendrop/CaptureTagField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */; };
 		AA6100000000000000000094 /* Screendrop/CaptureTagStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */; };
+		AA6100000000000000000095 /* Screendrop/CloudLikeList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000F9 /* Screendrop/CloudLikeList.swift */; };
 		AA6200000000000000000001 /* Screendrop/ScreenshotHistoryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */; };
 		AA6200000000000000000002 /* Screendrop/AnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */; };
 		AA6200000000000000000003 /* Screendrop/AnnotationBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */; };
@@ -117,6 +118,7 @@
 		AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CloudPreviewCache.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CaptureTagField.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CaptureTagStyles.swift; sourceTree = SOURCE_ROOT; };
+		AA61000000000000000000F9 /* Screendrop/CloudLikeList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/CloudLikeList.swift; sourceTree = SOURCE_ROOT; };
 		AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScreenshotHistoryMetadata.swift; sourceTree = SOURCE_ROOT; };
 		AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationDocument.swift; sourceTree = SOURCE_ROOT; };
 		AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/AnnotationBackground.swift; sourceTree = SOURCE_ROOT; };
@@ -232,6 +234,7 @@
 				AA61000000000000000000F6 /* Screendrop/CloudPreviewCache.swift */,
 				AA61000000000000000000F7 /* Screendrop/CaptureTagField.swift */,
 				AA61000000000000000000F8 /* Screendrop/CaptureTagStyles.swift */,
+				AA61000000000000000000F9 /* Screendrop/CloudLikeList.swift */,
 			);
 			name = "Tested logic";
 			sourceTree = "<group>";
@@ -396,6 +399,7 @@
 				AA6100000000000000000092 /* Screendrop/CloudPreviewCache.swift in Sources */,
 				AA6100000000000000000093 /* Screendrop/CaptureTagField.swift in Sources */,
 				AA6100000000000000000094 /* Screendrop/CaptureTagStyles.swift in Sources */,
+				AA6100000000000000000095 /* Screendrop/CloudLikeList.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
