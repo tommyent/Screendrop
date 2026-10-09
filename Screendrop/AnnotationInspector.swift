@@ -52,7 +52,6 @@ struct AnnotationEditorInspector: View {
                         model.selectTool(tool)
                     }
                     PixelColorRow()
-                        .padding(.top, InspectorMetrics.rowSpacing)
                 }
 
                 InspectorSectionDivider()

@@ -159,7 +159,11 @@ struct InspectorSection<Content: View, Accessory: View>: View {
                 }
             }
 
-            content()
+            // Its own stack, so rows get the row gap rather than the header
+            // gap, or none in a section without a title.
+            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+                content()
+            }
         }
         .padding(.horizontal, InspectorMetrics.horizontalPadding)
         .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
@@ -556,6 +560,8 @@ struct InspectorGroupLabel: View {
 }
 
 /// A label + content row with a fixed-width label column so values align.
+/// Every row is at least one control high; content taller than that, such
+/// as a two-line swatch grid, hangs from the label's line.
 struct InspectorRow<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
@@ -566,14 +572,14 @@ struct InspectorRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             Text(title)
                 .font(.inspectorLabel)
                 .foregroundStyle(.secondary)
-                .frame(width: InspectorMetrics.labelColumnWidth, alignment: .leading)
+                .frame(width: InspectorMetrics.labelColumnWidth, height: InspectorMetrics.controlHeight, alignment: .leading)
 
             content()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: InspectorMetrics.controlHeight, alignment: .leading)
         }
     }
 }
