@@ -6,8 +6,6 @@ struct VideoSettingsPane: View {
 
     var body: some View {
         Form {
-            CaptureHotkeySettingsSection(actions: [.screenRecording])
-
             AfterCaptureActionsSection(type: .recording, title: "After Recording")
 
             Section("After Export") {

@@ -33,6 +33,12 @@ struct GeneralSettingsPane: View {
 
     var body: some View {
         Form {
+            // Every capture shortcut in one place, images first and the
+            // recording last (design pass choice 12).
+            CaptureHotkeySettingsSection(
+                actions: [.fullscreen, .window, .area, .scrollingCapture, .textCapture, .screenRecording]
+            )
+
             Section("Save Location") {
                 // One row and one name, "Save folder", as in the menu bar
                 // menu; "Use Default" only once a custom folder is set
