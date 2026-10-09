@@ -56,6 +56,7 @@ actor ScrollingCaptureEngine {
     private var pageWitnessRows = Set<Int>()
     private var safeOffset = 0
     private var sampleIndex = 0
+    private var previousTime: TimeInterval?
     private var buffer: ScrollingCaptureRegistrationBuffer?
     private var compositor: ScrollingCaptureBandCompositor?
     private var prefix: [UInt32] = []
@@ -64,11 +65,15 @@ actor ScrollingCaptureEngine {
     private var previous: ScrollingCaptureRaster
     private var recovering = false
     private var recoveryPatch: (frame: ScrollingCaptureRaster, rows: Range<Int>)?
+    private var trace: ScrollingCaptureTrace?
+    private var traceEvents: [String] = []
+    private var traceRecoveryAttempt = false
     private(set) var engine: Engine = .legacy
     private(set) var outputHeight: Int
 
     init?(firstFrame: CGImage, selection: ScrollingCaptureOutputRect? = nil,
-          ignoredTrailingColumns: Int, maximumHeight: Int = 16_384) {
+          ignoredTrailingColumns: Int, maximumHeight: Int = 16_384,
+          traceDirectory: URL? = ScrollingCaptureTrace.defaultDirectory) {
         let space = firstFrame.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil }
             ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let raster = ScrollingCaptureRaster(image: firstFrame, colorSpace: space) else { return nil }
@@ -92,9 +97,41 @@ actor ScrollingCaptureEngine {
             rect.columns.upperBound - min(max(0, ignoredTrailingColumns), rect.columns.count / 4))]
         safeImage = output
         outputHeight = safeImage.height
+        if let traceDirectory {
+            do {
+                trace = try ScrollingCaptureTrace(first: raster, selection: rect,
+                    ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
+                    colorSpace: space, directory: traceDirectory)
+            } catch { NSLog("Scrolling Capture trace could not start: %@", error.localizedDescription) }
+        }
     }
 
-    func add(_ image: CGImage) async -> Update {
+    func add(_ image: CGImage, at time: TimeInterval = ProcessInfo.processInfo.systemUptime) async -> Update {
+        let old = previous
+        traceEvents.removeAll(keepingCapacity: true)
+        traceRecoveryAttempt = recovering
+        let result = await process(image, at: time)
+        previousTime = time
+        if trace != nil, let decoded = ScrollingCaptureRaster(image: image, colorSpace: colorSpace) {
+            let masked = decoded.using(columns: matchingColumns) ?? decoded
+            guard let input = try? ScrollingCaptureTrace.Raster(masked) else { return result }
+            let stats = ScrollingCaptureTrace.differences(from: old, to: masked, rows: viewport)
+            trace?.append(.init(index: sampleIndex, time: time, input: input, viewport: viewport,
+                contentRows: buffer?.initial.contentRows, matchingColumns: matchingColumns,
+                engine: result.engine.rawValue, state: String(describing: result.state), height: result.height,
+                events: traceEvents, recoveryAttempt: traceRecoveryAttempt, recoveryRows: recoveryPatch?.rows,
+                recoveryPatch: recoveryPatch.flatMap { try? ScrollingCaptureTrace.Raster($0.frame) },
+                bestShift: stats.shift, changedInPlace: stats.changed, maximumChannelDifference: stats.difference))
+            if result.state == .lost || result.state == .limit { trace?.save() }
+        }
+        return result
+    }
+
+    func lastTraceRecord() -> ScrollingCaptureTrace.Record? { trace?.document.records.last }
+
+    private func note(_ event: @autoclosure () -> String) { if trace != nil { traceEvents.append(event()) } }
+
+    private func process(_ image: CGImage, at time: TimeInterval) async -> Update {
         sampleIndex += 1
         guard let decoded = ScrollingCaptureRaster(image: image, colorSpace: colorSpace),
               let frame = decoded.using(columns: matchingColumns),
@@ -106,10 +143,12 @@ actor ScrollingCaptureEngine {
             guard let selected = image.cropping(to: CGRect(x: selection.columns.lowerBound, y: selection.rows.lowerBound,
                 width: selection.columns.count, height: selection.rows.count)) else { return update(.lost) }
             let result = await legacy.add(selected)
+            note("legacy: \(result)")
             if buffer == nil, safeOffset == 0, let proposed = await legacy.proposedViewport {
                 viewport = (proposed.lowerBound + selection.rows.lowerBound)..<(proposed.upperBound + selection.rows.lowerBound)
             }
             if let position = await legacy.registration {
+                note("legacy position: \(position.offset); static: \(position.isStatic); minor: \(position.hasOnlyMinorRedraw)")
                 let body = (position.rows.lowerBound + selection.rows.lowerBound)..<(position.rows.upperBound + selection.rows.lowerBound)
                 let legacyOutput = position.isStatic || (result == .appended && position.hasOnlyMinorRedraw)
                 if buffer == nil || legacyOutput {
@@ -201,7 +240,11 @@ actor ScrollingCaptureEngine {
         var recovered: ScrollingCapturePlacement?
         var recoveryEvent: ScrollingCaptureRegistrationBuffer.Event?
         if recovering {
-            guard let position = recoveryOffset(frame, stable: stable) else { return update(.lost) }
+            guard let position = recoveryOffset(frame, stable: stable) else {
+                note("recovery: no unique page overlap")
+                return update(.lost)
+            }
+            note("recovery: \(position.offset); rows: \(position.rows.sorted())")
             let offset = position.offset
             let lower = max(viewport.lowerBound, selection.rows.lowerBound)
             let upper = min(viewport.upperBound, selection.rows.upperBound)
@@ -221,7 +264,8 @@ actor ScrollingCaptureEngine {
                 band.rows.map { $0 + baseOffset - offset }
             } ?? []).intersection(rows)
             if sameBounds, var candidate = buffer, candidate.initial.contentRows == viewport {
-                let verified = candidate.add(frame, at: sampleIndex)
+                let verified = candidate.add(frame, at: sampleIndex, time: time)
+                note("recovery registration: \(verified.state); \(verified.failure.map { String(describing: $0) } ?? "none")")
                 if verified.placements.last.map({ $0.offset + registrationOrigin == offset - baseOffset }) == true {
                     buffer = candidate
                     recoveryEvent = verified
@@ -240,7 +284,7 @@ actor ScrollingCaptureEngine {
             recovering = false
         }
         let matching = frame.using(columns: matchingColumns)!
-        var event = recoveryEvent ?? buffer!.add(matching, at: sampleIndex)
+        var event = recoveryEvent ?? buffer!.add(matching, at: sampleIndex, time: time)
         if engine == .legacy, let placed = event.placements.last, placed.offset > 0, sampleIndex > 1 {
             let proposed = widerViewport(body: viewport, delta: placed.offset, frame: matching)
             let old = lastSafeFrame.using(columns: matchingColumns)!
@@ -251,8 +295,9 @@ actor ScrollingCaptureEngine {
                var candidate = ScrollingCaptureRegistrationBuffer(first: old, confirmation: old,
                     contentRows: proposed, observedMotionRows: motion, pageWitnessRows: pageWitnessRows),
                let preceding = previous.using(columns: matchingColumns) {
-                _ = candidate.add(preceding, at: sampleIndex - 1)
-                let verified = candidate.add(matching, at: sampleIndex)
+                _ = candidate.add(preceding, at: sampleIndex - 1, time: previousTime ?? time - 0.05)
+                let verified = candidate.add(matching, at: sampleIndex, time: time)
+                note("wider registration: \(verified.state); failure: \(verified.failure.map { String(describing: $0) } ?? "none"); offsets: \(verified.placements.map(\.offset))")
                 if verified.placements.last?.offset == placed.offset {
                     let start = max(proposed.lowerBound, selection.rows.lowerBound - safeOffset)
                     if let output = ScrollingCaptureBandCompositor(initial: candidate.initial,
@@ -267,6 +312,11 @@ actor ScrollingCaptureEngine {
                     }
                 }
             }
+        }
+        note("registration: \(event.state); failure: \(event.failure.map { String(describing: $0) } ?? "none"); pending: \(event.pendingReason.map { String(describing: $0) } ?? "none")")
+        note("retained: \(buffer!.pendingCount); bytes: \(buffer!.bufferedBytes); settled: \(buffer!.settledPageRows.sorted())")
+        for placement in event.placements {
+            note("placement: \(placement.index) at \(placement.offset); content: \(placement.contentRows); stable: \(placement.stableRows.sorted()); motion: \(placement.motionRows.sorted()); corroborating: \(placement.corroboratingRows.sorted())")
         }
         if event.state == .lost {
             recovering = true
@@ -297,6 +347,8 @@ actor ScrollingCaptureEngine {
             } else {
                 compositor?.resume()
                 let composed = compositor!.add(placements)
+                note("compositor: \(composed.state); failure: \(composed.failure.map { String(describing: $0) } ?? "none")")
+                note("bands: \(compositor!.bands.map { "\($0.rows): owner \(String(describing: $0.owner?.index)), locked \($0.locked)" })")
                 if composed.state == .lost {
                     recovering = true
                     return update(composed.failure == .outputLimit ? .limit : .lost)
@@ -311,6 +363,14 @@ actor ScrollingCaptureEngine {
     }
 
     func makeImage() -> CGImage? {
+        let image = renderedImage()
+        if trace != nil {
+            trace?.save(done: true, output: image.flatMap { ScrollingCaptureRaster(image: $0, colorSpace: colorSpace) })
+        }
+        return image
+    }
+
+    private func renderedImage() -> CGImage? {
         guard engine == .buffered, let tail = compositor?.finish() else { return safeImage.image(in: colorSpace) }
         let pixels = prefix + tail.pixels
         guard pixels.count >= outputHeight * selection.columns.count else { return nil }
