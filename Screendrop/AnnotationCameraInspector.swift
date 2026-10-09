@@ -12,7 +12,7 @@ struct AnnotationCameraInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
             VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorGroupLabel("Camera angle")
+                InspectorGroupLabel("Angle")
 
                 sliderPair(
                     ("Tilt X", \.tiltXDegrees),

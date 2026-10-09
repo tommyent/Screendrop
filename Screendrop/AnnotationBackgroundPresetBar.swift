@@ -406,7 +406,8 @@ private struct AnnotationPresetPopUpButton: NSViewRepresentable {
         button.preferredEdge = .minY
         button.bezelStyle = .rounded
         button.controlSize = .regular
-        button.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        // The inspector's 11 pt medium (`DS.TypeScale.labelMedium`).
+        button.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         button.alignment = .left
         button.cell?.lineBreakMode = .byTruncatingTail
         return button

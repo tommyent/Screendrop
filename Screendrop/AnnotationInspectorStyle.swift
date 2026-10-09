@@ -410,7 +410,7 @@ struct InspectorToggleRow: View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.inspectorLabel)
-                .foregroundStyle(.primary.opacity(0.82))
+                .foregroundStyle(.secondary)
 
             Spacer(minLength: 8)
 
