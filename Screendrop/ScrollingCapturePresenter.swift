@@ -300,7 +300,8 @@ final class ScrollingCapturePresenter {
         hasRecovered = false
         let size = ScrollingCaptureRecoveryStrip.panelSize
         let strip = recoveryPanel ?? Self.makePanel(ScrollingCaptureRecoveryContent(), size: size, origin: .zero)
-        strip.setFrameOrigin(Self.recoveryStripOrigin(size: size, besideBar: panel.frame, region: region, on: panel.screen))
+        strip.setFrameOrigin(ScrollingCaptureRegion.recoveryPanelOrigin(size: size, bar: panel.frame, region: region,
+            visible: panel.screen?.visibleFrame ?? panel.frame, margin: ScrollingCaptureBar.margin))
         strip.orderFrontRegardless()
         recoveryPanel = strip
     }
@@ -321,22 +322,6 @@ final class ScrollingCapturePresenter {
         recoveryHideTask = nil
         recoveryPanel?.orderOut(nil)
         hasRecovered = false
-    }
-
-    /// On the far side of the bar from the region, so it never covers what
-    /// is being scrolled; the near side when the far side is off screen.
-    private static func recoveryStripOrigin(size: CGSize, besideBar bar: CGRect, region: CGRect, on screen: NSScreen?) -> CGPoint {
-        let visible = screen?.visibleFrame ?? bar
-        // The two panels' transparent margins overlap so the glass edges sit
-        // 8 pt apart.
-        let overlap = ScrollingCaptureBar.margin * 2 - 8
-        let below = bar.minY + overlap - size.height
-        let above = bar.maxY - overlap
-        let barIsAboveRegion = bar.minY >= region.maxY
-        let preferred = barIsAboveRegion ? above : below
-        let fits = preferred >= visible.minY && preferred + size.height <= visible.maxY
-        let y = fits ? preferred : (preferred == above ? below : above)
-        return CGPoint(x: bar.midX - size.width / 2, y: y)
     }
 
     /// Centered under the region, else above it, else inside its bottom edge.

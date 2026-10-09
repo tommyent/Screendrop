@@ -135,6 +135,23 @@ import Testing
         }
     }
 
+    @Test("The recovery panel stays off the selection while there's room on screen")
+    func recoveryPanelPlacement() {
+        // AppKit points: a bar 404x76 (12 pt margins) under a region, a strip 404x208.
+        let visible = CGRect(x: 0, y: 80, width: 1470, height: 843), size = CGSize(width: 404, height: 208)
+        func origin(_ region: CGRect, visible: CGRect = visible) -> CGPoint {
+            let bar = CGRect(x: region.midX - 202, y: region.minY - 76, width: 404, height: 76)
+            return ScrollingCaptureRegion.recoveryPanelOrigin(size: size, bar: bar, region: region, visible: visible, margin: 12)
+        }
+        // Room under the bar: the strip goes there, glass 8 pt below the bar's.
+        #expect(origin(CGRect(x: 100, y: 400, width: 800, height: 400)) == CGPoint(x: 298, y: 132))
+        // user-163: the bar sits just above the Dock, so the strip used to go
+        // above the bar, inside the selection. Now it goes beside the region.
+        #expect(origin(CGRect(x: 100, y: 200, width: 800, height: 660)) == CGPoint(x: 896, y: 188))
+        // A region filling the screen leaves no room: the old near-side spot.
+        #expect(origin(CGRect(x: 20, y: 200, width: 1430, height: 700)) == CGPoint(x: 533, y: 184))
+    }
+
     @Test("Scrollbar pixels and changing browser chrome never vote or tear the video", arguments: [false, true])
     func scrollbarAndChrome(narrow: Bool) async throws {
         let video = 100..<220
