@@ -697,6 +697,7 @@ struct AnnotationCanvas: View {
                 if !hasActiveInteraction {
                     hasActiveInteraction = true
                     onEditorInteraction()
+                    takeKeyboardFocusFromInspector()
                     model.beginInteraction(at: startLocation, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
                 }
 
@@ -714,6 +715,16 @@ struct AnnotationCanvas: View {
                 hasActiveInteraction = false
                 updateCursor(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
             }
+    }
+
+    /// A press on the canvas takes keyboard focus back from the inspector:
+    /// a slider or a number field otherwise keeps it (clearing the window's
+    /// focus state doesn't reach them), and with it Tab, the arrow keys and
+    /// any letters typed. An annotation's own text keeps its commit handling.
+    private func takeKeyboardFocusFromInspector() {
+        guard let window = NSApp.currentEvent?.window,
+              !(window.firstResponder is AnnoTextEditorOverlay) else { return }
+        window.makeFirstResponder(nil)
     }
 
     /// While an arrow key measures, a click imprints that ruler as an
