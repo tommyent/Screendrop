@@ -25,22 +25,10 @@ enum ScreenshotImageLoader {
     }
     
     static func downsampledImage(at url: URL, maxPixelSize: CGFloat) -> NSImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions) else {
-            return nil
-        }
-        
-        let options: [CFString: Any] = [
-            kCGImageSourceShouldCache: false,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(1, Int(maxPixelSize.rounded(.up)))
-        ]
-        
-        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            return nil
-        }
-        
-        return NSImage(cgImage: cgImage, size: CGSize(width: cgImage.width, height: cgImage.height))
+        // ImageIO's thumbnail resampler also retains RIP buffers across editor closes.
+        guard let source = uprightImage(at: url), let pixels = PixelBuffer(image: source),
+              let image = pixels.resized(maxPixelSize: maxPixelSize) else { return nil }
+        return NSImage(cgImage: image, size: CGSize(width: image.width, height: image.height))
     }
 
     /// Decodes the image at its native pixel resolution. Used when the

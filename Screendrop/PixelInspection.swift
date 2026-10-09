@@ -1,3 +1,4 @@
+import Accelerate
 import CoreGraphics
 import Foundation
 
@@ -44,14 +45,15 @@ nonisolated struct PixelBuffer: Sendable {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else { return nil }
         var bytes = Data(count: width * height * 4)
+        guard var format = vImage_CGImageFormat(bitsPerComponent: 8, bitsPerPixel: 32,
+            colorSpace: space, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            renderingIntent: .defaultIntent) else { return nil }
+        // CGContextDrawImage keeps full-resolution RIP buffers in its colour-conversion cache.
         let drawn = bytes.withUnsafeMutableBytes { raw -> Bool in
-            guard let context = CGContext(
-                data: raw.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                bytesPerRow: width * 4, space: space,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return false }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
+            var destination = vImage_Buffer(data: raw.baseAddress, height: vImagePixelCount(height),
+                width: vImagePixelCount(width), rowBytes: width * 4)
+            return vImageBuffer_InitWithCGImage(&destination, &format, nil, image,
+                vImage_Flags(kvImageNoAllocate)) == kvImageNoError
         }
         guard drawn, let provider = CGDataProvider(data: bytes as CFData),
               let sharedImage = CGImage(width: width, height: height, bitsPerComponent: 8,
@@ -64,6 +66,29 @@ nonisolated struct PixelBuffer: Sendable {
         self.image = sharedImage
         self.colorSpace = space
         self.isSRGB = CFEqual(space, Self.sRGB)
+    }
+
+    /// Resize in the source profile without populating CoreGraphics' RIP cache.
+    func resized(maxPixelSize: CGFloat) -> CGImage? {
+        let scale = min(1, max(1, maxPixelSize.rounded(.up)) / CGFloat(max(width, height)))
+        let w = max(1, Int((CGFloat(width) * scale).rounded()))
+        let h = max(1, Int((CGFloat(height) * scale).rounded()))
+        if w == width && h == height { return image }
+        var output = Data(count: w * h * 4)
+        let error = bytes.withUnsafeBytes { source in
+            output.withUnsafeMutableBytes { destination in
+                var input = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: source.baseAddress!),
+                    height: vImagePixelCount(height), width: vImagePixelCount(width), rowBytes: width * 4)
+                var result = vImage_Buffer(data: destination.baseAddress!, height: vImagePixelCount(h),
+                    width: vImagePixelCount(w), rowBytes: w * 4)
+                return vImageScale_ARGB8888(&input, &result, nil, vImage_Flags(kvImageHighQualityResampling))
+            }
+        }
+        guard error == kvImageNoError, let provider = CGDataProvider(data: output as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: w * 4, space: colorSpace,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
     /// The pixel at `x`, `y` (0,0 top left), nil outside the image.
