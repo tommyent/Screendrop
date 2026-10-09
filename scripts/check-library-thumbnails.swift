@@ -33,15 +33,61 @@ nonisolated struct CaptureLibraryItem: Sendable {
         return context.data!.assumingMemoryBound(to: UInt8.self)[1] > 250
     }
 
+    static func checkFormats(in root: URL, source: URL) {
+        let disk = CaptureThumbnailDiskCache(directory: root.appendingPathComponent("formats"))
+        for alpha in [CGImageAlphaInfo.first, .last, .premultipliedFirst, .premultipliedLast] {
+            for order in [CGBitmapInfo.byteOrderDefault, .byteOrder32Big, .byteOrder32Little] {
+                for transparent in [false, true] {
+                    // Padding is deliberately transparent; only actual pixels count.
+                    var bytes = Data(repeating: 0, count: 24)
+                    let first = alpha == .first || alpha == .premultipliedFirst
+                    let little = order == .byteOrder32Little
+                    let alphaOffset = little ? (first ? 3 : 0) : (first ? 0 : 3)
+                    for y in 0..<2 {
+                        for x in 0..<2 {
+                            let start = y * 12 + x * 4
+                            for c in 0..<4 { bytes[start + c] = 40 }
+                            bytes[start + alphaOffset] = transparent && x == 1 && y == 1 ? 128 : 255
+                        }
+                    }
+                    let image = CGImage(width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32,
+                        bytesPerRow: 12, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                        bitmapInfo: CGBitmapInfo(rawValue: alpha.rawValue).union(order),
+                        provider: CGDataProvider(data: bytes as CFData)!, decode: nil,
+                        shouldInterpolate: false, intent: .defaultIntent)!
+                    let key = "\(alpha.rawValue)-\(order.rawValue)-\(transparent)"
+                    disk.store(image, for: key, source: source)
+                    let decoded = CGImageSourceCreateWithURL(disk.url(for: key, source: source) as CFURL, nil)!
+                    precondition(CGImageSourceGetType(decoded) as String? == (transparent ? "public.png" : "public.jpeg"))
+                    let cached = disk.image(for: key, source: source)!
+                    precondition(cached.width == 2 && cached.height == 2)
+                    if transparent {
+                        let context = CGContext(data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 8,
+                            space: image.colorSpace!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                        context.draw(cached, in: CGRect(x: 0, y: 0, width: 2, height: 2))
+                        let pixels = context.data!.assumingMemoryBound(to: UInt8.self)
+                        precondition(stride(from: 3, to: 16, by: 4).filter { pixels[$0] == 128 }.count == 1)
+                    }
+                }
+            }
+        }
+    }
+
     static func main() async throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("library-thumbnails-\(UUID())")
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
         let source = root.appendingPathComponent("private-capture.png")
+        checkFormats(in: root, source: source)
         let disk = CaptureThumbnailDiskCache(directory: root.appendingPathComponent("cache"))
         write(image(width: 800, height: 1600, green: false), to: source)
         try manager.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1000)], ofItemAtPath: source.path)
+        let oldValues = try source.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let oldVersion = "v2:\(source.path):\(oldValues.fileSize ?? 0):\(oldValues.contentModificationDate!.timeIntervalSince1970)::320"
+        let oldPNG = disk.url(for: oldVersion, source: source).deletingPathExtension().appendingPathExtension("png")
+        try manager.createDirectory(at: disk.directory, withIntermediateDirectories: true)
+        write(image(width: 160, height: 320, green: true), to: oldPNG)
 
         precondition(CaptureLibraryThumbnails.bucket(for: 320) == 320)
         precondition(CaptureLibraryThumbnails.bucket(for: 321) == 640)
@@ -50,8 +96,9 @@ nonisolated struct CaptureLibraryItem: Sendable {
         let large = await thumbnails.image(at: source, maxPixelSize: 640)!
         precondition(small.width == 160 && small.height == 320 && large.width == 320 && large.height == 640)
         precondition(!isGreen(small) && !isGreen(large))
-        let files = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil)
+        let files = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "thumb" }
         precondition(files.count == 2 && files.allSatisfy { $0.deletingPathExtension().lastPathComponent.count == 129 })
+        precondition(files.allSatisfy { CGImageSourceGetType(CGImageSourceCreateWithURL($0 as CFURL, nil)!) as String? == "public.jpeg" })
 
         // A new decoder must read the disk cache, not re-decode the original:
         // replace only the cached small thumbnail with a visible sentinel.
@@ -86,10 +133,14 @@ nonisolated struct CaptureLibraryItem: Sendable {
         let lru = CaptureThumbnailDiskCache(directory: root.appendingPathComponent("lru"))
         lru.store(small, for: "older", source: source)
         lru.store(large, for: "newer", source: source)
+        let oldLRU = lru.url(for: "legacy", source: source).deletingPathExtension().appendingPathExtension("png")
+        write(small, to: oldLRU)
+        try manager.setAttributes([.modificationDate: Date(timeIntervalSince1970: 0)], ofItemAtPath: oldLRU.path)
         try manager.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: lru.url(for: "older", source: source).path)
         let size = try lru.url(for: "newer", source: source).resourceValues(forKeys: [.fileSizeKey]).fileSize!
         lru.trim(to: size)
         precondition(!manager.fileExists(atPath: lru.url(for: "older", source: source).path) && lru.image(for: "newer", source: source) != nil)
+        precondition(!manager.fileExists(atPath: oldLRU.path), "Legacy PNGs must count towards the cache budget")
 
         let other = root.appendingPathComponent("other.png")
         disk.store(small, for: "unrelated", source: other)
@@ -118,6 +169,6 @@ nonisolated struct CaptureLibraryItem: Sendable {
         await thumbnails.remove(for: [package])
         let afterPackage = try manager.contentsOfDirectory(at: disk.directory, includingPropertiesForKeys: nil)
         precondition(afterPackage.count == 1, "Package deletion must remove all rendered thumbnail versions")
-        print("PASS: 320/640 buckets; cross-decoder disk hit; corruption repair; edit invalidation; cache failure fallback; LRU trim; deletion eviction")
+        print("PASS: JPEG opaque/PNG transparency in 12 alpha layouts with padded rows; 320/640 buckets; cross-decoder disk hit; corruption repair; edit invalidation; cache failure fallback; LRU trim; deletion eviction including legacy PNG")
     }
 }

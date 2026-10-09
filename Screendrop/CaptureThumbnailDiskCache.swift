@@ -17,7 +17,7 @@ nonisolated struct CaptureThumbnailDiskCache: Sendable {
     func sourceKey(for url: URL) -> String { digest(url.standardizedFileURL.path) }
 
     func url(for key: String, source: URL) -> URL {
-        directory.appendingPathComponent(sourceKey(for: source) + "-" + digest(key) + ".png")
+        directory.appendingPathComponent(sourceKey(for: source) + "-" + digest(key) + ".thumb")
     }
 
     func image(for key: String, source: URL) -> CGImage? {
@@ -31,9 +31,12 @@ nonisolated struct CaptureThumbnailDiskCache: Sendable {
     }
 
     func store(_ image: CGImage, for key: String, source: URL) {
+        let opaque = isOpaque(image)
         let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return }
-        CGImageDestinationAddImage(destination, image, nil)
+        guard let destination = CGImageDestinationCreateWithData(data,
+            (opaque ? "public.jpeg" : "public.png") as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(destination, image,
+            opaque ? [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary : nil)
         guard CGImageDestinationFinalize(destination) else { return }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -41,10 +44,34 @@ nonisolated struct CaptureThumbnailDiskCache: Sendable {
         } catch { /* A missing cache must never prevent showing the capture. */ }
     }
 
+    private func isOpaque(_ image: CGImage) -> Bool {
+        guard !image.isMask else { return false }
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: return true
+        case .first, .last, .premultipliedFirst, .premultipliedLast: break
+        default: return false
+        }
+        // Inspect known 8-bit layouts; preserve alpha in unfamiliar formats.
+        guard image.bitsPerComponent == 8, image.bitsPerPixel == 32,
+              image.decode == nil, image.pixelFormatInfo == .packed,
+              let data = image.dataProvider?.data, CFDataGetLength(data) >= image.bytesPerRow * image.height,
+              let bytes = CFDataGetBytePtr(data) else { return false }
+        var alpha = image.alphaInfo == .first || image.alphaInfo == .premultipliedFirst ? 0 : 3
+        switch image.byteOrderInfo {
+        case .order32Little: alpha = 3 - alpha
+        case .orderDefault, .order32Big: break
+        default: return false
+        }
+        for y in 0..<image.height {
+            for x in 0..<image.width where bytes[y * image.bytesPerRow + x * 4 + alpha] != 255 { return false }
+        }
+        return true
+    }
+
     func remove(for sources: [URL]) {
         let sourceKeys = Set(sources.map(sourceKey(for:)))
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        for file in files where file.pathExtension == "png" && sourceKeys.contains(String(file.lastPathComponent.prefix(64))) {
+        for file in files where ["png", "thumb"].contains(file.pathExtension) && sourceKeys.contains(String(file.lastPathComponent.prefix(64))) {
             try? FileManager.default.removeItem(at: file)
         }
     }
@@ -55,7 +82,7 @@ nonisolated struct CaptureThumbnailDiskCache: Sendable {
         let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
         let files = (try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: Array(keys), options: .skipsHiddenFiles)) ?? []
-        let entries = files.filter { $0.pathExtension == "png" }.compactMap { url -> (URL, Int, Date)? in
+        let entries = files.filter { ["png", "thumb"].contains($0.pathExtension) }.compactMap { url -> (URL, Int, Date)? in
             guard let values = try? url.resourceValues(forKeys: keys) else { return nil }
             return (url, values.fileSize ?? 0, values.contentModificationDate ?? .distantPast)
         }

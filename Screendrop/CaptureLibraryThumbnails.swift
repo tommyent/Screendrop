@@ -37,7 +37,7 @@ actor CaptureLibraryThumbnails {
         // A reused URL can still hold the old stat values after an editor save.
         resourceURL.removeAllCachedResourceValues()
         guard let values = try? resourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
-        let version = "v2:\(url.path):\(values.fileSize ?? 0):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(isVideo ? version : ""):\(size)"
+        let version = "v3:\(url.path):\(values.fileSize ?? 0):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(isVideo ? version : ""):\(size)"
         let filename = disk.url(for: version, source: owner).lastPathComponent
         let key = filename as NSString
         if let image = cache.object(forKey: key) { return image }
