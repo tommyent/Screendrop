@@ -3023,7 +3023,7 @@ private struct StudioInspector: View {
             .background(sidebarBackground)
         }
         .scrollContentBackground(.hidden)
-        .scrollEdgeEffectSoftIfAvailable()
+        .scrollEdgeEffectStyle(.soft, for: .all)
         .background(sidebarBackground)
         .inspectorColumnWidth(
             min: InspectorMetrics.columnMinWidth,

@@ -8,20 +8,6 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Conditional Modifier
-
-extension View {
-    /// Apply a transform only when the condition is true.
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
-    }
-}
-
 // MARK: - On Click Outside
 
 /// Fires when a mouse-down occurs outside the view's bounds within the same window.
@@ -102,88 +88,6 @@ extension View {
     }
 }
 
-// MARK: - On Escape Key
-
-private struct OnEscapeKeyModifier: ViewModifier {
-    let action: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .background(EscapeKeyDetector(action: action))
-    }
-}
-
-private struct EscapeKeyDetector: NSViewRepresentable {
-    let action: () -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = EscapeKeyNSView()
-        view.action = action
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? EscapeKeyNSView)?.action = action
-    }
-}
-
-private final class EscapeKeyNSView: NSView {
-    var action: (() -> Void)?
-    private var monitor: Any?
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window != nil {
-            installMonitor()
-        } else {
-            removeMonitor()
-        }
-    }
-
-    private func installMonitor() {
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {  // Escape key
-                self?.action?()
-                return nil
-            }
-            return event
-        }
-    }
-
-    private func removeMonitor() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        monitor = nil
-    }
-
-    deinit {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-        }
-    }
-}
-
-extension View {
-    /// Fires when the Escape key is pressed while this view is in a window.
-    func onEscapeKey(perform action: @escaping () -> Void) -> some View {
-        modifier(OnEscapeKeyModifier(action: action))
-    }
-}
-
-// MARK: - Sheet Style
-
-extension View {
-    /// Applies a consistent frosted-glass sheet presentation style.
-    func screendropSheetStyle() -> some View {
-        self
-            .presentationCornerRadius(12)
-            .presentationBackground(.thinMaterial)
-            .presentationBackgroundInteraction(.enabled)
-    }
-}
-
 // MARK: - Window Accessor
 
 /// Fires a callback whenever the SwiftUI view's hosting NSWindow changes.
@@ -222,27 +126,5 @@ extension View {
     /// Fires when this view's hosting NSWindow changes (attached or detached).
     func onWindowChange(_ onChange: @escaping (NSWindow?) -> Void) -> some View {
         modifier(WindowAccessorModifier(onChange: onChange))
-    }
-}
-
-// MARK: - macOS 26 Availability Helpers
-
-extension View {
-    @ViewBuilder
-    func scrollEdgeEffectSoftIfAvailable() -> some View {
-        if #available(macOS 26.0, *) {
-            scrollEdgeEffectStyle(.soft, for: .all)
-        } else {
-            self
-        }
-    }
-
-    @ViewBuilder
-    func safeAreaBarIfAvailable(edge: VerticalEdge, @ViewBuilder content: () -> some View) -> some View {
-        if #available(macOS 26.0, *) {
-            safeAreaBar(edge: edge, content: content)
-        } else {
-            safeAreaInset(edge: edge, content: content)
-        }
     }
 }

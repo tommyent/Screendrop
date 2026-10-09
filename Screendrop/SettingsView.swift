@@ -170,7 +170,7 @@ private struct SettingsSidebarView: View {
             SettingsSidebarFooter()
         }
         .listStyle(.sidebar)
-        .scrollEdgeEffectSoftIfAvailable()
+        .scrollEdgeEffectStyle(.soft, for: .all)
         .navigationTitle("Settings")
     }
 }
