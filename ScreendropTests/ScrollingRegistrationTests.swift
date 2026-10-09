@@ -91,4 +91,39 @@ import Testing
         #expect(buffer.add(still, at: 2).state != .appended)
         #expect(buffer.frontier == 0)
     }
+    @Test("A later exact keyframe resolves a queued sample without guessing its original offset")
+    func resolvesBufferedSample() throws {
+        let video = 20..<180
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(
+            first: F.frame(0, phase: 1, video: video), confirmation: F.frame(0, phase: 2, video: video),
+            contentRows: 0..<F.height))
+        _ = buffer.add(F.frame(196, phase: 3, video: video), at: 1)
+        #expect(buffer.add(F.frame(196, phase: 4, video: video), at: 2).state == .pending)
+        #expect(buffer.pendingCount == 1)
+        _ = buffer.add(F.frame(5, phase: 5, video: video), at: 3)
+        let resolved = buffer.add(F.frame(5, phase: 6, video: video), at: 4)
+        #expect(resolved.state == .appended)
+        #expect(resolved.placements.map(\.offset) == [196, 5])
+        #expect(resolved.placements.map(\.index) == [2, 4])
+        #expect(buffer.pendingCount == 0 && buffer.frontier == 196 && buffer.lastVerifiedOffset == 5)
+    }
+    @Test("Full-size generated matching frames stay within the decoded byte budget")
+    func fullSizeFrames() throws {
+        let clock = ContinuousClock()
+        let start = clock.now
+        func view(_ offset: Int) -> ScrollingCaptureRaster {
+            let width = 1600, height = 1000
+            return ScrollingCaptureRaster(width: width, height: height,
+                pixels: (0..<(width * height)).map { F.pixel(x: $0 % width, pageY: $0 / width + offset) })!
+        }
+        let first = view(0)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(
+            first: first, confirmation: first, contentRows: 0..<1000))
+        let next = view(40)
+        _ = buffer.add(next, at: 1)
+        #expect(buffer.add(next, at: 2).placements.last?.offset == 40)
+        #expect(buffer.bufferedBytes <= buffer.maximumBufferedBytes)
+        print("WIDER 1600x1000 raster bytes", first.byteCount, "buffer bytes", buffer.bufferedBytes,
+              "elapsed", start.duration(to: clock.now))
+    }
 }

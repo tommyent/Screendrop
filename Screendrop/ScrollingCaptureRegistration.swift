@@ -5,6 +5,8 @@ nonisolated struct ScrollingCaptureRaster: Equatable, Sendable {
     let width: Int
     let height: Int
     let pixels: [UInt32]
+    private let rowHashes: [Int]
+    private let blankRows: [Bool]
 
     init?(width: Int, height: Int, pixels: [UInt32]) {
         guard width > 0, height > 0, width <= 16_384, height <= 16_384,
@@ -12,19 +14,28 @@ nonisolated struct ScrollingCaptureRaster: Equatable, Sendable {
         self.width = width
         self.height = height
         self.pixels = pixels
+        var hashes: [Int] = []
+        var blanks: [Bool] = []
+        for y in 0..<height {
+            let row = pixels[(y * width)..<((y + 1) * width)]
+            var hasher = Hasher()
+            for pixel in row { hasher.combine(pixel) }
+            hashes.append(hasher.finalize())
+            blanks.append(row.allSatisfy { $0 == pixels[y * width] })
+        }
+        rowHashes = hashes
+        blankRows = blanks
     }
 
-    var byteCount: Int { pixels.count * 4 }
+    var byteCount: Int { pixels.count * 4 + rowHashes.count * MemoryLayout<Int>.stride + blankRows.count }
     func row(_ y: Int) -> ArraySlice<UInt32> { pixels[(y * width)..<((y + 1) * width)] }
     func sameRow(_ y: Int, as other: Self, at otherY: Int) -> Bool {
-        row(y).elementsEqual(other.row(otherY))
+        rowHashes[y] == other.rowHashes[otherY] && row(y).elementsEqual(other.row(otherY))
     }
     func rowHash(_ y: Int) -> Int {
-        var hasher = Hasher()
-        for pixel in row(y) { hasher.combine(pixel) }
-        return hasher.finalize()
+        rowHashes[y]
     }
-    func isBlank(_ y: Int) -> Bool { row(y).allSatisfy { $0 == pixels[y * width] } }
+    func isBlank(_ y: Int) -> Bool { blankRows[y] }
 }
 
 /// A sample's page placement, established only by exact overlap with registered samples.
@@ -72,7 +83,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private let minimumRows = 8
 
     init?(first: ScrollingCaptureRaster, confirmation: ScrollingCaptureRaster,
-          contentRows: Range<Int>, maximumBufferedBytes: Int = 64 * 1024 * 1024) {
+          contentRows: Range<Int>, maximumBufferedBytes: Int = 128 * 1024 * 1024) {
         guard first.width == confirmation.width, first.height == confirmation.height,
               contentRows.lowerBound >= 0, contentRows.upperBound <= first.height,
               contentRows.count >= 16, maximumBufferedBytes / first.byteCount >= 4 else { return nil }
@@ -108,6 +119,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         previous = frame
         switch locate(sample) {
         case .offset(let offset):
+            guard offset.magnitude <= 16_384 else { return lose(.invalidSample) }
             // A fresh zero subset is never page-position authority. Keep the baseline.
             if offset == lastVerifiedOffset {
                 guard let witness = lastWitness,
@@ -121,15 +133,16 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             movingPageRows.formUnion(sample.motion.map { $0 + offset })
             keys.append(placement)
             for waiting in unresolved {
-                if case .offset(let position) = locate(waiting) {
+                if case .offset(let position) = locate(waiting, requiringDisplacement: true) {
                     resolved.append(placed(waiting, at: position))
                 }
             }
             // Unplaceable earlier frames cannot be replayed behind a committed cut.
             unresolved.removeAll()
-            let advanced = offset > frontier
+            let highest = resolved.map(\.offset).max() ?? offset
+            let advanced = highest > frontier
             if offset != lastVerifiedOffset { lastWitness = placement }
-            frontier = max(frontier, offset)
+            frontier = max(frontier, highest)
             lastVerifiedOffset = offset
             trimKeys()
             return Event(state: advanced ? .appended : .pending,
@@ -164,18 +177,22 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private func chromeMatches(_ a: ScrollingCaptureRaster, _ b: ScrollingCaptureRaster) -> Bool {
         (0..<a.height).filter { !contentRows.contains($0) }.allSatisfy { a.sameRow($0, as: b, at: $0) }
     }
-    private func locate(_ sample: Sample) -> Match {
+    private func locate(_ sample: Sample, requiringDisplacement: Bool = false) -> Match {
         var offsets = Set<Int>()
+        var hasDisplacement = false
         for key in keys {
             switch match(key, sample) {
             case .absent: continue
             case .ambiguous: return .ambiguous
-            case .offset(let offset): offsets.insert(offset)
+            case .offset(let offset):
+                offsets.insert(offset)
+                hasDisplacement = hasDisplacement || offset != key.offset
             }
         }
         guard offsets.count == 1, let offset = offsets.first else {
             return offsets.isEmpty ? .absent : .ambiguous
         }
+        guard !requiringDisplacement || hasDisplacement else { return .absent }
         // A stationary whole historical witness vetoes displacement from a new subset.
         if offset != lastVerifiedOffset, let witness = lastWitness,
            witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }) {
