@@ -21,7 +21,7 @@ struct CaptureHotkeySettingsSection: View {
                     HStack(spacing: 8) {
                         HotkeyShortcutDisplay(shortcut: shortcut(for: action))
 
-                        Button(isRecording(action) ? "Press keys..." : "Record") {
+                        Button(isRecording(action) ? "Type Shortcut…" : "Change") {
                             toggleRecording(for: action)
                         }
                         .controlSize(.small)

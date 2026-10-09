@@ -65,7 +65,7 @@ struct MenuBarView: View {
             Button {
                 CaptureLibraryModel.shared.show()
             } label: {
-                Label("Open Library", systemImage: "square.grid.2x2")
+                Label("Show Library", systemImage: "square.grid.2x2")
             }
             .keyboardShortcut("l", modifiers: [.command, .shift])
 
@@ -86,18 +86,20 @@ struct MenuBarView: View {
             } label: {
                 Label("Open Screenshots Folder", systemImage: "folder")
             }
-            
+
+            Divider()
+
             Button {
                 openSettings(tab: .general)
             } label: {
-                Label("Settings", systemImage: "gearshape")
+                Label("Settings…", systemImage: "gearshape")
             }
             .keyboardShortcut(",", modifiers: [.command])
 
             Button {
                 updaterManager.checkForUpdates()
             } label: {
-                Label("Check for Updates...", systemImage: "arrow.down.circle")
+                Label("Check for Updates…", systemImage: "arrow.down.circle")
             }
             .disabled(!updaterManager.canCheckForUpdates)
             
@@ -215,9 +217,9 @@ struct MenuBarView: View {
         let pathExtension = url.pathExtension
         let suffix = pathExtension.isEmpty ? "" : ".\(pathExtension)"
         let baseName = url.deletingPathExtension().lastPathComponent
-        let allowedBaseLength = max(8, limit - suffix.count - 3)
+        let allowedBaseLength = max(8, limit - suffix.count - 1)
 
-        return "\(baseName.prefix(allowedBaseLength))...\(suffix)"
+        return "\(baseName.prefix(allowedBaseLength))…\(suffix)"
     }
 
     /// Menus get unusably wide with full session names, which carry a
