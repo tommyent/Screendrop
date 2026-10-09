@@ -22,14 +22,14 @@ final class CommentsLibraryModel {
     private(set) var deletingIDs: Set<String> = []
     /// Unread when the page was opened, marked with a dot until it's left.
     private(set) var freshIDs: Set<String> = []
-    private var watermark: CommentWatermark?
+    private var watermark: FeedWatermark?
     private var watermarkWorker: String?
 
     private init() {}
 
     var unreadCount: Int {
         guard let watermark else { return comments.count }
-        return comments.filter(watermark.isUnread).count
+        return comments.filter { watermark.isUnread($0) }.count
     }
 
     /// Selected comments in display order.
@@ -88,11 +88,11 @@ final class CommentsLibraryModel {
     /// while the page stays open.
     private func markRead() {
         if let watermark {
-            freshIDs.formUnion(comments.filter(watermark.isUnread).map(\.id))
+            freshIDs.formUnion(comments.filter { watermark.isUnread($0) }.map(\.id))
         } else {
             freshIDs.formUnion(comments.map(\.id))
         }
-        watermark = CommentWatermark.reading(comments, after: watermark)
+        watermark = FeedWatermark.reading(comments, after: watermark)
         guard let watermarkWorker, let watermark, let data = try? JSONEncoder().encode(watermark) else { return }
         UserDefaults.standard.set(data, forKey: Self.watermarkKey + watermarkWorker)
     }
@@ -106,7 +106,7 @@ final class CommentsLibraryModel {
         watermarkWorker = worker
         watermark = worker
             .flatMap { UserDefaults.standard.data(forKey: Self.watermarkKey + $0) }
-            .flatMap { try? JSONDecoder().decode(CommentWatermark.self, from: $0) }
+            .flatMap { try? JSONDecoder().decode(FeedWatermark.self, from: $0) }
     }
 
     func open(_ comment: CloudComment) {
@@ -278,7 +278,7 @@ private struct CommentRow: View {
                 .frame(width: 7, height: 7)
                 .opacity(fresh ? 1 : 0)
                 .accessibilityHidden(true)
-            CommentUploadThumbnail(comment: comment, upload: upload, local: local)
+            CloudFeedThumbnail(isVideo: comment.isVideo, upload: upload, local: local)
                 .frame(width: 88, height: 58)
                 .clipShape(.rect(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 3) {
@@ -325,10 +325,10 @@ private struct CommentRow: View {
     }
 }
 
-/// The upload's thumbnail from the Cloud page, or a placeholder while that
-/// upload isn't loaded there.
-private struct CommentUploadThumbnail: View {
-    let comment: CloudComment
+/// A feed item's upload thumbnail from the Cloud page, or a placeholder
+/// while that upload isn't loaded there. Shared by Comments and Likes.
+struct CloudFeedThumbnail: View {
+    let isVideo: Bool
     let upload: CloudUpload?
     let local: CaptureLibraryItem?
 
@@ -338,7 +338,7 @@ private struct CommentUploadThumbnail: View {
         } else {
             ZStack {
                 Color(nsColor: .quaternaryLabelColor).opacity(0.25)
-                Image(systemName: comment.isVideo ? "video" : "photo").foregroundStyle(.tertiary)
+                Image(systemName: isVideo ? "video" : "photo").foregroundStyle(.tertiary)
             }
             .accessibilityHidden(true)
         }
@@ -449,7 +449,7 @@ struct CommentInspector: View {
                 Divider()
                 VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                     Text("Upload").font(.inspectorSectionHeader).foregroundStyle(InspectorControlPalette.label)
-                    CommentUploadThumbnail(comment: comment, upload: upload, local: cloud.localItems[comment.uploadId])
+                    CloudFeedThumbnail(isVideo: comment.isVideo, upload: upload, local: cloud.localItems[comment.uploadId])
                         .aspectRatio(1.45, contentMode: .fit)
                         .clipShape(.rect(cornerRadius: 11))
                     Text(comment.uploadName).font(.system(size: 13, weight: .medium)).lineLimit(2).truncationMode(.middle)

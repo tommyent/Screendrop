@@ -1,8 +1,16 @@
 import Foundation
 
+/// An item in one of the owner's share-page feeds (comments, likes): what
+/// read state and the shared paging need (SPEC-share-v2.md sections 8, 9).
+nonisolated protocol CloudFeedItem: Identifiable, Sendable where ID == String {
+    var id: String { get }
+    var uploadId: String { get }
+    var createdAt: Date { get }
+}
+
 /// One comment left on a share page, as Bearer GET /api/comments lists it
 /// (SPEC-share-v2.md section 8), with a summary of its upload.
-nonisolated struct CloudComment: Identifiable, Hashable, Sendable, Decodable {
+nonisolated struct CloudComment: CloudFeedItem, Hashable, Decodable {
     let id: String
     let uploadId: String
     let authorName: String
@@ -40,7 +48,13 @@ nonisolated enum CloudCommentList {
     static let pageSize = 500
 
     static func request(workerBase: String, token: String, offset: Int) -> URLRequest? {
-        var components = URLComponents(string: workerBase + "/api/comments")
+        listRequest(path: "/api/comments", workerBase: workerBase, token: token, offset: offset)
+    }
+
+    /// Bearer GET of one page of an owner feed, the largest page the
+    /// Worker allows.
+    static func listRequest(path: String, workerBase: String, token: String, offset: Int) -> URLRequest? {
+        var components = URLComponents(string: workerBase + path)
         components?.queryItems = [
             URLQueryItem(name: "limit", value: String(pageSize)),
             URLQueryItem(name: "offset", value: String(offset)),
@@ -81,25 +95,25 @@ nonisolated enum CloudCommentList {
     }
 }
 
-/// What has been read in the comment inbox for one Worker: the newest
-/// creation time marked read, and the comments marked read at exactly that
-/// second, since times have whole-second resolution and ids are random.
-/// ponytail: a comment stored later with an earlier second than the
+/// What has been read in one feed (comments or likes) for one Worker: the
+/// newest creation time marked read, and the items marked read at exactly
+/// that second, since times have whole-second resolution and ids are random.
+/// ponytail: an item stored later with an earlier second than the
 /// watermark counts as read; a server read state if that ever matters.
-nonisolated struct CommentWatermark: Codable, Equatable, Sendable {
+nonisolated struct FeedWatermark: Codable, Equatable, Sendable {
     var createdAt: Date
     var ids: Set<String>
 
-    func isUnread(_ comment: CloudComment) -> Bool {
-        comment.createdAt > createdAt || (comment.createdAt == createdAt && !ids.contains(comment.id))
+    func isUnread(_ item: some CloudFeedItem) -> Bool {
+        item.createdAt > createdAt || (item.createdAt == createdAt && !ids.contains(item.id))
     }
 
-    /// `old` with every comment in `comments` marked read as well.
-    static func reading(_ comments: [CloudComment], after old: CommentWatermark?) -> CommentWatermark? {
-        guard let newest = comments.map(\.createdAt).max() else { return old }
+    /// `old` with every item in `items` marked read as well.
+    static func reading<Item: CloudFeedItem>(_ items: [Item], after old: FeedWatermark?) -> FeedWatermark? {
+        guard let newest = items.map(\.createdAt).max() else { return old }
         if let old, old.createdAt > newest { return old }
-        var ids = Set(comments.filter { $0.createdAt == newest }.map(\.id))
+        var ids = Set(items.filter { $0.createdAt == newest }.map(\.id))
         if let old, old.createdAt == newest { ids.formUnion(old.ids) }
-        return CommentWatermark(createdAt: newest, ids: ids)
+        return FeedWatermark(createdAt: newest, ids: ids)
     }
 }

@@ -155,6 +155,7 @@ final class CaptureLibraryModel {
         if let filter {
             CloudLibraryModel.shared.isShown = false
             CommentsLibraryModel.shared.setShown(false)
+            LikesLibraryModel.shared.setShown(false)
             self.filter = filter
             tagFilter = nil
             searchText = ""
