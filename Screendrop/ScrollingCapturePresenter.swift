@@ -61,7 +61,8 @@ final class ScrollingCapturePresenter {
     @ObservationIgnored private var recoveryHideTask: Task<Void, Never>?
     @ObservationIgnored private var region: CGRect = .zero
     @ObservationIgnored private var stream: ScrollingCaptureStream?
-    /// Done's click, in stream time: frames shown after it aren't kept.
+    /// Done's or Cancel's click, on the engine's clock: frames shown after
+    /// it aren't kept, and a trace ends there.
     @ObservationIgnored private var cutoff: TimeInterval?
 
     /// How long the strip shows that frames line up again before it goes.
@@ -253,7 +254,12 @@ final class ScrollingCapturePresenter {
         while session.outcome == nil {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        guard session.outcome != .cancelled, let image = await stitcher.makeImage() else { return nil }
+        let endTime = cutoff ?? ScrollingCaptureSampleTiming.now()
+        guard session.outcome != .cancelled else {
+            await stitcher.finishTrace(at: endTime)
+            return nil
+        }
+        guard let image = await stitcher.makeImage(at: endTime) else { return nil }
         let capped = image.height > Self.maximumHeight
             ? image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: Self.maximumHeight))
             : image
@@ -274,6 +280,7 @@ final class ScrollingCapturePresenter {
     }
 
     func cancel() {
+        cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
         session.cancel()
         stream?.stop()
         if isSelectingArea {
