@@ -25,9 +25,14 @@ import Testing
             }
             var actual = await engine.lastTraceRecord(), expected = record
             actual?.timing = nil; expected.timing = nil
+            if expected.diagnosticsOmitted == true {
+                actual?.bestShift = nil; actual?.changedInPlace = Data()
+                actual?.maximumChannelDifference = Data(); actual?.diagnosticsOmitted = true
+            }
             #expect(actual == expected, "Replay differs at sample \(record.index)")
         }
         let image = try #require(await engine.makeImage())
+        _ = await engine.lastTraceRecord()
         #expect(image.height == document.records.last?.height)
         if let expected = document.outputChecksum {
             let raster = try #require(ScrollingCaptureRaster(image: image, colorSpace: colorSpace))
@@ -65,7 +70,8 @@ import Testing
         #expect(document.records.contains { $0.events.contains { $0.contains("failure:") } })
         #expect(document.records.flatMap(\.events).contains("registration: lost; failure: noOverlap; pending: none"))
         #expect(document.records.flatMap(\.events).allSatisfy { !$0.contains(".ScrollingCapture") })
-        #expect(document.records.allSatisfy { $0.changedInPlace.count == F.height && $0.maximumChannelDifference.count == F.height })
+        #expect(document.records.allSatisfy { $0.diagnosticsOmitted == true ||
+            ($0.changedInPlace.count == F.height && $0.maximumChannelDifference.count == F.height) })
         #expect(document.records.last?.input.columns == document.records.last?.matchingColumns)
         try await replay(document)
     }
@@ -119,6 +125,56 @@ import Testing
         #expect(document.lastOmittedEvent?.contains("traceQueueFull") == true)
     }
 
+    @Test("Overload keeps newest exact frames, sheds row statistics and records every gap")
+    func latestPendingRing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let queue = DispatchQueue(label: "trace-overload-test"), gate = DispatchSemaphore(value: 0)
+        queue.async { gate.wait() }
+        let first = F.frame(0)
+        let geometry = ScrollingCaptureTraceGeometry(displayID: 7,
+            selection: CGRect(x: 20, y: 60, width: 40, height: 80),
+            matchingRect: CGRect(x: 20, y: 10, width: 40, height: 200),
+            targetWindowFrame: CGRect(x: 0, y: 0, width: 500, height: 300), targetWindowLayer: 0,
+            reason: "clipped", obstacles: [.init(frame: CGRect(x: 10, y: 210, width: 100, height: 50), layer: 3)])
+        let writer = ScrollingCaptureTraceWriter(first: first,
+            selection: .init(columns: 0..<F.width, rows: 0..<F.height), ignoredTrailingColumns: 0,
+            maximumHeight: 1000, colorSpace: space, directory: directory,
+            maximumQueuedBytes: first.byteCount * 6, queue: queue, geometry: geometry)
+        for index in 1...40 {
+            let frame = F.frame(index / 2)
+            writer.append(.init(index: index, time: Double(index), old: F.frame((index - 1) / 2), frame: frame,
+                viewport: 0..<F.height, contentRows: nil, engine: "buffered",
+                state: index == 1 || index >= 39 ? "lost" : "pending", height: F.height, events: [],
+                recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil, timing: .init(sequence: index)))
+        }
+        gate.signal()
+        let document = try #require(await writer.document())
+        #expect(document.records.map(\.index) == [39, 40])
+        #expect(document.omittedSamples == 38 && document.omittedRanges == [1..<39])
+        #expect(document.savedAfterLoss && document.records.first?.diagnosticsOmitted == true)
+        #expect(try document.records.first?.input.decoded() == F.frame(19))
+        #expect(try document.records.last?.input.decoded() == F.frame(20))
+        let lossFile = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
+        #expect(try ScrollingCaptureTrace.read(lossFile).records.last?.index == 39)
+        writer.noteTiming(.init(sequence: 39, stages: ["uiEnd": 40.1]))
+        writer.append(.init(index: 41, time: 41, old: F.frame(20), frame: F.frame(21),
+            viewport: 0..<F.height, contentRows: nil, engine: "buffered", state: "pending",
+            height: F.height, events: [], recoveryAttempt: false, recoveryRows: nil,
+            recoveryPatch: nil, timing: .init()))
+        writer.finish(at: 45)
+        _ = await writer.document()
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
+        let saved = try ScrollingCaptureTrace.read(file)
+        #expect(saved.records.last?.index == 41 && saved.omittedRanges == [1..<39])
+        #expect(try saved.records.last?.input.decoded() == F.frame(21))
+        #expect(saved.geometry == geometry)
+        #expect(saved.records.first { $0.index == 39 }?.timing?.stages["uiEnd"] == 40.1)
+        #expect(saved.savedAfterStall == true && !saved.savedOnDone)
+    }
+
     @Test("Stopping on recovery rows then sending only idle recovers on one rest look")
     func idleRecovery() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -146,7 +202,7 @@ import Testing
         try await replay(ScrollingCaptureTrace.read(file))
     }
 
-    @Test("Traces save only after loss; capped history is explicitly incomplete and pruned")
+    @Test("Capped history keeps the newest inputs, with explicit gaps and bounded private files")
     func limits() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -168,10 +224,35 @@ import Testing
             for index in 2..<50 { trace.append(record(index, state: "lost")) }
             trace.save(done: true)
             #expect(trace.document.omittedSamples > 0)
+            #expect(trace.document.records.last?.index == 49)
+            #expect(trace.document.omittedRanges == [1..<(trace.document.records.first?.index ?? 1)])
         }
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
         #expect(try files.reduce(0) { $0 + (try $1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) } <= 600_000)
         #expect(try files.allSatisfy { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize! <= 150_000 })
+    }
+
+    @Test("History eviction cannot reset the stalled-session deadline")
+    func stalledHistoryRing() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let frame = F.frame(0), input = try ScrollingCaptureTrace.Raster(frame)
+        var trace = try ScrollingCaptureTrace(first: frame,
+            selection: .init(columns: 0..<F.width, rows: 0..<F.height), ignoredTrailingColumns: 0,
+            maximumHeight: 1000, colorSpace: space, directory: directory, maximumBytes: 150_000)
+        for index in 1...50 {
+            trace.append(.init(index: index, time: 1 + Double(index) / 100, input: input,
+                viewport: 0..<F.height, contentRows: nil, matchingColumns: frame.matchingColumns,
+                engine: "buffered", state: index == 1 ? "appended" : "pending", height: F.height,
+                events: [], recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil,
+                bestShift: nil, changedInPlace: Data(), maximumChannelDifference: Data()))
+        }
+        #expect(trace.document.omittedSamples > 0 && trace.document.records.first?.index != 1)
+        trace.save(endedAt: 4.02)
+        #expect(trace.document.savedAfterStall == true && !trace.document.savedAfterLoss)
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
+        #expect(try ScrollingCaptureTrace.read(file).records.last?.index == 50)
     }
 
     @Test("A legacy jump with repeated divider rows reaches recovery on idle", arguments: [false, true])

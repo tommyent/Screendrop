@@ -82,7 +82,8 @@ actor ScrollingCaptureEngine {
 
     init?(firstFrame: CGImage, selection: ScrollingCaptureOutputRect? = nil,
           ignoredTrailingColumns: Int, maximumHeight: Int = 16_384,
-          traceDirectory: URL? = ScrollingCaptureTrace.defaultDirectory) {
+          traceDirectory: URL? = ScrollingCaptureTrace.defaultDirectory,
+          traceGeometry: ScrollingCaptureTraceGeometry? = nil) {
         let space = firstFrame.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil }
             ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let raster = ScrollingCaptureRaster(image: firstFrame, colorSpace: space) else { return nil }
@@ -109,7 +110,7 @@ actor ScrollingCaptureEngine {
         if let traceDirectory {
                 trace = ScrollingCaptureTraceWriter(first: raster, selection: rect,
                     ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
-                    colorSpace: space, directory: traceDirectory)
+                    colorSpace: space, directory: traceDirectory, geometry: traceGeometry)
         }
     }
 
