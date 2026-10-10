@@ -12,7 +12,7 @@ import SwiftUI
 
 /// Runs a scrolling capture: the user draws a region, scrolls the content
 /// under it, and clicks Done. Frames are sampled while they scroll and handed
-/// to `ScrollingCaptureEngine`, which registers wider samples and freezes motion.
+/// to `ScrollingCaptureEngine`, which places each one with R7's exact rows.
 ///
 /// The region stays highlighted for the whole session, with a small bar below
 /// it showing the stitched height and Done/Cancel. The app being scrolled
@@ -326,16 +326,7 @@ final class ScrollingCapturePresenter {
                         rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
                         colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
                 }
-                // The newest rows are the closest match, but a run of still rows
-                // between moving media can be a few pixels tall: unreadable. The
-                // last confirmed rows, which recovery also matches, stand in then.
-                let newest = fitted(await recovering.recoveryRows(recoveryRows))
-                if let newest, CGFloat(newest.height) >= ScrollingCaptureRecoveryStrip.imageSize.height * scale / 3 {
-                    recoveryTarget = newest
-                } else {
-                    let confirmed = fitted(await recovering.recoveryRows(recoveryRows, newest: false))
-                    recoveryTarget = (confirmed?.height ?? 0) > (newest?.height ?? 0) ? confirmed : newest
-                }
+                recoveryTarget = fitted(await recovering.recoveryRows(recoveryRows))
                 showRecoveryStrip()
                 if let recoveryPanel {
                     NSAccessibility.post(element: recoveryPanel, notification: .announcementRequested, userInfo: [

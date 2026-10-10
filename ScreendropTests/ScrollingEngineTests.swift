@@ -46,50 +46,13 @@ import Testing
         _ = await engine.lastTraceRecord()
     }
 
-    @Test("An unchanged negative-offset startup backscroll still reaches registration")
-    func startupBackscroll() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let first = F.frame(60).image(in: space)!
-        var pixels = F.frame(40).pixels
-        pixels[70 * F.width + 10] ^= 1
-        let back = ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
-        let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
-        #expect(await legacy.add(back) == .unchanged)
-        let position = try #require(await legacy.registration)
-        #expect(position.offset == -20 && !position.isStatic)
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: first,
-            ignoredTrailingColumns: 0, traceDirectory: directory))
-        _ = await engine.add(back, at: 1)
-        let record = try #require(await engine.lastTraceRecord())
-        #expect(record.contentRows != nil && record.events.contains { $0.hasPrefix("registration:") })
-    }
-
-    @Test("Legacy redraw dispatch stops at two levels per channel", arguments: [2, 3])
-    func redrawDispatch(level: Int) async throws {
-        let first = SyntheticFixtures.list(offset: 0, redraw: 0)
-        let next = SyntheticFixtures.list(offset: 664, redraw: level)
-        let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 40))
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 40))
-        #expect(await legacy.add(next) == .appended)
-        let update = await engine.add(next)
-        if level == 2 {
-            #expect(update.state == .appended && update.engine == .legacy && update.height == 2322)
-            let old = try #require(await legacy.makeImage()), new = try #require(await engine.makeImage())
-            #expect(ScrollingCaptureRaster(image: old, colorSpace: space)?.pixels
-                == ScrollingCaptureRaster(image: new, colorSpace: space)?.pixels)
-        } else {
-            #expect(update.state != .appended && update.engine == .buffered && update.height == first.height)
-        }
-    }
-
     @Test("Production static dispatch trims to the current box and resumes after a long flick")
     func staticDispatch() async throws {
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
             selection: rect, ignoredTrailingColumns: 0))
         for (index, offset) in [20, 40, 60, 40, 20, 5, 80].enumerated() {
             let update = await engine.add(F.frame(offset).image(in: space)!, at: Double(index + 1) * 0.05)
-            #expect(update.state != .lost && update.engine == .legacy)
+            #expect(update.state != .lost)
             let image = try #require(await engine.makeImage())
             #expect(update.height == image.height && image.height == offset + 80)
             let output = try #require(ScrollingCaptureRaster(image: image, colorSpace: space))
@@ -104,81 +67,15 @@ import Testing
         #expect(update.state != .lost && update.height == 160)
     }
 
-    @Test("Production dispatch never publishes R7's changing slices and freezes the entire video", arguments: [100, 160])
-    func videoDispatch(videoStart: Int) async throws {
-        let video = videoStart..<(videoStart + 120)
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0, video: video).image(in: space)!,
-            selection: rect, ignoredTrailingColumns: 0))
-        for (step, offset) in stride(from: 20, through: 240, by: 20).enumerated() {
-            for phase in 0..<2 {
-                let update = await engine.add(F.frame(offset, phase: step * 2 + phase + 1, video: video).image(in: space)!,
-                    at: Double(step * 2 + phase + 1) * 0.05)
-                #expect(update.state != .lost)
-                #expect(await engine.makeImage() != nil)
-            }
-        }
-        let image = try #require(await engine.makeImage())
-        let output = try #require(ScrollingCaptureRaster(image: image, colorSpace: space))
-        #expect(output.height == 320)
-        #expect(await engine.engine == .buffered)
-        var phases = Set<UInt32>()
-        for y in 0..<output.height { for x in 0..<output.width {
-            let pageY = y + 60, sourceX = x + 4, pixel = output.pixels[y * output.width + x]
-            if video.contains(pageY) { phases.insert((pixel & 0xffffff) - UInt32(sourceX * 107 + pageY * 53)) }
-            else { #expect(pixel == F.pixel(x: sourceX, pageY: pageY)) }
-        } }
-        #expect(phases.count == 1)
-        var update = await engine.add(F.frame(600, phase: 50, video: video).image(in: space)!, at: 2)
-        for index in 1...25 {
-            update = await engine.add(F.frame(600, phase: 50, video: video).image(in: space)!, at: 2 + Double(index) * 0.05)
-        }
-        #expect(update.state == .lost)
-        let recovery = videoStart == 160 ? 80 : 160
-        _ = await engine.add(F.frame(recovery, phase: 60, video: video).image(in: space)!, at: 4)
-        update = await engine.add(F.frame(recovery, phase: 61, video: video).image(in: space)!, at: 4.05)
-        #expect(update.state != .lost && update.height == recovery + 80 && update.engine == .buffered)
-    }
-
     @Test("Hover changes before scrolling remain silent and Done stays available")
     func hoverDispatch() async throws {
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
-            selection: rect, ignoredTrailingColumns: 0))
+            selection: rect, ignoredTrailingColumns: 0, scrollInput: quietInput()))
         for phase in 1...40 {
             let update = await engine.add(F.frame(0, phase: phase, video: 60..<100).image(in: space)!)
             #expect(update.state == .pending && update.height == 80)
             #expect(await engine.makeImage()?.height == 80)
         }
-    }
-
-    @Test("A previously redrawn gutter stays excluded after static legacy frames")
-    func retainedChromeColumns() async throws {
-        let video = 180..<300
-        func frame(_ offset: Int, phase: Int, gutter: UInt32) -> CGImage {
-            let base = F.frame(offset, phase: phase, video: video)
-            var pixels = base.pixels
-            for y in 0..<F.height { pixels[y * F.width + 43] = gutter }
-            return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
-        }
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, phase: 0, gutter: 0xff111111),
-            selection: rect, ignoredTrailingColumns: 0))
-        for (step, offset) in stride(from: 20, through: 360, by: 20).enumerated() {
-            for sample in 0..<2 {
-                let gutter: UInt32 = step < 7 ? 0xff222222 : step % 2 == 0 ? 0xff333333 : 0xff444444
-                let update = await engine.add(frame(offset, phase: step * 2 + sample + 1, gutter: gutter))
-                #expect(update.state != .lost)
-            }
-        }
-        let image = try #require(await engine.makeImage())
-        let output = try #require(ScrollingCaptureRaster(image: image, colorSpace: space))
-        print("RETAINED GUTTER", output.height, await engine.engine)
-        try #require(output.height == 440)
-        var phases = Set<UInt32>()
-        for y in 0..<output.height { for x in 0..<(output.width - 1) {
-            let pageY = y + 60, sourceX = x + 4, pixel = output.pixels[y * output.width + x]
-            if video.contains(pageY) { phases.insert((pixel & 0xffffff) - UInt32(sourceX * 107 + pageY * 53)) }
-            else { #expect(pixel == F.pixel(x: sourceX, pageY: pageY)) }
-        } }
-        #expect(phases.count == 1)
     }
 
     @Test("Wider geometry is display-clipped, and a covered selection or no window falls back to the selection")
@@ -214,46 +111,6 @@ import Testing
         #expect(origin(CGRect(x: 20, y: 200, width: 1430, height: 700)) == CGPoint(x: 533, y: 184))
     }
 
-    @Test("Scrollbar pixels and changing browser chrome never vote or tear the video", arguments: [false, true])
-    func scrollbarAndChrome(narrow: Bool) async throws {
-        let video = 100..<220
-        func frame(_ offset: Int, _ phase: Int) -> CGImage {
-            let base = F.frame(offset, phase: phase, video: video, header: 12, footer: 10)
-            var pixels = base.pixels
-            for y in 0..<F.height { for x in 44..<48 {
-                pixels[y * F.width + x] = F.pixel(x: x, pageY: phase * 301 + y)
-            } }
-            pixels[3 * F.width + 20] = F.pixel(x: 20, pageY: narrow ? phase : phase < 3 ? 0 : phase)
-            return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
-        }
-        let selection = ScrollingCaptureOutputRect(columns: 0..<48, rows: narrow ? 60..<140 : 0..<200)
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, 0), selection: selection, ignoredTrailingColumns: 4))
-        for (step, offset) in stride(from: 20, through: 240, by: 20).enumerated() {
-            for phase in 1...2 {
-                let update = await engine.add(frame(offset, step * 2 + phase))
-                print("SCROLLBAR", offset, phase, update.state, update.engine, update.height)
-                #expect(update.state != .lost)
-            }
-        }
-        let image = try #require(await engine.makeImage())
-        let output = try #require(ScrollingCaptureRaster(image: image, colorSpace: space))
-        try #require(output.height == 240 + selection.rows.count)
-        var phases = Set<UInt32>()
-        for y in 0..<output.height { for x in 0..<44 {
-            let pageY = y + selection.rows.lowerBound
-            guard pageY >= 12, pageY < 430 else { continue }
-            let pixel = output.pixels[y * F.width + x]
-            if video.contains(pageY) { phases.insert((pixel & 0xffffff) - UInt32(x * 107 + pageY * 53)) }
-            else { #expect(pixel == F.pixel(x: x, pageY: pageY)) }
-        } }
-        #expect(phases.count == 1)
-        if !narrow {
-            for y in 430..<440 { for x in 0..<44 {
-                #expect(output.pixels[y * F.width + x] == F.pixel(x: x, pageY: y - 240 + 50_000))
-            } }
-        }
-    }
-
     @Test("A static backscroll keeps the current footer once instead of overshoot content")
     func backscrollFooter() async throws {
         let first = F.frame(0, header: 12, footer: 10)
@@ -270,7 +127,7 @@ import Testing
         }
     }
 
-    @Test("Done at a handoff never pastes a changed badge and thin toolbar at the seam")
+    @Test("Done never pastes a changed badge and thin toolbar at the seam")
     func badgeSeam() async throws {
         let video = 200..<320
         func frame(_ offset: Int, phase: Int) -> CGImage {
@@ -312,65 +169,114 @@ import Testing
         }
     }
 
-    @Test("Continuous scrolling through a green ad and wide video freezes one moment", arguments: [20, 30, 35], [false, true])
-    func continuousVideo(step: Int, briefRest: Bool) async throws {
-        let video = 700..<820
-        func frame(_ offset: Int, _ phase: Int) -> CGImage {
-            F.frame(offset, phase: phase, video: video, greenAd: 250..<650).image(in: space)!
-        }
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, 0), selection: rect, ignoredTrailingColumns: 0))
-        var lastOffset = 0
-        for (index, offset) in stride(from: step, through: 900, by: step).enumerated() {
-            let update = await engine.add(frame(offset, index + 1))
-            try #require(update.state != .lost && update.state != .limit)
-            lastOffset = offset
-            if briefRest && offset >= 580 && offset < 580 + step {
-                _ = await engine.add(frame(offset, index + 1)) // A repeated video frame is not page authority.
-                _ = await engine.add(frame(offset, index + 101))
-            }
-        }
-        let output = try #require(ScrollingCaptureRaster(image: await engine.makeImage()!, colorSpace: space))
-        try #require(output.height == lastOffset + rect.rows.count)
-        #expect(await engine.engine == .buffered)
-        var phases = Set<UInt32>()
-        for y in 0..<output.height { for x in 0..<output.width {
-            let pageY = y + 60, sourceX = x + 4, pixel = output.pixels[y * output.width + x]
-            if video.contains(pageY) { phases.insert((pixel & 0xffffff) - UInt32(sourceX * 107 + pageY * 53)) }
-            else {
-                #expect(pixel == ((250..<650).contains(pageY) && pageY % 37 > 10
-                    ? 0xff239447 : F.pixel(x: sourceX, pageY: pageY)))
-            }
-        } }
-        #expect(phases.count == 1)
+    // MARK: - R7 everywhere: wait before a scroll, a new part after one
+
+    /// A session whose scroll monitor runs and has heard no scroll yet.
+    private func quietInput() -> ScrollingCaptureScrollInput {
+        let input = ScrollingCaptureScrollInput()
+        input.monitorStarted()
+        return input
     }
 
-    @Test("Recovery uses the latest proven page patch, without confirming its gap")
-    func latestPageRecovery() async throws {
-        let video = 700..<820
-        func frame(_ offset: Int, _ phase: Int) -> CGImage {
-            F.frame(offset, phase: phase, video: video, greenAd: 250..<650).image(in: space)!
-        }
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, 0), selection: rect, ignoredTrailingColumns: 0))
-        for (index, offset) in stride(from: 20, through: 600, by: 20).enumerated() {
-            _ = await engine.add(frame(offset, index + 1), at: Double(index + 1) * 0.05)
-        }
-        let before = try #require(await engine.makeImage())
-        var update = await engine.add(frame(1000, 100), at: 2)
-        for index in 1...25 { update = await engine.add(frame(1000, 100), at: 2 + Double(index) * 0.05) }
-        try #require(update.state == .lost && update.height == 680)
-        let target = try #require(ScrollingCaptureRaster(image: await engine.recoveryRows(60)!, colorSpace: space))
-        try #require(target.height == 38)
-        for y in 0..<target.height { for x in 0..<target.width {
-            #expect(target.pixels[y * target.width + x] == F.pixel(x: x + 4, pageY: y + 660))
+    /// A fixed 20-row header over a sparse page, or over a low-contrast one: a
+    /// jump of 1000 rows takes either past any overlap.
+    private func jumpPage(_ offset: Int, lowContrast: Bool) -> CGImage {
+        let pixels = (0..<F.height).flatMap { y in (0..<F.width).map { x -> UInt32 in
+            let pageY = offset + y
+            if y < 20 { return F.pixel(x: x, pageY: y + 50_000) }
+            if lowContrast {
+                let raw = F.pixel(x: x, pageY: pageY)
+                let red = (raw & 255) % 12 + 100, green = ((raw >> 8) & 255) % 12 + 100, blue = ((raw >> 16) & 255) % 12 + 100
+                return 0xff000000 | red | green << 8 | blue << 16
+            }
+            return (40..<60).contains(pageY % 1000) || (120..<140).contains(pageY % 1000) ? F.pixel(x: x, pageY: pageY) : 0xffffffff
         } }
-        #expect(await engine.makeImage()?.height == before.height)
-        _ = await engine.add(frame(600, 101), at: 4)
-        update = await engine.add(frame(600, 102), at: 4.05)
-        #expect(update.state != .lost && update.height == 680)
-        for (index, offset) in stride(from: 620, through: 900, by: 20).enumerated() {
-            update = await engine.add(frame(offset, 103 + index), at: 4.10 + Double(index) * 0.05)
-            #expect(update.state != .lost)
+        return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
+    }
+
+    @Test("Every frame R7 places is published with R7's exact pixels, a playing video included")
+    func r7Everywhere() async throws {
+        let video = 100..<180
+        let first = F.frame(0, video: video).image(in: space)!
+        let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 0, traceDirectory: nil))
+        for (index, offset) in stride(from: 20, through: 200, by: 20).enumerated() {
+            let frame = F.frame(offset, phase: index + 1, video: video).image(in: space)!
+            let expected = await legacy.add(frame)
+            let update = await engine.add(frame, at: Double(index) * 0.05)
+            #expect(update.state == (expected == .appended ? .appended : update.state))
         }
-        #expect(await engine.makeImage()?.height == 980)
+        let old = try #require(await legacy.makeImage()), new = try #require(await engine.makeImage())
+        #expect(new.height == F.height + 200)
+        #expect(ScrollingCaptureRaster(image: old, colorSpace: space)?.pixels == ScrollingCaptureRaster(image: new, colorSpace: space)?.pixels)
+    }
+
+    @Test("Before any scroll, a video playing at rest waits through idle and is never lost; the first scroll is accepted")
+    func waitsBeforeScroll() async throws {
+        let video = 60..<100
+        let first = F.frame(0, video: video).image(in: space)!
+        let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
+        #expect(await legacy.add(F.frame(0, phase: 1, video: video).image(in: space)!) == .noMatch)
+        let input = quietInput()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 0,
+            traceDirectory: nil, scrollInput: input))
+        var time = 1.0
+        for phase in 1...60 {
+            #expect(await engine.add(F.frame(0, phase: phase, video: video).image(in: space)!, at: time).state == .pending)
+            time += 0.05
+        }
+        for _ in 0..<20 { time += 0.1; #expect(await engine.noteIdle(at: time).state == .pending) }
+        #expect(await engine.makeImage()?.height == F.height)
+        input.noteScroll()
+        var height = 0
+        for (index, offset) in [20, 40, 60].enumerated() {
+            let update = await engine.add(F.frame(offset, phase: 61 + index, video: video).image(in: space)!, at: time + Double(index + 1) * 0.05)
+            #expect(update.state != .lost)
+            height = update.height
+        }
+        #expect(height == F.height + 60)
+    }
+
+    @Test("After a scroll, a jump R7 can't place is lost at once; with none heard it waits (keyboard, scroll bar, script)",
+          arguments: [false, true], [false, true])
+    func jumpAfterScroll(lowContrast: Bool, scrolled: Bool) async throws {
+        let input = quietInput()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: jumpPage(0, lowContrast: lowContrast),
+            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
+        if scrolled { input.noteScroll() }
+        let state = await engine.add(jumpPage(1000, lowContrast: lowContrast), at: 1).state
+        #expect(state == (scrolled ? .lost : .pending))
+        for time in [1.2, 2.31, 5.0] { #expect(await engine.noteIdle(at: time).state == state) }
+    }
+
+    @Test("A scroll heard after the frame it moved waited decides that frame on the next idle tick")
+    func lateScroll() async throws {
+        let input = quietInput()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: jumpPage(0, lowContrast: false),
+            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
+        #expect(await engine.add(jumpPage(1000, lowContrast: false), at: 1).state == .pending)
+        #expect(await engine.noteIdle(at: 1.2).state == .pending)
+        input.noteScroll()
+        #expect(await engine.noteIdle(at: 1.3).state == .lost)
+    }
+
+    @Test("Once a part has placed a frame, a video at rest waits again until the next scroll")
+    func waitsAgainAfterPlacing() async throws {
+        let video = 100..<140
+        let input = quietInput()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0, video: video).image(in: space)!,
+            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
+        input.noteScroll()
+        #expect(await engine.add(F.frame(20, phase: 1, video: video).image(in: space)!, at: 1).state == .appended)
+        for phase in 2...30 {
+            #expect(await engine.add(F.frame(20, phase: phase, video: video).image(in: space)!, at: 1 + Double(phase) * 0.05).state != .lost)
+        }
+    }
+
+    @Test("Without a running scroll monitor, a frame R7 can't place is lost", arguments: [false, true])
+    func unmonitored(hasInput: Bool) async throws {
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: jumpPage(0, lowContrast: false), ignoredTrailingColumns: 0,
+            traceDirectory: nil, scrollInput: hasInput ? ScrollingCaptureScrollInput() : nil))
+        #expect(await engine.add(jumpPage(1000, lowContrast: false), at: 1).state == .lost)
     }
 }

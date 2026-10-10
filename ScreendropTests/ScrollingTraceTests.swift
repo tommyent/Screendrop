@@ -61,19 +61,30 @@ import Testing
         #expect(record.scrollInput == .init(monitored: true, scrolls: 1))
     }
 
-    @Test("Exact inputs, masks, events and recovery attempts replay deterministically")
+    @Test("Exact inputs, scroll input, events and a lost-then-healed part replay deterministically")
     func roundTrip() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
+        let input = ScrollingCaptureScrollInput()
+        input.monitorStarted()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
             selection: .init(columns: 4..<44, rows: 60..<140), ignoredTrailingColumns: 1,
-            traceDirectory: directory))
+            traceDirectory: directory, scrollInput: input))
         var index = 0
+        // A video playing before any scroll waits.
+        for phase in 1...3 {
+            index += 1
+            _ = await engine.add(F.frame(0, phase: phase, video: 60..<100).image(in: space)!, at: Double(index) * 0.05)
+        }
         for offset in stride(from: 20, through: 240, by: 20) {
             index += 1
-            _ = await engine.add(F.frame(offset, phase: index, video: 180..<300).image(in: space)!, at: Double(index) * 0.05)
+            input.noteScroll()
+            _ = await engine.add(F.frame(offset).image(in: space)!, at: Double(index) * 0.05)
         }
-        for _ in 0..<25 {
+        // A scroll past any overlap is lost, then heals on scrolling back, within the
+        // few records a trace keeps after its first loss.
+        input.noteScroll()
+        for _ in 0..<3 {
             index += 1
             _ = await engine.add(F.frame(1000).image(in: space)!, at: Double(index) * 0.05)
         }
@@ -86,10 +97,9 @@ import Testing
         let document = try ScrollingCaptureTrace.read(file)
         #expect(document.savedAfterLoss && document.savedOnDone)
         #expect(document.records.count == index + 2 && document.records.last?.height == output.height)
-        #expect(document.records.contains { $0.recoveryAttempt })
-        #expect(document.records.contains { $0.recoveryPatch != nil })
-        #expect(document.records.contains { $0.events.contains { $0.contains("failure:") } })
-        #expect(document.records.flatMap(\.events).contains("registration: lost; failure: noOverlap; pending: none"))
+        #expect(document.records.flatMap(\.events).contains("lost: no match after a scroll"))
+        #expect(document.records.last?.state == "pending")
+        #expect(document.records.flatMap(\.events).contains("waiting: no scroll heard since the last placement"))
         #expect(document.records.flatMap(\.events).allSatisfy { !$0.contains(".ScrollingCapture") })
         #expect(document.records.allSatisfy { $0.diagnosticsOmitted == true ||
             ($0.changedInPlace.count == F.height && $0.maximumChannelDifference.count == F.height) })
@@ -110,7 +120,7 @@ import Testing
         let timing = try #require(await engine.lastTraceRecord()?.timing)
         #expect(timing.sequence == 7 && timing.droppedSinceLast == 2 && timing.displayTime == 10)
         #expect(timing.stages["uiPublished"] == 10.03)
-        for stage in ["engine", "decode", "hash", "r7", "rowStats", "compression", "recordEncode"] {
+        for stage in ["engine", "decode", "r7", "rowStats", "compression", "recordEncode"] {
             let start = try #require(timing.stages[stage + "Started"])
             let end = try #require(timing.stages[stage + "Finished"])
             #expect(end >= start)
@@ -194,33 +204,6 @@ import Testing
         #expect(saved.geometry == geometry)
         #expect(saved.records.first { $0.index == 39 }?.timing?.stages["uiEnd"] == 40.1)
         #expect(saved.savedAfterStall == true && !saved.savedOnDone)
-    }
-
-    @Test("Stopping on recovery rows then sending only idle recovers on one rest look")
-    func idleRecovery() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
-            ignoredTrailingColumns: 0, traceDirectory: directory))
-        for (index, offset) in [20, 40, 60].enumerated() {
-            _ = await engine.add(F.frame(offset, phase: index, video: 180..<300).image(in: space)!, at: Double(index))
-        }
-        #expect(await engine.engine == .buffered)
-        _ = await engine.add(F.frame(1000).image(in: space)!, at: 3)
-        _ = await engine.noteIdle(at: 3.2)
-        #expect(await engine.noteIdle(at: 4.2).state == .lost)
-        #expect(await engine.add(F.frame(60, phase: 2, video: 180..<300).image(in: space)!, at: 5).state == .lost)
-        #expect(await engine.noteIdle(at: 5.2).state != .lost)
-        let recovered = try #require(await engine.lastTraceRecord())
-        #expect(recovered.events.contains { $0.hasPrefix("recovery: 60;") }, "\(recovered.events)")
-        #expect(recovered.timing?.stages["idleObserved"] == 5.2)
-        for index in 1...20 { #expect(await engine.noteIdle(at: 5.2 + Double(index) * 0.05).state != .lost) }
-        #expect(await engine.lastTraceRecord()?.index == recovered.index)
-        _ = await engine.makeImage()
-        _ = await engine.lastTraceRecord()
-        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .first { $0.pathExtension == "scrolltrace" })
-        try await replay(ScrollingCaptureTrace.read(file))
     }
 
     @Test("Capped history freezes a few records after the first loss, with explicit gaps and bounded private files")
@@ -322,44 +305,12 @@ import Testing
         #expect(try ScrollingCaptureTrace.read(file).records.last?.index == 50)
     }
 
-    @Test("A legacy jump with repeated divider rows reaches recovery on idle", arguments: [false, true])
-    func legacyIdleJump(slowScroll: Bool) async throws {
-        for sharedDivider in [false, true] {
-            func frame(_ offset: Int) -> CGImage {
-                let pixels = (0..<F.height).flatMap { y in (0..<F.width).map { x -> UInt32 in
-                    let pageY = offset + y
-                    if pageY % 20 >= 12 { return 0xffffffff }
-                    if sharedDivider && pageY % 20 == 0 { return x % 4 == 0 ? 0xff555555 : 0xffeeeeee }
-                    return F.pixel(x: x, pageY: pageY)
-                } }
-                return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
-            }
-            let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0),
-                ignoredTrailingColumns: 0, traceDirectory: nil))
-            if slowScroll {
-                for (index, offset) in [20, 40].enumerated() {
-                    let update = await engine.add(frame(offset), at: Double(index + 1) * 0.05)
-                    #expect(update.engine == .legacy && update.height == offset + F.height)
-                }
-            }
-            let before = try #require(await engine.makeImage())
-            _ = await engine.add(frame(1000), at: 1)
-            _ = await engine.add(frame(1020), at: 1.05)
-            #expect(await engine.noteIdle(at: 1.2).state == .pending)
-            #expect(await engine.noteIdle(at: 1.3).state == .pending)
-            #expect(await engine.noteIdle(at: 2.31).state == .lost)
-            let after = try #require(await engine.makeImage())
-            #expect(ScrollingCaptureRaster(image: after, colorSpace: space) == ScrollingCaptureRaster(image: before, colorSpace: space))
-            _ = await engine.add(frame(slowScroll ? 40 : 0), at: 3)
-            #expect(await engine.noteIdle(at: 3.2).state != .lost)
-            #expect(await engine.noteIdle(at: 5).state != .lost)
-        }
-    }
-
-    @Test("Idle on an accepted page or no-scroll hover never raises recovery", arguments: [false, true])
+    @Test("Idle on an accepted page or a hover before any scroll is never lost", arguments: [false, true])
     func acceptedIdle(hover: Bool) async throws {
+        let input = ScrollingCaptureScrollInput()
+        input.monitorStarted()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
-            ignoredTrailingColumns: 0, traceDirectory: nil))
+            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
         let offset = hover ? 0 : 20
         _ = await engine.add(F.frame(offset, phase: 1, video: hover ? 60..<100 : nil).image(in: space)!, at: 1)
         for time in [1.2, 1.3, 2.4, 5.0] { #expect(await engine.noteIdle(at: time).state != .lost) }
@@ -370,8 +321,10 @@ import Testing
     func stalledSessionEnd(cancel: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
+        let input = ScrollingCaptureScrollInput()
+        input.monitorStarted()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
-            ignoredTrailingColumns: 0, traceDirectory: directory))
+            ignoredTrailingColumns: 0, traceDirectory: directory, scrollInput: input))
         #expect(await engine.add(F.frame(0, phase: 1, video: 60..<100).image(in: space)!, at: 1).state == .pending)
         if cancel {
             await engine.finishTrace(at: 4.1)
@@ -451,5 +404,85 @@ import Testing
             }
         }
         #expect(maximum >= 2506)
+    }
+
+    /// Every private trace in a folder, through the engine and the presenter's part
+    /// rule: a lost part that got somewhere starts a new part from that frame and keeps
+    /// listening. Traces recorded before the scroll counter get one heard scroll before
+    /// each frame whose rows moved. None may end lost without a new part, unless it
+    /// never scrolled, or it is a later part of a session whose own first part is in
+    /// the folder: replayed alone it starts at its break, and its session is judged
+    /// through that first part.
+    @Test("Private traces end stitched, behind a break, or waiting before any scroll",
+          .enabled(if: ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_TRACE_DIR"] != nil))
+    func externalAcceptance() async throws {
+        let folder = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_TRACE_DIR"]))
+        let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "scrolltrace" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let documents = try files.map { try ScrollingCaptureTrace.read($0) }
+        for (file, document) in zip(files, documents) {
+            let start = document.records.first?.time ?? 0
+            let laterPart = documents.contains { other in
+                other.selectionRows == document.selectionRows && other.selectionColumns == document.selectionColumns
+                    && (other.records.first?.time ?? .infinity) < start && (other.records.last?.time ?? 0) >= start
+            }
+            let colorSpace = document.colorProfile.flatMap { CGColorSpace(iccData: $0 as CFData) } ?? space
+            let selection = ScrollingCaptureOutputRect(columns: document.selectionColumns, rows: document.selectionRows)
+            let input = ScrollingCaptureScrollInput()
+            input.monitorStarted()
+            func part(_ image: CGImage) -> ScrollingCaptureEngine? {
+                ScrollingCaptureEngine(firstFrame: image, selection: selection, ignoredTrailingColumns: document.ignoredTrailingColumns,
+                    maximumHeight: document.maximumHeight, traceDirectory: nil, scrollInput: input)
+            }
+            var previous = try document.first.decoded()
+            var parts = [try #require(part(previous.image(in: colorSpace)!))]
+            var heights = [selection.rows.count]
+            var listener: (engine: ScrollingCaptureEngine, index: Int)?
+            var breaks: [Int] = [], scrolled = false, last: ScrollingCaptureEngine.Update?
+            for record in document.records {
+                let frame = try record.input.decoded()
+                if let recorded = record.scrollInput {
+                    while input.current.scrolls < recorded.scrolls { input.noteScroll() }
+                } else if moved(from: previous, to: frame) { input.noteScroll() }
+                scrolled = scrolled || input.current.scrolls > 0
+                let active = parts[parts.count - 1], update: ScrollingCaptureEngine.Update, heard: ScrollingCaptureEngine.Update?
+                if let idle = record.timing?.stages["idleObserved"] {
+                    update = await active.noteIdle(at: idle)
+                    heard = await listener?.engine.noteIdle(at: idle)
+                } else {
+                    let image = frame.image(in: colorSpace)!
+                    update = await active.add(image, at: record.time)
+                    heard = await listener?.engine.add(image, at: record.time)
+                    previous = frame
+                }
+                heights[parts.count - 1] = update.height
+                if let listener, let heard { heights[listener.index] = heard.height }
+                if update.state == .lost, update.height > selection.rows.count, let next = part(frame.image(in: colorSpace)!) {
+                    listener = (active, parts.count - 1)
+                    parts.append(next)
+                    heights.append(selection.rows.count)
+                    breaks.append(record.index)
+                }
+                last = update
+            }
+            let stuck = last?.state == .lost && scrolled && !laterPart
+            print("ACCEPT \(file.lastPathComponent): records \(document.records.count) omitted \(document.omittedSamples); parts \(parts.count) heights \(heights) breaks at \(breaks); final \(last.map { "\($0.state)" } ?? "none"); scrolled \(scrolled)\(laterPart ? "; later part" : "")\(stuck ? "; STUCK LOST" : "")")
+            #expect(!stuck, "\(file.lastPathComponent) ends lost without a new part")
+        }
+    }
+
+    /// Rows of the previous frame found at another height in this one: the page moved.
+    private func moved(from old: ScrollingCaptureRaster, to new: ScrollingCaptureRaster) -> Bool {
+        guard let old = old.using(columns: new.matchingColumns) else { return false }
+        var rows: [Int: Int] = [:], repeated = Set<Int>()
+        for y in 0..<old.height where !old.isBlank(y) {
+            if rows.updateValue(y, forKey: old.rowHash(y)) != nil { repeated.insert(old.rowHash(y)) }
+        }
+        var votes: [Int: Int] = [:]
+        for y in 0..<new.height where !new.isBlank(y) && !repeated.contains(new.rowHash(y)) {
+            if let oldY = rows[new.rowHash(y)] { votes[oldY - y, default: 0] += 1 }
+        }
+        guard let best = votes.max(by: { $0.value < $1.value }) else { return false }
+        return best.key != 0 && best.value >= 16
     }
 }

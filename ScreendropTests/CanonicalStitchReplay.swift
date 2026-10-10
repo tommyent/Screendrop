@@ -29,7 +29,7 @@ actor CanonicalStitchReplay {
         if original == .appended, let position = await baseline.registration,
            !position.isStatic && !position.hasOnlyMinorRedraw { sawChangingAppend = true }
         samples += 1
-        print("DISPATCH | \(label) | \(samples) | \(result.engine.rawValue) | \(result.state) | \(result.height)")
+        print("DISPATCH | \(label) | \(samples) | \(result.state) | \(result.height)")
         if let group = Int(label.prefix(2)), [21, 22, 24].contains(group) || (26...42).contains(group),
            original == .noMatch {
             #expect(result.state != .appended, "Canonical refusal must not turn into a new append: \(label)")

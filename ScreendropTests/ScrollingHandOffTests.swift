@@ -29,7 +29,6 @@ import Testing
         for (index, offset) in [0, 0, 16, 42, 76, 124].enumerated() {
             updates.append(await engine.add(frame(offset, phase: index + 1, source: source), at: Double(index + 1) * 0.05))
         }
-        #expect(await engine.engine == .buffered)
         return updates
     }
 
