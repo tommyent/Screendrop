@@ -18,6 +18,11 @@ import SwiftUI
 /// it showing the stitched height and Done/Cancel. The app being scrolled
 /// keeps the keyboard throughout, so the bar's buttons - or pressing the
 /// shortcut again - are how a session ends.
+///
+/// The bar's auto-scroll button scrolls the region a step at a time instead
+/// (`ScrollingCaptureAutoScroller`). Scrolling by hand, moving the pointer off
+/// the bar, the end of the page, the height limit or a lost track hand the
+/// session back to the user; only Done finishes it.
 @Observable
 final class ScrollingCapturePresenter {
     static let shared = ScrollingCapturePresenter()
@@ -62,6 +67,11 @@ final class ScrollingCapturePresenter {
     /// The part before the latest break is back on track, so Done can join
     /// the parts once its rows reach the next part's.
     private(set) var isJoiningParts = false
+    /// Screendrop is scrolling the region itself, a step at a time.
+    private(set) var isAutoScrolling = false
+    /// Auto-scroll was asked for without the Accessibility permission it
+    /// needs to post scroll events; the user scrolls by hand.
+    private(set) var needsScrollPermission = false
 
     private(set) var session = ScrollingCaptureSession()
     @ObservationIgnored private var isSelectingArea = false
@@ -75,6 +85,13 @@ final class ScrollingCapturePresenter {
     /// Done's or Cancel's click, on the engine's clock: frames shown after
     /// it aren't kept, and a trace ends there.
     @ObservationIgnored private var cutoff: TimeInterval?
+    @ObservationIgnored private var autoScroller: ScrollingCaptureAutoScroller?
+    /// The display time of the newest frame the engine has taken, which
+    /// auto-scroll waits for before each step.
+    @ObservationIgnored private var lastFrameTime: TimeInterval = 0
+    /// macOS shows the Accessibility prompt at most once, so it's asked for
+    /// on the first press only; after that the button opens Settings.
+    @ObservationIgnored private var didRequestScrollPermission = false
 
     /// How long the strip shows that frames line up again before it goes.
     private static let recoveredDisplayTime: Duration = .milliseconds(1500)
@@ -213,6 +230,11 @@ final class ScrollingCapturePresenter {
         partCount = 1
         isJoiningParts = false
         let bandRows = Int((ScrollingCaptureBreakMark.bandPoints * scale).rounded())
+        autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, state: { [unowned self] in
+            .init(height: stitchedHeight, lastFrameTime: lastFrameTime,
+                  canContinue: session.outcome == nil && !hasLostTrack && !hasReachedLimit)
+        }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
+        defer { autoScroller?.stop(); autoScroller = nil }
         // Frames and idle ticks arrive until Done, Cancel, the height limit
         // or a stream error stops the stream.
         events: while let event = await events.next() {
@@ -229,6 +251,7 @@ final class ScrollingCapturePresenter {
                     engineEnqueued: ScrollingCaptureSampleTiming.now(), droppedSinceLast: frame.sequence - lastSequence - 1,
                     status: frame.status.rawValue))
                 heard = await listener?.engine.add(frame.image, at: frame.time)
+                lastFrameTime = frame.time
                 lastSequence = frame.sequence
                 lastFrame = frame
             case .idle(let time):
@@ -342,6 +365,7 @@ final class ScrollingCapturePresenter {
     /// captured - the region still being drawn, or not yet on screen - there
     /// is nothing to keep, so it cancels instead.
     func finish() {
+        autoScroller?.stop()
         if isCapturing {
             cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
             session.finish()
@@ -352,11 +376,41 @@ final class ScrollingCapturePresenter {
     }
 
     func cancel() {
+        autoScroller?.stop()
         cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
         session.cancel()
         stream?.stop()
         if isSelectingArea {
             RecordingAreaSelectionPresenter.shared.cancel()
+        }
+    }
+
+    // MARK: - Auto-scroll
+
+    /// The bar's auto-scroll button: starts scrolling, or pauses it.
+    func toggleAutoScroll() {
+        guard let autoScroller else { return }
+        if isAutoScrolling { return autoScroller.stop() }
+        guard AXIsProcessTrusted() else {
+            if didRequestScrollPermission {
+                openScrollPermissionSettings()
+            } else {
+                didRequestScrollPermission = true
+                // kAXTrustedCheckOptionPrompt's value, spelled out: the imported
+                // constant is a mutable global.
+                _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+            }
+            needsScrollPermission = true
+            return
+        }
+        needsScrollPermission = false
+        autoScroller.start()
+        isAutoScrolling = autoScroller.isRunning
+    }
+
+    func openScrollPermissionSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -488,7 +542,8 @@ private final class ScrollingCapturePanel: NSPanel {
 }
 
 private struct ScrollingCaptureBar: View {
-    static let barSize = CGSize(width: 380, height: 52)
+    /// Wide enough for the auto-scroll button beside the longest titles.
+    static let barSize = CGSize(width: 430, height: 52)
     /// Room around the bar for the glass shadow.
     static let margin: CGFloat = 12
     static let panelSize = CGSize(width: barSize.width + margin * 2, height: barSize.height + margin * 2)
@@ -521,6 +576,19 @@ private struct ScrollingCaptureBar: View {
             }
             Spacer(minLength: 8)
             Button {
+                presenter.toggleAutoScroll()
+            } label: {
+                Image(systemName: presenter.isAutoScrolling ? "pause.circle" : "arrow.down.circle")
+                    .font(.system(size: 17))
+                    .foregroundStyle(BarMetrics.activeTint.opacity(canToggleAutoScroll ? 1 : 0.3))
+                    .frame(width: 28, height: 28)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(BarButtonStyle())
+            .disabled(!canToggleAutoScroll)
+            .help(autoScrollHelp)
+            .accessibilityLabel(presenter.isAutoScrolling ? "Pause auto-scroll" : "Auto-scroll")
+            Button {
                 presenter.cancel()
             } label: {
                 Text("Cancel")
@@ -546,6 +614,21 @@ private struct ScrollingCaptureBar: View {
         .frame(width: Self.barSize.width, height: Self.barSize.height)
         .glassEffect(.regular, in: .capsule)
         .padding(Self.margin)
+    }
+
+    /// A lost track or the height limit stops auto-scroll, and it can't start
+    /// again until the user has dealt with either; pausing always works.
+    private var canToggleAutoScroll: Bool {
+        presenter.isAutoScrolling
+            || (!presenter.hasLostTrack && !presenter.hasReachedLimit && !presenter.isPausedForVideo)
+    }
+
+    private var autoScrollHelp: String {
+        if presenter.isAutoScrolling { return "Pause auto-scroll" }
+        if presenter.needsScrollPermission {
+            return "Auto-scroll needs Accessibility. Click to open Privacy & Security."
+        }
+        return "Auto-scroll"
     }
 
     private var title: String {
