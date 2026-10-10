@@ -11,8 +11,10 @@ import AppKit
 /// Steps are posted as pixel scroll events at the region's center, tagged so
 /// the monitors here can tell them from the user's own scrolling. The
 /// pointer is never moved. Scrolling by hand or moving the pointer off the
-/// bar hands the session back, and so do a lost track, the height limit and
-/// the end of the page; only Done finishes. No key is watched.
+/// bar hands the session back, and so do a lost track, a new part (a break),
+/// the height limit and the end of the page; only Done finishes. It never
+/// carries on across a break by itself: the user scrolls back to join the
+/// parts, or presses again to go on in the new part. No key is watched.
 final class ScrollingCaptureAutoScroller {
     struct State {
         /// The stitched height, in captured pixels.
@@ -20,8 +22,10 @@ final class ScrollingCaptureAutoScroller {
         /// The display time of the newest frame the engine has seen, on the
         /// stream's clock.
         let lastFrameTime: TimeInterval
-        /// False once track is lost (or a new part starts), the height limit
-        /// is reached or the session has ended.
+        /// How many parts the capture has; a change is a break.
+        let partCount: Int
+        /// False once the part being captured has lost track, the height
+        /// limit is reached or the session has ended.
         let canContinue: Bool
     }
 
@@ -46,6 +50,7 @@ final class ScrollingCaptureAutoScroller {
     private var monitors: [Any] = []
     private var poller: Task<Void, Never>?
     private var pointerAtStart: CGPoint = .zero
+    private var partCountAtStart = 1
     private(set) var isRunning = false
 
     /// `region` is the selection in AppKit screen coordinates.
@@ -66,6 +71,7 @@ final class ScrollingCaptureAutoScroller {
     func start() {
         guard !isRunning, state().canContinue else { return }
         isRunning = true
+        partCountAtStart = state().partCount
         pointerAtStart = NSEvent.mouseLocation
         installMonitors()
         pacer = AutoScrollPacer(stepPixels: stepPixels, height: state().height, now: ScrollingCaptureSampleTiming.now())
@@ -94,7 +100,7 @@ final class ScrollingCaptureAutoScroller {
     private func tick() {
         guard isRunning, var pacer else { return }
         let current = state()
-        guard current.canContinue else { return stop() }
+        guard current.canContinue, current.partCount == partCountAtStart else { return stop() }
         let action = pacer.update(height: current.height, lastFrameTime: current.lastFrameTime,
                                   now: ScrollingCaptureSampleTiming.now())
         self.pacer = pacer

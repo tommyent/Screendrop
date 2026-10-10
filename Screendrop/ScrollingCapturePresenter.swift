@@ -21,8 +21,9 @@ import SwiftUI
 ///
 /// The bar's auto-scroll button scrolls the region a step at a time instead
 /// (`ScrollingCaptureAutoScroller`). Scrolling by hand, moving the pointer off
-/// the bar, the end of the page, the height limit or a lost track hand the
-/// session back to the user; only Done finishes it.
+/// the bar, the end of the page, the height limit, a lost track or a new part
+/// hand the session back to the user; only Done finishes it. Auto-scroll can
+/// be started again in a new part, but never carries on across a break.
 @Observable
 final class ScrollingCapturePresenter {
     static let shared = ScrollingCapturePresenter()
@@ -67,6 +68,8 @@ final class ScrollingCapturePresenter {
     /// The part before the latest break is back on track, so Done can join
     /// the parts once its rows reach the next part's.
     private(set) var isJoiningParts = false
+    /// The part being captured now can't line up its latest frame. Auto-scroll stops on it.
+    private(set) var isActivePartLost = false
     /// Screendrop is scrolling the region itself, a step at a time.
     private(set) var isAutoScrolling = false
     /// Auto-scroll was asked for without the Accessibility permission it
@@ -228,11 +231,12 @@ final class ScrollingCapturePresenter {
         var heights = [stitchedHeight]
         var listener: (engine: ScrollingCaptureEngine, index: Int)?
         partCount = 1
+        isActivePartLost = false
         isJoiningParts = false
         let bandRows = Int((ScrollingCaptureBreakMark.bandPoints * scale).rounded())
         autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, state: { [unowned self] in
-            .init(height: stitchedHeight, lastFrameTime: lastFrameTime,
-                  canContinue: session.outcome == nil && !hasLostTrack && !hasReachedLimit)
+            .init(height: stitchedHeight, lastFrameTime: lastFrameTime, partCount: partCount,
+                  canContinue: session.outcome == nil && !hasReachedLimit && !isActivePartLost)
         }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
         defer { autoScroller?.stop(); autoScroller = nil }
         // Frames and idle ticks arrive until Done, Cancel, the height limit
@@ -290,6 +294,7 @@ final class ScrollingCapturePresenter {
                 hasLostTrack = update.state == .lost
             }
             isJoiningParts = listener != nil && !hasLostTrack
+            isActivePartLost = update.state == .lost && !started
             stitchedHeight = heights.reduce(0, +) + bandRows * (parts.count - 1)
             hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
             if hasReachedLimit { source.stop() }
@@ -616,11 +621,13 @@ private struct ScrollingCaptureBar: View {
         .padding(Self.margin)
     }
 
-    /// A lost track or the height limit stops auto-scroll, and it can't start
-    /// again until the user has dealt with either; pausing always works.
+    /// A lost track in the part being captured, or the height limit, stops
+    /// auto-scroll, and it can't start again until the user has dealt with
+    /// either; pausing always works. An earlier part waiting for a join
+    /// doesn't block it.
     private var canToggleAutoScroll: Bool {
         presenter.isAutoScrolling
-            || (!presenter.hasLostTrack && !presenter.hasReachedLimit && !presenter.isPausedForVideo)
+            || (!presenter.isActivePartLost && !presenter.hasReachedLimit && !presenter.isPausedForVideo)
     }
 
     private var autoScrollHelp: String {
