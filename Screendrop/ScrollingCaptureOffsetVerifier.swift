@@ -14,6 +14,8 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
     /// (corpus sweep 0.7 to 0.3: correct 355 to 390, wrong 0 throughout).
     // ponytail: video, a hover over most of the frame and inner scrollers still
     // refuse; step 5's "scroll back a little" hint covers them, not more rules.
+    // ponytail: 0.3 is the sweep's edge and wrong was 0 at every value, so the
+    // corpus can't show false positives here; raise it when one appears.
     static let agreement = 0.3
     /// Fewer distinct fully matching rows than this is a coincidence.
     static let minimumMatchedRows = 8
