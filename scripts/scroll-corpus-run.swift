@@ -7,8 +7,10 @@
 // frame dump (ScrollingCaptureTrace.swift) is a page missing only truth.json:
 // its page.json supplies selection and ignoredTrailingColumns.
 //
-// swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-run.swift \
-//   Screendrop/ScrollingCapture{Stitcher,FrameStitcher,Registration}.swift Screendrop/ScrollingCaptureOffset{Estimator,Verifier}.swift \
+// R7, the baseline, left the app; it's compiled from the commit before the rework:
+// git show 3f9b9d3:Screendrop/ScrollingCaptureStitcher.swift > /tmp/r7-stitcher.swift
+// swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-run.swift /tmp/r7-stitcher.swift \
+//   Screendrop/ScrollingCapture{FrameStitcher,Raster}.swift Screendrop/ScrollingCaptureOffset{Estimator,Verifier}.swift \
 //   -o /tmp/scroll-corpus-run
 // /tmp/scroll-corpus-run <corpus dir> --matcher r7|estimator|vision-verify|stitcher [--compare <matcher>]
 //
@@ -102,10 +104,8 @@ final class VisionMatcher: CorpusMatcher {
 
     var stitchedHeight: Int? { get async { nil } }
 
-    /// Packed BGRA, drawn as R7 draws it.
     static func pixels(_ image: CGImage) -> [UInt8]? {
-        ScrollingCaptureStitcher.pixels(of: image, colorSpace: image.colorSpace.flatMap {
-            $0.model == .rgb && $0.supportsOutput ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!)
+        ScrollingCapturePixels.bytes(of: image, in: ScrollingCapturePixels.colorSpace(of: image))
     }
 }
 

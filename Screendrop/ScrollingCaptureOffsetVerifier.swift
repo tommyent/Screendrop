@@ -1,6 +1,7 @@
 import Foundation
 
-/// Confirms a candidate offset with exact pixels, cut down from R7: rows of the
+/// Confirms a candidate offset with exact pixels, cut down from R7 (the
+/// stitcher before this one, now only the corpus baseline): rows of the
 /// new frame are compared byte for byte with the last frame's rows `offset`
 /// lower (`new[y] == last[y + offset]`), strip by strip. Frames are tightly
 /// packed BGRA, both the same size.
@@ -85,7 +86,7 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
         } }
     }
 
-    // MARK: - Shared with R7
+    // MARK: - From R7
 
     /// Leading columns that are compared. The trailing ones are left out so
     /// the overlay scroll bar that appears while scrolling doesn't break

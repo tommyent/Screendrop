@@ -11,7 +11,7 @@ private final class OffsetFixtureBundle: NSObject {}
     private func frame(_ index: Int) throws -> (pixels: [UInt8], width: Int, height: Int) {
         let url = try #require(Bundle(for: OffsetFixtureBundle.self).url(forResource: "wikipedia-scroll-\(index)", withExtension: "png"))
         let image = try #require(CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
-        let pixels = try #require(ScrollingCaptureStitcher.pixels(of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!))
+        let pixels = try #require(ScrollingCapturePixels.bytes(of: image, in: CGColorSpace(name: CGColorSpace.sRGB)!))
         return (pixels, image.width, image.height)
     }
 

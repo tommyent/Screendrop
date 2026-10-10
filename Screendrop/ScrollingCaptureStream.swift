@@ -4,23 +4,33 @@ import CoreVideo
 import Foundation
 import ScreenCaptureKit
 
+/// The capture clock: mach absolute time in seconds, as ScreenCaptureKit's displayTime.
+nonisolated enum ScrollingCaptureSampleTiming {
+    static func now() -> TimeInterval { Double(mach_absolute_time()) * secondsPerTick }
+    static let secondsPerTick: Double = {
+        var timebase = mach_timebase_info_data_t()
+        mach_timebase_info(&timebase)
+        return Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
+    }()
+}
+
 /// One ScreenCaptureKit stream for a whole Scrolling Capture session. The
 /// callback copies each new frame out of its surface, so SCK gets the surface
-/// back at once, and leaves it in a single latest-frame slot: a slow engine
+/// back at once, and leaves it in a single latest-frame slot: a slow stitcher
 /// skips stale frames instead of working through a backlog. While the display
 /// doesn't change, SCK sends pixel-less idle samples at the frame interval;
 /// they go through the slot as idle ticks, but never in place of a frame.
 nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     struct Frame: @unchecked Sendable {
         let image: CGImage
-        /// When WindowServer showed the frame, on the engine's clock
+        /// When WindowServer showed the frame, on the capture clock
         /// (`ScrollingCaptureSampleTiming.now()`, mach absolute seconds).
         let time: TimeInterval
     }
 
     enum Event: @unchecked Sendable {
         case frame(Frame)
-        /// The display hadn't changed when SCK said so, at this engine-clock time.
+        /// The display hadn't changed when SCK said so, at this capture-clock time.
         /// An idle sample's own display time stays at the last frame's.
         case idle(TimeInterval)
     }
@@ -50,13 +60,7 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         Task { try? await stream.stopCapture() }
     }
 
-    private static let secondsPerTick: Double = {
-        var timebase = mach_timebase_info_data_t()
-        mach_timebase_info(&timebase)
-        return Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
-    }()
-
-    private static func seconds(_ ticks: UInt64) -> TimeInterval { Double(ticks) * secondsPerTick }
+    private static func seconds(_ ticks: UInt64) -> TimeInterval { Double(ticks) * ScrollingCaptureSampleTiming.secondsPerTick }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         let callbackTime = ScrollingCaptureSampleTiming.now()

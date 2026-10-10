@@ -47,7 +47,7 @@ actor ScrollingCaptureFrameStitcher {
     private let ignoredTrailingColumns: Int
     /// Rows above it are appended; rows below it are held back.
     // ponytail: a sticky footer taller than the held-back quarter is appended
-    // into every slice; cut at the top of the footer (R7's unmovedEdges) when
+    // into every slice; cut at the top of the footer (`ScrollingCaptureOffsetVerifier.unmovedEdges`) when
     // a capture shows one.
     private let cut: Int
     private var first: [UInt8]
