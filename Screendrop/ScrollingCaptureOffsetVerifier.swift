@@ -29,8 +29,9 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
         let stillColumns: [Range<Int>]
     }
 
-    /// The offset within `search` of `candidate` with the most identical
-    /// strips, if it passes; nil when none does.
+    /// The passing offset within `search` of `candidate` with the most
+    /// distinct matching rows; nil when none passes, or when two tie: content
+    /// that lines up equally well at two offsets doesn't say which it is.
     static func verifiedOffset(candidate: Int, from last: [UInt8], to new: [UInt8], width: Int, height: Int,
                                ignoredTrailingColumns: Int) -> Verified? {
         guard last.count == width * height * 4, new.count == last.count else { return nil }
@@ -48,7 +49,7 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
             let edges = unmovedEdges(height: height) { same($0, $0, 0..<usable) }
             let band = edges.top..<(height - edges.bottom)
             let committed = band.lowerBound..<cut(in: band)
-            func score(_ k: Int) -> Double? {
+            func score(_ k: Int) -> Int? {
                 var compared = 0, agreed = 0
                 var matched = Set<Int>()
                 for y in committed where committed.contains(y + k) {
@@ -65,13 +66,11 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
                     }
                 }
                 guard compared > 0, matched.count >= minimumMatchedRows else { return nil }
-                let share = Double(agreed) / Double(compared)
-                return share >= agreement ? share : nil
+                return Double(agreed) / Double(compared) >= agreement ? matched.count : nil
             }
             let passed = ((candidate - search)...(candidate + search)).compactMap { k in score(k).map { (k, $0) } }
-            // Most exact agreement; a tie goes to the offset nearer the candidate.
-            guard let best = passed.max(by: { ($0.1, -abs($0.0 - candidate)) < ($1.1, -abs($1.0 - candidate)) })
-            else { return nil }
+                .sorted { $0.1 > $1.1 }
+            guard let best = passed.first, passed.dropFirst().first?.1 != best.1 else { return nil }
             let still = columns.filter { x in
                 band.allSatisfy { same($0, $0, x) } && band.contains { !blank($0, x) }
             }
