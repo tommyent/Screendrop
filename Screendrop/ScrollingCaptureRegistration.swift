@@ -106,11 +106,12 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private let contentRows: Range<Int>
     private let minimumRows = 8
     private var lastTime: TimeInterval = -.infinity
+    private(set) var direction: Int
 
     init?(first: ScrollingCaptureRaster, confirmation: ScrollingCaptureRaster,
           contentRows: Range<Int>, maximumBufferedBytes: Int = 128 * 1024 * 1024,
           observedMotionRows: Set<Int> = [], pageWitnessRows: Set<Int>? = nil,
-          maximumPendingTime: TimeInterval = 2) {
+          maximumPendingTime: TimeInterval = 2, direction: Int = 0) {
         guard first.width == confirmation.width, first.height == confirmation.height,
               first.matchingColumns == confirmation.matchingColumns,
               contentRows.lowerBound >= 0, contentRows.upperBound <= first.height,
@@ -128,6 +129,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         everMovingPageRows = motion
         self.pageWitnessRows = pageWitnessRows
         self.maximumPendingTime = maximumPendingTime
+        self.direction = direction.signum()
     }
 
     // Count conservatively: two working frames plus every queued/registered frame.
@@ -152,7 +154,11 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                             motion: Set(contentRows).subtracting(stable), time: time)
         previous = frame
         var match = locate(sample)
-        if case .absent = match, let displaced = movingOffset(sample) { match = .offset(displaced) }
+        var movingPlacement = false
+        if case .absent = match, let displaced = movingOffset(sample) {
+            match = .offset(displaced)
+            movingPlacement = true
+        }
         switch match {
         case .offset(let offset):
             noOverlapSince = nil
@@ -194,6 +200,10 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                     motionRows: placement.motionRows, contentRows: contentRows)
             }
             frontier = max(frontier, highest)
+            if offset != lastVerifiedOffset {
+                let next = (offset - lastVerifiedOffset).signum()
+                direction = !movingPlacement && direction != 0 && next != direction ? 0 : next
+            }
             lastVerifiedOffset = offset
             trimKeys()
             return Event(state: advanced ? .appended : .pending,
@@ -224,7 +234,8 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     }
 
     /// Recovery drops unresolved samples; they must not reappear after Continue.
-    mutating func discardUnresolved() { unresolved.removeAll(); isLost = false; noOverlapSince = nil }
+    mutating func discardUnresolved() { unresolved.removeAll(); isLost = false; noOverlapSince = nil; direction = 0 }
+    mutating func clearDirection() { direction = 0 }
 
     private mutating func trimKeys() {
         while keys.count > 1, bufferedBytes > maximumBufferedBytes { keys.removeFirst() }
@@ -232,6 +243,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private mutating func lose(_ failure: Failure) -> Event {
         unresolved.removeAll()
         isLost = true
+        direction = 0
         return Event(state: .lost, failure: failure)
     }
     private func placed(_ sample: Sample, at offset: Int) -> ScrollingCapturePlacement {
@@ -296,9 +308,15 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                 }
             }
         }
-        let candidates = offsets.filter { $0.value.count >= minimumRows }.keys
-        guard candidates.count == 1, let offset = candidates.first,
-              offsets.keys.allSatisfy({ $0 == offset }), corroborates(offset, sample) else { return nil }
+        let candidates = offsets.filter { $0.value.count >= minimumRows }
+        let forward = candidates.filter {
+            direction == 0 || ($0.key - lastVerifiedOffset).signum() == direction || $0.key == lastVerifiedOffset
+        }
+        guard forward.count == 1, let candidate = forward.first else { return nil }
+        let offset = candidate.key
+        // Prior travel is only a hint: repeated rows need a clear margin over reverse evidence.
+        guard !candidates.contains(where: { $0.key != offset && $0.value.count * 2 > candidate.value.count }),
+              corroborates(offset, sample) else { return nil }
         if offset == lastVerifiedOffset {
             guard let witness = lastWitness, hasPageWitness(witness),
                   witness.stableRows.allSatisfy({ witness.frame.sameRow($0, as: sample.frame, at: $0) }),

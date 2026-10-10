@@ -105,4 +105,29 @@ import Testing
         let path = try #require(ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_TRACE"])
         try await replay(ScrollingCaptureTrace.read(URL(fileURLWithPath: path)))
     }
+
+    @Test("Private direction regression grows past the repeated-post rival and keeps complete source rows",
+          .enabled(if: ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_DIRECTION_TRACE"] != nil))
+    func externalDirectionTrace() async throws {
+        let path = try #require(ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_DIRECTION_TRACE"])
+        let document = try ScrollingCaptureTrace.read(URL(fileURLWithPath: path))
+        let colorSpace = document.colorProfile.flatMap { CGColorSpace(iccData: $0 as CFData) } ?? space
+        let first = try document.first.decoded()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first.image(in: colorSpace)!,
+            selection: .init(columns: document.selectionColumns, rows: document.selectionRows),
+            ignoredTrailingColumns: document.ignoredTrailingColumns, traceDirectory: nil))
+        var maximum = 0
+        for record in document.records {
+            let frame = try record.input.decoded()
+            let update = await engine.add(frame.image(in: colorSpace)!, at: record.time)
+            maximum = max(maximum, update.height)
+            if record.index == 8 {
+                let image = try #require(await engine.makeImage())
+                let output = try #require(ScrollingCaptureRaster(image: image, colorSpace: colorSpace))
+                try #require(output.height >= 2506 && output.width == frame.width && frame.height == 1084)
+                #expect(Array(output.pixels[(1422 * output.width)..<(2506 * output.width)]) == frame.pixels)
+            }
+        }
+        #expect(maximum >= 2506)
+    }
 }

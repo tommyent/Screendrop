@@ -55,6 +55,7 @@ actor ScrollingCaptureEngine {
     private var observedMotionRows = Set<Int>()
     private var pageWitnessRows = Set<Int>()
     private var safeOffset = 0
+    private var direction = 0
     private var sampleIndex = 0
     private var previousTime: TimeInterval?
     private var buffer: ScrollingCaptureRegistrationBuffer?
@@ -189,6 +190,9 @@ actor ScrollingCaptureEngine {
                         outputHeight = output.height
                         viewport = widerViewport(body: body, delta: offset - safeOffset, frame: frame)
                         let delta = offset - safeOffset
+                        if delta != 0 {
+                            direction = direction != 0 && delta.signum() != direction ? 0 : delta.signum()
+                        }
                         pageWitnessRows = Set(viewport.filter { y in
                             if delta == 0 {
                                 return pageWitnessRows.contains(y) && lastSafeFrame.sameRow(y, as: frame, at: y)
@@ -226,7 +230,7 @@ actor ScrollingCaptureEngine {
                   let first = lastSafeFrame.using(columns: matchingColumns),
                   let registration = ScrollingCaptureRegistrationBuffer(first: first,
                 confirmation: first, contentRows: viewport, observedMotionRows: observedMotionRows,
-                pageWitnessRows: pageWitnessRows),
+                pageWitnessRows: pageWitnessRows, direction: direction),
                   let output = ScrollingCaptureBandCompositor(initial: registration.initial,
                     selection: ScrollingCaptureOutputRect(columns: selection.columns, rows: start..<selection.rows.upperBound),
                     maximumOutputRows: maximumHeight) else { return update(.lost) }
@@ -246,6 +250,7 @@ actor ScrollingCaptureEngine {
             }
             note("recovery: \(position.offset); rows: \(position.rows.sorted())")
             let offset = position.offset
+            direction = 0
             let lower = max(viewport.lowerBound, selection.rows.lowerBound)
             let upper = min(viewport.upperBound, selection.rows.upperBound)
             guard lower < upper else { return update(.lost) }
@@ -274,17 +279,19 @@ actor ScrollingCaptureEngine {
             if recoveryEvent == nil {
                 guard let registration = ScrollingCaptureRegistrationBuffer(first: frame, confirmation: frame,
                     contentRows: rows, observedMotionRows: moving.union(Set(rows).subtracting(stable)),
-                    pageWitnessRows: position.rows) else { return update(.lost) }
+                    pageWitnessRows: position.rows, direction: direction) else { return update(.lost) }
                 buffer = registration
                 registrationOrigin = offset - baseOffset
                 recovered = ScrollingCapturePlacement(index: sampleIndex, offset: registrationOrigin,
                     frame: frame, stableRows: position.rows, motionRows: moving.intersection(viewport), contentRows: viewport)
             }
             compositor?.resume()
+            buffer?.clearDirection()
             recovering = false
         }
         let matching = frame.using(columns: matchingColumns)!
         var event = recoveryEvent ?? buffer!.add(matching, at: sampleIndex, time: time)
+        direction = buffer!.direction
         if engine == .legacy, let placed = event.placements.last, placed.offset > 0, sampleIndex > 1 {
             let proposed = widerViewport(body: viewport, delta: placed.offset, frame: matching)
             let old = lastSafeFrame.using(columns: matchingColumns)!
@@ -293,7 +300,7 @@ actor ScrollingCaptureEngine {
             }.map { $0 + placed.offset })
             if proposed != viewport,
                var candidate = ScrollingCaptureRegistrationBuffer(first: old, confirmation: old,
-                    contentRows: proposed, observedMotionRows: motion, pageWitnessRows: pageWitnessRows),
+                    contentRows: proposed, observedMotionRows: motion, pageWitnessRows: pageWitnessRows, direction: direction),
                let preceding = previous.using(columns: matchingColumns) {
                 _ = candidate.add(preceding, at: sampleIndex - 1, time: previousTime ?? time - 0.05)
                 let verified = candidate.add(matching, at: sampleIndex, time: time)
@@ -356,6 +363,7 @@ actor ScrollingCaptureEngine {
                 outputHeight = stop
             }
             engine = .buffered
+            direction = buffer!.direction
             rememberRecovery(placements.last!)
             return update(outputHeight > oldHeight ? .appended : .pending)
         }
@@ -472,7 +480,10 @@ actor ScrollingCaptureEngine {
         return (image, (patch.rows.upperBound - height)..<patch.rows.upperBound)
     }
 
-    private func update(_ state: State) -> Update { Update(state: state, height: outputHeight, engine: engine) }
+    private func update(_ state: State) -> Update {
+        if state == .lost { direction = 0; buffer?.clearDirection() }
+        return Update(state: state, height: outputHeight, engine: engine)
+    }
 
     private func widerViewport(body: Range<Int>, delta: Int, frame: ScrollingCaptureRaster) -> Range<Int> {
         guard delta > 0 else { return viewport }

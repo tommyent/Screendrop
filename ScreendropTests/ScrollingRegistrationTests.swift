@@ -2,6 +2,42 @@ import Testing
 
 @Suite struct ScrollingRegistrationTests {
     private typealias F = ScrollingReworkFixture
+
+    @Test("Verified travel narrows repeated rows; stronger reverse evidence never becomes a forward placement")
+    func directionAndRepeatedRows() throws {
+        func frame(_ offset: Int) -> ScrollingCaptureRaster {
+            let pixels = (0..<F.height).flatMap { y in
+                let pageY = offset + y
+                let row = (100..<120).contains(pageY) ? pageY - 100 : pageY
+                return (0..<F.width).map { F.pixel(x: $0, pageY: row) }
+            }
+            return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!
+        }
+        let first = frame(0)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, pageWitnessRows: Set(0..<F.height), direction: 1))
+        #expect(buffer.add(frame(20), at: 1).placements.last?.offset == 20)
+        let reversed = buffer.add(frame(0), at: 2)
+        #expect(reversed.placements.isEmpty)
+        #expect(buffer.lastVerifiedOffset == 20)
+        var closeVotes = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, pageWitnessRows: Set(20..<36).union(0..<15), direction: 1))
+        #expect(closeVotes.add(frame(20), at: 1).placements.isEmpty)
+        #expect(closeVotes.frontier == 0)
+    }
+
+    @Test("Rest matching can reverse verified travel before continuous reverse placements")
+    func directionReverses() throws {
+        let first = F.frame(0)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, pageWitnessRows: Set(0..<F.height), direction: 1))
+        #expect(buffer.add(F.frame(20), at: 1).placements.last?.offset == 20)
+        #expect(buffer.add(F.frame(0), at: 2).placements.isEmpty)
+        #expect(buffer.add(F.frame(0), at: 3).placements.last?.offset == 0)
+        #expect(buffer.direction == 0)
+        #expect(buffer.add(F.frame(-20), at: 4).placements.last?.offset == -20)
+        #expect(buffer.frontier == 20)
+    }
     @Test("Wider rest frames register a whole video entering the small output selection")
     func widerVideo() throws {
         let video = 100..<220
