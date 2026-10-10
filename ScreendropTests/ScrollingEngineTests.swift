@@ -122,20 +122,20 @@ import Testing
         #expect(phases.count == 1)
     }
 
-    @Test("Wider geometry is display-clipped and ambiguous/occluded windows fall back to selection")
+    @Test("Wider geometry is display-clipped, and a covered selection or no window falls back to the selection")
     func geometry() {
         let display = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let selection = CGRect(x: 200, y: 300, width: 300, height: 100)
-        let window = CGRect(x: 100, y: -100, width: 700, height: 1000)
+        let window = (frame: CGRect(x: 100, y: -100, width: 700, height: 1000), isTarget: true)
         let wide = ScrollingCaptureRegion.matching(selection: selection, display: display, frontToBackWindows: [window])
-        #expect(wide == CGRect(x: 200, y: 0, width: 300, height: 800))
-        let output = ScrollingCaptureRegion.output(selection: selection, matching: wide, scale: 2)
+        #expect(wide == .init(rect: CGRect(x: 200, y: 0, width: 300, height: 800), reason: .expanded, obstacles: []))
+        let output = ScrollingCaptureRegion.output(selection: selection, matching: wide.rect, scale: 2)
         #expect(output.columns == 0..<600 && output.rows == 600..<800)
-        for windows in [[], [CGRect(x: 200, y: 300, width: 30, height: 100), window],
-                        [CGRect(x: 200, y: 50, width: 100, height: 100), window]] {
-            #expect(ScrollingCaptureRegion.matching(selection: selection, display: display,
-                frontToBackWindows: windows) == selection)
-        }
+        #expect(ScrollingCaptureRegion.matching(selection: selection, display: display, frontToBackWindows: [])
+            == .init(rect: selection, reason: .selectionNotInWindow, obstacles: []))
+        let covering = (frame: CGRect(x: 200, y: 300, width: 30, height: 100), isTarget: false)
+        #expect(ScrollingCaptureRegion.matching(selection: selection, display: display, frontToBackWindows: [covering, window])
+            == .init(rect: selection, reason: .frontNotTarget, obstacles: [0]))
     }
 
     @Test("The recovery panel stays off the selection while there's room on screen")

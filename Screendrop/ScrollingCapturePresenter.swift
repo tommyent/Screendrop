@@ -161,10 +161,9 @@ final class ScrollingCapturePresenter {
                       let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
                 return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id))
             }
-        let sourceRect = windows.first(where: { $0.frame.intersects(selectionRect) })?.target == true
-            ? ScrollingCaptureRegion.matching(selection: selectionRect,
-                display: filter.contentRect, frontToBackWindows: windows.map(\.frame))
-            : selectionRect
+        let matching = ScrollingCaptureRegion.matching(selection: selectionRect, display: filter.contentRect,
+            frontToBackWindows: windows.map { (frame: $0.frame, isTarget: $0.target) })
+        let sourceRect = matching.rect
         let scale = max(1, CGFloat(filter.pointPixelScale))
         let output = ScrollingCaptureRegion.output(selection: selectionRect, matching: sourceRect, scale: scale)
         let configuration = SCStreamConfiguration()
