@@ -25,6 +25,15 @@ nonisolated struct ScrollingCaptureBandCompositor {
         var owner: Owner?
         var locked = false
     }
+    /// A fixed rectangle at the selection's edge, such as a floating button,
+    /// in frame coordinates. It only marks pixels as unknown: it never helps
+    /// place a frame, and its cells come from clean views of the page.
+    struct Occlusion: Equatable {
+        let rows: Range<Int>
+        let columns: Range<Int>
+        /// The cells that proved it, with their fixed values; nil elsewhere.
+        let fixed: [UInt32?]
+    }
 
     let selection: ScrollingCaptureOutputRect
     let maximumBufferedBytes: Int
@@ -33,7 +42,16 @@ nonisolated struct ScrollingCaptureBandCompositor {
     private(set) var confirmedHeight = 0
     private(set) var lastVerifiedOffset = 0
     private(set) var isLost = false
+    private(set) var occlusion: Occlusion?
     private var rows: [Int: [UInt32]] = [:]
+    /// Stored page rows first seen under the occlusion, waiting for two
+    /// agreeing clean views of those cells; and rows seen clean at least once.
+    private var occluded: Set<Int> = []
+    private var seenClean: Set<Int> = []
+    /// The offset of the view each stored page row came from.
+    private var sources: [Int: Int] = [:]
+    /// A cover that moved, grew or lay over real motion is never trusted again.
+    private var occlusionRevoked = false
     private var cache: [ScrollingCapturePlacement] = []
     private let width: Int
     private let height: Int
@@ -156,24 +174,56 @@ nonisolated struct ScrollingCaptureBandCompositor {
                 rows[y] = cropRow(placement.frame, at: y)
             }
         }
+        if let occlusion, !keeps(occlusion, in: placement.frame) || occlusion.rows.contains(where: { y in
+            // Change beside the cover in its own rows: it grew, or covers real motion.
+            let pageY = placement.offset + y
+            guard let old = rows[pageY], let source = sources[pageY] else { return false }
+            return !sameStoredOutsideOcclusion(old, pageY - source, placement.frame, y)
+        }) {
+            // Not a fixed cover over a still page after all. Rows still waiting
+            // for clean cells fall back to whole-row comparison.
+            self.occlusion = nil
+            occluded = []
+            occlusionRevoked = true
+        }
+        if occlusion == nil, !occlusionRevoked, let found = proposeOcclusion(placement) {
+            occlusion = found
+            occluded = Set(rows.keys.filter { pageY in sources[pageY].map { found.rows.contains(pageY - $0) } ?? false })
+            // Bands the cover alone caused go before they lock; real motion stays.
+            bands = bands.filter { band in
+                band.locked || !band.rows.allSatisfy { pageY in
+                    let reference = contentRows.contains(pageY - placement.offset) ? placement
+                        : cache.last { contentRows.contains(pageY - $0.offset) }
+                    return reference.map { onlyOccluded(pageY, reference: $0) } ?? false
+                }
+            }
+        }
         if let previous = cache.last, previous.offset != placement.offset {
             for y in contentRows where !placement.frame.isBlank(y)
                 && previous.frame.sameRow(y, as: placement.frame, at: y) {
-                if let old = rows[placement.offset + y], !sameSelectedRow(old, as: placement.frame, at: y) {
+                if let old = rows[placement.offset + y], !sameSelectedRow(old, as: placement.frame, at: y),
+                   !onlyOccluded(placement.offset + y, reference: placement) {
                     return .pinnedOverlay
                 }
             }
         }
 
-        var changed = Set(placement.motionRows.map { $0 + placement.offset })
+        var changed = Set(placement.motionRows.map { $0 + placement.offset }
+            .filter { !onlyOccluded($0, reference: placement) })
         for y in contentRows {
             let pageY = placement.offset + y
             guard pageY >= start else { continue }
             let row = cropRow(placement.frame, at: y)
-            if let old = rows[pageY], !sameSelectedRow(old, as: placement.frame, at: y) { changed.insert(pageY) }
-            else if rows[pageY] == nil { rows[pageY] = row }
+            if let old = rows[pageY], !sameSelectedRow(old, as: placement.frame, at: y) {
+                if !onlyOccluded(pageY, reference: placement) { changed.insert(pageY) }
+            } else if rows[pageY] == nil {
+                rows[pageY] = row
+                sources[pageY] = placement.offset
+                if occlusion?.rows.contains(y) == true { occluded.insert(pageY) }
+            }
         }
         cache.append(placement)
+        if let failure = resolveOccluded(above: placement.pageRows.lowerBound) { return failure }
         let locked = bands.filter(\.locked)
         changed = changed.filter { pageY in pageY >= start && !locked.contains { $0.rows.contains(pageY) } }
         // Late controls may belong to an already locked video. Observed motion
@@ -229,6 +279,111 @@ nonisolated struct ScrollingCaptureBandCompositor {
         confirmedHeight = max(confirmedHeight, boundary - start)
         lastVerifiedOffset = placement.offset
         guard !validateFinish || finish() != nil else { return .missingCoverage }
+        return nil
+    }
+
+    /// Three views at two distinct verified displacements: edge cells that
+    /// keep their screen position and value while the page registered at
+    /// their position disagrees in at least two pairs of views (a cell's page
+    /// position can itself be covered in another view). One compact region
+    /// touching an edge of the matched columns; anything else stays unsupported.
+    private func proposeOcclusion(_ placement: ScrollingCapturePlacement) -> Occlusion? {
+        guard let middle = cache.last, middle.offset != placement.offset,
+              let oldest = cache.last(where: { $0.offset != middle.offset && $0.offset != placement.offset }),
+              let lower = matchingColumns.first.map({ max($0.lowerBound, selection.columns.lowerBound) }),
+              let upper = matchingColumns.last.map({ min($0.upperBound, selection.columns.upperBound) }),
+              lower < upper else { return nil }
+        let reach = max(1, (upper - lower) / 8)
+        let edges = Set(lower..<min(upper, lower + reach)).union(max(lower, upper - reach)..<upper)
+            .filter { x in matchingColumns.contains { $0.contains(x) } }
+        var cells: [Int: UInt32] = [:]
+        for y in contentRows {
+            for x in edges {
+                let value = placement.frame.pixels[y * width + x]
+                let views = [oldest, middle, placement]
+                guard oldest.frame.pixels[y * width + x] == value, middle.frame.pixels[y * width + x] == value,
+                      views.flatMap({ view in views.map { other in
+                          let otherY = view.offset + y - other.offset
+                          return other.index != view.index && contentRows.contains(otherY)
+                              && other.frame.pixels[otherY * width + x] != value
+                      } }).filter({ $0 }).count >= 2 else { continue }
+                cells[y * width + x] = value
+            }
+        }
+        guard cells.count >= 16 else { return nil }
+        let ys = cells.keys.map { $0 / width }, xs = cells.keys.map { $0 % width }
+        let rows = ys.min()!..<(ys.max()! + 1), columns = xs.min()!..<(xs.max()! + 1)
+        guard columns.lowerBound == lower || columns.upperBound == upper, columns.count <= reach,
+              rows.count <= contentRows.count / 4, cells.count * 2 >= rows.count * columns.count else { return nil }
+        return Occlusion(rows: rows, columns: columns,
+            fixed: rows.flatMap { y in columns.map { cells[y * width + $0] } })
+    }
+    private func keeps(_ occlusion: Occlusion, in frame: ScrollingCaptureRaster) -> Bool {
+        var index = 0
+        for y in occlusion.rows { for x in occlusion.columns {
+            if let value = occlusion.fixed[index], frame.pixels[y * width + x] != value { return false }
+            index += 1
+        } }
+        return true
+    }
+    /// Two views of one page row agree, leaving out the occlusion's columns
+    /// wherever either view has them covered.
+    private func sameOutsideOcclusion(_ a: ScrollingCaptureRaster, _ ya: Int, _ b: ScrollingCaptureRaster, _ yb: Int) -> Bool {
+        let skip = occlusion.flatMap { $0.rows.contains(ya) || $0.rows.contains(yb) ? $0.columns : nil }
+        return matchingColumns.allSatisfy { columns in
+            let lower = max(columns.lowerBound, selection.columns.lowerBound)
+            let upper = min(columns.upperBound, selection.columns.upperBound)
+            return lower >= upper || (lower..<upper).allSatisfy { x in
+                skip?.contains(x) == true || a.pixels[ya * width + x] == b.pixels[yb * width + x]
+            }
+        }
+    }
+    private func sameStoredOutsideOcclusion(_ old: [UInt32], _ oldY: Int, _ frame: ScrollingCaptureRaster, _ y: Int) -> Bool {
+        let skip = occlusion.flatMap { $0.rows.contains(oldY) || $0.rows.contains(y) ? $0.columns : nil }
+        return matchingColumns.allSatisfy { columns in
+            let lower = max(columns.lowerBound, selection.columns.lowerBound)
+            let upper = min(columns.upperBound, selection.columns.upperBound)
+            return lower >= upper || (lower..<upper).allSatisfy { x in
+                skip?.contains(x) == true || old[x - selection.columns.lowerBound] == frame.pixels[y * width + x]
+            }
+        }
+    }
+    /// The occlusion alone explains any difference in this page row: the
+    /// stored row and every cached view agree with this one outside the cover,
+    /// which is only left out where a view has the row covered.
+    private func onlyOccluded(_ pageY: Int, reference: ScrollingCapturePlacement) -> Bool {
+        let y = pageY - reference.offset
+        guard occlusion != nil, contentRows.contains(y) else { return false }
+        let views = cache.filter { $0.index != reference.index && contentRows.contains(pageY - $0.offset) }
+        let stored = rows[pageY].map { old in
+            sources[pageY].map { sameStoredOutsideOcclusion(old, pageY - $0, reference.frame, y) } ?? false
+        } ?? true
+        return !views.isEmpty && stored
+            && views.allSatisfy { sameOutsideOcclusion($0.frame, pageY - $0.offset, reference.frame, y) }
+    }
+    /// Stored rows first seen covered take the occlusion's cells from two clean
+    /// views at different offsets that agree byte for byte. Real bands keep
+    /// their owner. A row that leaves the view unresolved after being seen
+    /// clean is a hole; one only ever seen covered keeps its single view.
+    private mutating func resolveOccluded(above top: Int) -> Failure? {
+        guard let occlusion else { return nil }
+        let lower = max(occlusion.columns.lowerBound, selection.columns.lowerBound)
+        let upper = min(occlusion.columns.upperBound, selection.columns.upperBound)
+        for pageY in occluded.sorted() where !bands.contains(where: { $0.rows.contains(pageY) }) {
+            let clean = cache.filter { contentRows.contains(pageY - $0.offset) && !occlusion.rows.contains(pageY - $0.offset) }
+            if !clean.isEmpty { seenClean.insert(pageY) }
+            let slices = clean.map { view in (lower..<upper).map { view.frame.pixels[(pageY - view.offset) * width + $0] } }
+            if Set(clean.map(\.offset)).count >= 2, slices.allSatisfy({ $0 == slices[0] }), lower < upper,
+               var row = rows[pageY] {
+                row.replaceSubrange((lower - selection.columns.lowerBound)..<(upper - selection.columns.lowerBound),
+                                    with: slices[0])
+                rows[pageY] = row
+                occluded.remove(pageY)
+            } else if pageY < top {
+                guard !seenClean.contains(pageY) else { return .missingCoverage }
+                occluded.remove(pageY)
+            }
+        }
         return nil
     }
 
