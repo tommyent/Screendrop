@@ -12,17 +12,21 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let colorSpace = document.colorProfile.flatMap { CGColorSpace(iccData: $0 as CFData) } ?? space
         let first = try document.first.decoded()
-        // The scroll input each decision used; older traces have none and replay without it.
-        let input = document.records.contains { $0.scrollInput != nil } ? ScrollingCaptureScrollInput() : nil
+        // The scroll input when the part began and at each decision; older traces have none.
+        let recorded = document.scrollInputAtStart != nil || document.records.contains { $0.scrollInput != nil }
+        let input = recorded ? ScrollingCaptureScrollInput() : nil
+        func restore(_ snapshot: ScrollingCaptureScrollInput.Snapshot?) {
+            guard let snapshot, let input else { return }
+            if snapshot.monitored { input.monitorStarted() }
+            while input.current.scrolls < snapshot.scrolls { input.noteScroll() }
+        }
+        restore(document.scrollInputAtStart)
         let engine = try #require(ScrollingCaptureEngine(firstFrame: first.image(in: colorSpace)!,
             selection: .init(columns: document.selectionColumns, rows: document.selectionRows),
             ignoredTrailingColumns: document.ignoredTrailingColumns, maximumHeight: document.maximumHeight,
             traceDirectory: directory, scrollInput: input))
         for record in document.records {
-            if let recorded = record.scrollInput, let input {
-                if recorded.monitored { input.monitorStarted() }
-                while input.current.scrolls < recorded.scrolls { input.noteScroll() }
-            }
+            restore(record.scrollInput)
             let frame = try record.input.decoded()
             if let idle = record.timing?.stages["idleObserved"] {
                 _ = await engine.noteIdle(at: idle)
@@ -31,10 +35,6 @@ import Testing
             }
             var actual = await engine.lastTraceRecord(), expected = record
             actual?.timing = nil; expected.timing = nil
-            if expected.diagnosticsOmitted == true {
-                actual?.bestShift = nil; actual?.changedInPlace = Data()
-                actual?.maximumChannelDifference = Data(); actual?.diagnosticsOmitted = true
-            }
             #expect(actual == expected, "Replay differs at sample \(record.index)")
         }
         let image = try #require(await engine.makeImage())
@@ -101,9 +101,7 @@ import Testing
         #expect(document.records.last?.state == "pending")
         #expect(document.records.flatMap(\.events).contains("waiting: no scroll heard since the last placement"))
         #expect(document.records.flatMap(\.events).allSatisfy { !$0.contains(".ScrollingCapture") })
-        #expect(document.records.allSatisfy { $0.diagnosticsOmitted == true ||
-            ($0.changedInPlace.count == F.height && $0.maximumChannelDifference.count == F.height) })
-        #expect(document.records.last?.input.columns == document.records.last?.matchingColumns)
+        #expect(document.scrollInputAtStart == .init(monitored: true, scrolls: 0))
         try await replay(document)
     }
 
@@ -120,7 +118,7 @@ import Testing
         let timing = try #require(await engine.lastTraceRecord()?.timing)
         #expect(timing.sequence == 7 && timing.droppedSinceLast == 2 && timing.displayTime == 10)
         #expect(timing.stages["uiPublished"] == 10.03)
-        for stage in ["engine", "decode", "r7", "rowStats", "compression", "recordEncode"] {
+        for stage in ["engine", "decode", "r7", "compression", "recordEncode"] {
             let start = try #require(timing.stages[stage + "Started"])
             let end = try #require(timing.stages[stage + "Finished"])
             #expect(end >= start)
@@ -139,7 +137,7 @@ import Testing
         #expect(writes.allSatisfy { ($0["fileWriteFinished"] ?? 0) >= ($0["fileWriteStarted"] ?? .infinity) })
     }
 
-    @Test("Trace queue exhaustion omits diagnostics explicitly, without retaining uncapped frames")
+    @Test("Trace queue exhaustion omits samples explicitly, without retaining uncapped frames")
     func queuedByteCap() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -148,15 +146,14 @@ import Testing
             selection: .init(columns: 0..<F.width, rows: 0..<F.height), ignoredTrailingColumns: 0,
             maximumHeight: 1000, colorSpace: space, directory: directory, maximumQueuedBytes: frame.byteCount)
         _ = await writer.document()
-        writer.append(.init(index: 1, time: 1, old: frame, frame: frame, viewport: 0..<F.height,
-            contentRows: nil, engine: "buffered", state: "lost", height: F.height, events: [],
-            recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil, timing: .init()))
+        writer.append(.init(index: 1, time: 1, old: frame, frame: frame, state: "lost", height: F.height,
+            events: [], timing: .init()))
         let document = try #require(await writer.document())
         #expect(document.omittedSamples == 1 && document.records.isEmpty && document.savedAfterLoss)
         #expect(document.lastOmittedEvent?.contains("traceQueueFull") == true)
     }
 
-    @Test("Overload keeps newest exact frames, sheds row statistics and records every gap")
+    @Test("Overload keeps newest exact frames and records every gap")
     func latestPendingRing() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -175,25 +172,22 @@ import Testing
         for index in 1...40 {
             let frame = F.frame(index / 2)
             writer.append(.init(index: index, time: Double(index), old: F.frame((index - 1) / 2), frame: frame,
-                viewport: 0..<F.height, contentRows: nil, engine: "buffered",
                 state: index == 1 || index >= 39 ? "lost" : "pending", height: F.height, events: [],
-                recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil, timing: .init(sequence: index)))
+                timing: .init(sequence: index)))
         }
         gate.signal()
         let document = try #require(await writer.document())
         #expect(document.records.map(\.index) == [39, 40])
         #expect(document.omittedSamples == 38 && document.omittedRanges == [1..<39])
-        #expect(document.savedAfterLoss && document.records.first?.diagnosticsOmitted == true)
+        #expect(document.savedAfterLoss)
         #expect(try document.records.first?.input.decoded() == F.frame(19))
         #expect(try document.records.last?.input.decoded() == F.frame(20))
         let lossFile = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .first { $0.pathExtension == "scrolltrace" })
         #expect(try ScrollingCaptureTrace.read(lossFile).records.last?.index == 39)
         writer.noteTiming(.init(sequence: 39, stages: ["uiEnd": 40.1]))
-        writer.append(.init(index: 41, time: 41, old: F.frame(20), frame: F.frame(21),
-            viewport: 0..<F.height, contentRows: nil, engine: "buffered", state: "pending",
-            height: F.height, events: [], recoveryAttempt: false, recoveryRows: nil,
-            recoveryPatch: nil, timing: .init()))
+        writer.append(.init(index: 41, time: 41, old: F.frame(20), frame: F.frame(21), state: "pending",
+            height: F.height, events: [], timing: .init()))
         writer.finish(at: 45)
         _ = await writer.document()
         let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -213,11 +207,7 @@ import Testing
         let first = F.frame(0)
         let input = try ScrollingCaptureTrace.Raster(first)
         func record(_ index: Int, state: String) -> ScrollingCaptureTrace.Record {
-            .init(index: index, time: Double(index), input: input, viewport: 0..<F.height,
-                contentRows: nil, matchingColumns: first.matchingColumns, engine: "buffered", state: state,
-                height: F.height, events: ["test"], recoveryAttempt: false, recoveryRows: nil,
-                recoveryPatch: nil, bestShift: 0, changedInPlace: Data(repeating: 0, count: F.height),
-                maximumChannelDifference: Data(repeating: 0, count: F.height))
+            .init(index: index, time: Double(index), input: input, state: state, height: F.height, events: ["test"])
         }
         for run in 0..<8 {
             var trace = try ScrollingCaptureTrace(first: first, selection: .init(columns: 0..<F.width, rows: 0..<F.height),
@@ -249,9 +239,7 @@ import Testing
             maximumBytes: 2_000_000)
         for index in 1...200 {
             trace.append(.init(index: index, time: Double(index), input: try ScrollingCaptureTrace.Raster(F.frame(index)),
-                viewport: 0..<F.height, contentRows: nil, matchingColumns: first.matchingColumns, engine: "buffered",
-                state: index < 101 ? "pending" : "lost", height: F.height, events: [], recoveryAttempt: false,
-                recoveryRows: nil, recoveryPatch: nil, bestShift: nil, changedInPlace: Data(), maximumChannelDifference: Data()))
+                state: index < 101 ? "pending" : "lost", height: F.height, events: []))
         }
         let kept = trace.document.records.map(\.index)
         // Pending history up to the loss at 101, then exactly six lost frames; nothing after them.
@@ -269,9 +257,7 @@ import Testing
             maximumBytes: 2_000_000)
         func append(_ index: Int, state: String) throws {
             trace.append(.init(index: index, time: Double(index), input: try ScrollingCaptureTrace.Raster(F.frame(index)),
-                viewport: 0..<F.height, contentRows: nil, matchingColumns: first.matchingColumns, engine: "buffered",
-                state: state, height: F.height, events: [], recoveryAttempt: false, recoveryRows: nil,
-                recoveryPatch: nil, bestShift: nil, changedInPlace: Data(), maximumChannelDifference: Data()))
+                state: state, height: F.height, events: []))
         }
         for index in 1...100 { try append(index, state: "pending") }
         let before = trace.document.records.map(\.index)
@@ -292,10 +278,7 @@ import Testing
             maximumHeight: 1000, colorSpace: space, directory: directory, maximumBytes: 150_000)
         for index in 1...50 {
             trace.append(.init(index: index, time: 1 + Double(index) / 100, input: input,
-                viewport: 0..<F.height, contentRows: nil, matchingColumns: frame.matchingColumns,
-                engine: "buffered", state: index == 1 ? "appended" : "pending", height: F.height,
-                events: [], recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil,
-                bestShift: nil, changedInPlace: Data(), maximumChannelDifference: Data()))
+                state: index == 1 ? "appended" : "pending", height: F.height, events: []))
         }
         #expect(trace.document.omittedSamples > 0 && trace.document.records.first?.index != 1)
         trace.save(endedAt: 4.02)
@@ -348,10 +331,7 @@ import Testing
         var trace = try ScrollingCaptureTrace(first: frame, selection: .init(columns: 0..<F.width, rows: 0..<F.height),
             ignoredTrailingColumns: 0, maximumHeight: 1000, colorSpace: space, directory: directory)
         func record(_ index: Int, time: Double, height: Int, state: String) -> ScrollingCaptureTrace.Record {
-            .init(index: index, time: time, input: input, viewport: 0..<F.height, contentRows: nil,
-                matchingColumns: frame.matchingColumns, engine: "legacy", state: state, height: height,
-                events: [], recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil,
-                bestShift: 0, changedInPlace: Data(), maximumChannelDifference: Data())
+            .init(index: index, time: time, input: input, state: state, height: height, events: [])
         }
         trace.append(record(1, time: 1, height: F.height, state: "pending"))
         trace.save(endedAt: 3.9)
@@ -363,15 +343,6 @@ import Testing
         trace.save(endedAt: 6)
         #expect(trace.document.savedAfterStall == true && !trace.document.savedAfterLoss && !trace.document.savedOnDone)
         #expect(FileManager.default.fileExists(atPath: directory.path))
-    }
-
-    @Test("Row diagnostics separate translation, redraw and local motion without supplying an offset")
-    func rowStats() {
-        let old = F.frame(0), new = F.frame(20, phase: 3, video: 80..<120)
-        let stats = ScrollingCaptureTrace.differences(from: old, to: new, rows: 0..<F.height)
-        #expect(stats.shift == 20)
-        #expect(stats.changed.allSatisfy { $0 == 1 })
-        #expect(stats.difference[0] == 0 && stats.difference[60] > 2)
     }
 
     @Test("Replay a local failure trace (never checked into git)",

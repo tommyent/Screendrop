@@ -47,15 +47,9 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
         let time: TimeInterval
         let old: ScrollingCaptureRaster
         let frame: ScrollingCaptureRaster
-        let viewport: Range<Int>
-        let contentRows: Range<Int>?
-        let engine: String
         let state: String
         let height: Int
         let events: [String]
-        let recoveryAttempt: Bool
-        let recoveryRows: Range<Int>?
-        let recoveryPatch: ScrollingCaptureRaster?
         var timing: ScrollingCaptureSampleTiming
         var scrollInput: ScrollingCaptureScrollInput.Snapshot? = nil
     }
@@ -74,7 +68,7 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
          ignoredTrailingColumns: Int, maximumHeight: Int, colorSpace: CGColorSpace,
          directory: URL, maximumQueuedBytes: Int = 128 * 1024 * 1024,
          queue: DispatchQueue = DispatchQueue(label: "Sukusho.scrollTrace", qos: .utility),
-         geometry: ScrollingCaptureTraceGeometry? = nil) {
+         geometry: ScrollingCaptureTraceGeometry? = nil, scrollInputAtStart: ScrollingCaptureScrollInput.Snapshot? = nil) {
         self.queue = queue
         self.maximumQueuedBytes = maximumQueuedBytes
         let profile = colorSpace.copyICCData() as Data?
@@ -86,13 +80,13 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
                     ?? CGColorSpace(name: CGColorSpace.sRGB)!
                 self.trace = try ScrollingCaptureTrace(first: first, selection: selection,
                     ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
-                    colorSpace: space, directory: directory, geometry: geometry)
+                    colorSpace: space, directory: directory, geometry: geometry, scrollInputAtStart: scrollInputAtStart)
             } catch { NSLog("Scrolling Capture trace could not start: %@", error.localizedDescription) }
         }
     }
 
     func append(_ sample: Sample) {
-        let bytes = sample.old.byteCount + sample.frame.byteCount + (sample.recoveryPatch?.byteCount ?? 0)
+        let bytes = sample.old.byteCount + sample.frame.byteCount
         let schedule = lock.withLock {
             while bytes <= maximumQueuedBytes, bytes > maximumQueuedBytes - queuedBytes, !pending.isEmpty {
                 let old = pending.removeFirst()
@@ -128,25 +122,14 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
         do {
             var timing = sample.timing
             timing.stages["traceStarted"] = ScrollingCaptureSampleTiming.now()
-            timing.stages["rowStatsStarted"] = ScrollingCaptureSampleTiming.now()
-            let busy = lock.withLock { queuedBytes > maximumQueuedBytes / 2 }
-            let stats: (shift: Int?, changed: Data, difference: Data) = busy ? (nil, Data(), Data())
-                : ScrollingCaptureTrace.differences(from: sample.old, to: sample.frame, rows: sample.viewport)
-            timing.stages["rowStatsFinished"] = ScrollingCaptureSampleTiming.now()
             timing.stages["compressionStarted"] = ScrollingCaptureSampleTiming.now()
             let prior = self.trace!.document.records.last?.input ?? self.trace!.document.first
             let contiguous = (self.trace!.document.records.last?.index ?? 0) == sample.index - 1
             let input = contiguous && sample.old.pixels == sample.frame.pixels && prior.columns == sample.frame.matchingColumns
                 ? prior : try ScrollingCaptureTrace.Raster(sample.frame)
-            let patch = try sample.recoveryPatch.map(ScrollingCaptureTrace.Raster.init)
             timing.stages["compressionFinished"] = ScrollingCaptureSampleTiming.now()
-            self.trace?.append(.init(index: sample.index, time: sample.time, input: input,
-                viewport: sample.viewport, contentRows: sample.contentRows,
-                matchingColumns: sample.frame.matchingColumns, engine: sample.engine, state: sample.state,
-                height: sample.height, events: sample.events, recoveryAttempt: sample.recoveryAttempt,
-                recoveryRows: sample.recoveryRows, recoveryPatch: patch, bestShift: stats.shift,
-                changedInPlace: stats.changed, maximumChannelDifference: stats.difference, timing: timing,
-                diagnosticsOmitted: busy ? true : nil, scrollInput: sample.scrollInput))
+            self.trace?.append(.init(index: sample.index, time: sample.time, input: input, state: sample.state,
+                height: sample.height, events: sample.events, timing: timing, scrollInput: sample.scrollInput))
         } catch { self.trace?.omit(index: sample.index, state: sample.state) }
         self.saveTransition(sample.state, force: saveAfterOmission)
     }
@@ -240,22 +223,13 @@ nonisolated struct ScrollingCaptureTrace {
     struct Record: Codable, Equatable, Sendable {
         let index: Int
         let time: TimeInterval
+        /// The frame R7 was given, with its matching columns.
         let input: Raster
-        let viewport: Range<Int>
-        let contentRows: Range<Int>?
-        let matchingColumns: [Range<Int>]
-        let engine: String
         let state: String
         let height: Int
+        /// R7's result and what the engine decided.
         let events: [String]
-        let recoveryAttempt: Bool
-        let recoveryRows: Range<Int>?
-        let recoveryPatch: Raster?
-        var bestShift: Int?
-        var changedInPlace: Data
-        var maximumChannelDifference: Data
         var timing: ScrollingCaptureSampleTiming? = nil
-        var diagnosticsOmitted: Bool? = nil
         /// The scroll input the engine decided with; absent in older traces.
         var scrollInput: ScrollingCaptureScrollInput.Snapshot? = nil
     }
@@ -279,6 +253,8 @@ nonisolated struct ScrollingCaptureTrace {
         var outputChecksum: UInt64?
         var writeTimings: [[String: TimeInterval]]? = nil
         var geometry: ScrollingCaptureTraceGeometry? = nil
+        /// The scroll input when this part began; a part's first decisions depend on it.
+        var scrollInputAtStart: ScrollingCaptureScrollInput.Snapshot? = nil
     }
 
     static var defaultDirectory: URL? {
@@ -305,7 +281,8 @@ nonisolated struct ScrollingCaptureTrace {
     init(first: ScrollingCaptureRaster, selection: ScrollingCaptureOutputRect,
          ignoredTrailingColumns: Int, maximumHeight: Int, colorSpace: CGColorSpace,
          directory: URL, maximumBytes: Int = 64 * 1024 * 1024,
-         geometry: ScrollingCaptureTraceGeometry? = nil) throws {
+         geometry: ScrollingCaptureTraceGeometry? = nil,
+         scrollInputAtStart: ScrollingCaptureScrollInput.Snapshot? = nil) throws {
         let input = try Raster(first)
         self.directory = directory
         self.maximumBytes = maximumBytes
@@ -315,6 +292,7 @@ nonisolated struct ScrollingCaptureTrace {
             ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
             colorProfile: colorSpace.copyICCData() as Data?, first: input)
         document.geometry = geometry
+        document.scrollInputAtStart = scrollInputAtStart
     }
 
     mutating func append(_ record: Record) {
@@ -452,39 +430,5 @@ nonisolated struct ScrollingCaptureTrace {
 
     static func checksum(_ raster: ScrollingCaptureRaster) -> UInt64 {
         raster.pixels.reduce(UInt64(raster.width) << 32 | UInt64(raster.height)) { ($0 ^ UInt64($1)) &* 1099511628211 }
-    }
-
-    /// Diagnostic only: this best exact-row shift never supplies registration authority.
-    static func differences(from old: ScrollingCaptureRaster, to new: ScrollingCaptureRaster,
-                            rows: Range<Int>) -> (shift: Int?, changed: Data, difference: Data) {
-        guard old.width == new.width, old.height == new.height, rows.lowerBound >= 0, rows.upperBound <= new.height,
-              let old = old.using(columns: new.matchingColumns) else {
-            return (nil, Data(), Data())
-        }
-        var oldRows: [Int: [Int]] = [:], votes: [Int: Set<Int>] = [:]
-        for y in rows where !old.isBlank(y) { oldRows[old.rowHash(y), default: []].append(y) }
-        for y in rows where !new.isBlank(y) {
-            for oldY in oldRows[new.rowHash(y), default: []] where old.sameRow(oldY, as: new, at: y) {
-                votes[oldY - y, default: []].insert(new.rowHash(y))
-            }
-        }
-        let maximum = votes.values.map(\.count).max() ?? 0
-        let best = votes.filter { $0.value.count == maximum }.keys
-        let shift = best.count == 1 ? best.first : nil
-        var changed = Data(), difference = Data()
-        for y in 0..<new.height {
-            changed.append(old.sameRow(y, as: new, at: y) ? 0 : 1)
-            guard let shift, (0..<old.height).contains(y + shift) else { difference.append(255); continue }
-            if old.sameRow(y + shift, as: new, at: y) { difference.append(0); continue }
-            var largest = 0
-            for columns in new.matchingColumns { for x in columns {
-                let a = old.pixels[(y + shift) * old.width + x], b = new.pixels[y * new.width + x]
-                for channel in stride(from: 0, through: 24, by: 8) {
-                    largest = max(largest, abs(Int((a >> channel) & 255) - Int((b >> channel) & 255)))
-                }
-            } }
-            difference.append(UInt8(largest))
-        }
-        return (shift, changed, difference)
     }
 }

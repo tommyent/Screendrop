@@ -107,14 +107,15 @@ actor ScrollingCaptureEngine {
         frameWidth = raster.width
         frameHeight = raster.height
         self.scrollInput = scrollInput
-        scrollsAtPlacement = scrollInput?.current.scrolls ?? 0
+        let start = scrollInput?.current
+        scrollsAtPlacement = start?.scrolls ?? 0
         previous = raster
         safeImage = output
         outputHeight = safeImage.height
         if let traceDirectory {
             trace = ScrollingCaptureTraceWriter(first: raster, selection: rect,
                 ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
-                colorSpace: space, directory: traceDirectory, geometry: traceGeometry)
+                colorSpace: space, directory: traceDirectory, geometry: traceGeometry, scrollInputAtStart: start)
         }
     }
 
@@ -164,9 +165,8 @@ actor ScrollingCaptureEngine {
         var timing = timing
         timing.stages = stages
         timing.stages["traceEnqueued"] = ScrollingCaptureSampleTiming.now()
-        trace.append(.init(index: sampleIndex, time: time, old: old, frame: frame, viewport: selection.rows,
-            contentRows: nil, engine: "legacy", state: String(describing: result.state), height: result.height,
-            events: traceEvents, recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil,
+        trace.append(.init(index: sampleIndex, time: time, old: old, frame: frame,
+            state: String(describing: result.state), height: result.height, events: traceEvents,
             timing: timing, scrollInput: scrollState))
     }
 

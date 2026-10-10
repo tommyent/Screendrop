@@ -34,7 +34,7 @@ import Testing
             ignoredTrailingColumns: 0, traceDirectory: directory))
         #expect(await engine.add(redrawn, at: 1).state == .pending)
         let deferred = try #require(await engine.lastTraceRecord())
-        #expect(deferred.contentRows == nil && deferred.matchingColumns == [0..<F.width])
+        #expect(deferred.state == "pending")
         for time in [1.2, 1.4, 1.8, 2.2, 2.6, 5.0] {
             #expect(await engine.noteIdle(at: time).state == .pending)
             #expect(await engine.makeImage()?.height == F.height)
