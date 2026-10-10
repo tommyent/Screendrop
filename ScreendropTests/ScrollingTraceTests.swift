@@ -12,11 +12,17 @@ import Testing
         defer { try? FileManager.default.removeItem(at: directory) }
         let colorSpace = document.colorProfile.flatMap { CGColorSpace(iccData: $0 as CFData) } ?? space
         let first = try document.first.decoded()
+        // The scroll input each decision used; older traces have none and replay without it.
+        let input = document.records.contains { $0.scrollInput != nil } ? ScrollingCaptureScrollInput() : nil
         let engine = try #require(ScrollingCaptureEngine(firstFrame: first.image(in: colorSpace)!,
             selection: .init(columns: document.selectionColumns, rows: document.selectionRows),
             ignoredTrailingColumns: document.ignoredTrailingColumns, maximumHeight: document.maximumHeight,
-            traceDirectory: directory))
+            traceDirectory: directory, scrollInput: input))
         for record in document.records {
+            if let recorded = record.scrollInput, let input {
+                if recorded.monitored { input.monitorStarted() }
+                while input.current.scrolls < recorded.scrolls { input.noteScroll() }
+            }
             let frame = try record.input.decoded()
             if let idle = record.timing?.stages["idleObserved"] {
                 _ = await engine.noteIdle(at: idle)
@@ -38,6 +44,21 @@ import Testing
             let raster = try #require(ScrollingCaptureRaster(image: image, colorSpace: colorSpace))
             #expect(ScrollingCaptureTrace.checksum(raster) == expected)
         }
+    }
+
+    @Test("Each record carries the scroll input its decision used")
+    func recordsScrollInput() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let input = ScrollingCaptureScrollInput()
+        input.monitorStarted()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
+            ignoredTrailingColumns: 0, traceDirectory: directory, scrollInput: input))
+        _ = await engine.add(F.frame(0).image(in: space)!, at: 1)
+        input.noteScroll()
+        _ = await engine.add(F.frame(20).image(in: space)!, at: 1.05)
+        let record = try #require(await engine.lastTraceRecord())
+        #expect(record.scrollInput == .init(monitored: true, scrolls: 1))
     }
 
     @Test("Exact inputs, masks, events and recovery attempts replay deterministically")

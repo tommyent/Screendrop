@@ -57,6 +57,7 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
         let recoveryRows: Range<Int>?
         let recoveryPatch: ScrollingCaptureRaster?
         var timing: ScrollingCaptureSampleTiming
+        var scrollInput: ScrollingCaptureScrollInput.Snapshot? = nil
     }
 
     private let queue: DispatchQueue
@@ -145,7 +146,7 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
                 height: sample.height, events: sample.events, recoveryAttempt: sample.recoveryAttempt,
                 recoveryRows: sample.recoveryRows, recoveryPatch: patch, bestShift: stats.shift,
                 changedInPlace: stats.changed, maximumChannelDifference: stats.difference, timing: timing,
-                diagnosticsOmitted: busy ? true : nil))
+                diagnosticsOmitted: busy ? true : nil, scrollInput: sample.scrollInput))
         } catch { self.trace?.omit(index: sample.index, state: sample.state) }
         self.saveTransition(sample.state, force: saveAfterOmission)
     }
@@ -255,6 +256,8 @@ nonisolated struct ScrollingCaptureTrace {
         var maximumChannelDifference: Data
         var timing: ScrollingCaptureSampleTiming? = nil
         var diagnosticsOmitted: Bool? = nil
+        /// The scroll input the engine decided with; absent in older traces.
+        var scrollInput: ScrollingCaptureScrollInput.Snapshot? = nil
     }
 
     struct Document: Codable, Sendable {

@@ -1,5 +1,20 @@
 import CoreGraphics
 import Foundation
+import Synchronization
+
+/// The scrolls the session's monitor has heard, by hand or by auto-scroll. The
+/// monitor sets it; every part's engine reads it. It counts that scrolls
+/// happened, never where or how far.
+nonisolated final class ScrollingCaptureScrollInput: Sendable {
+    struct Snapshot: Codable, Equatable, Sendable {
+        var monitored = false
+        var scrolls = 0
+    }
+    private let snapshot = Mutex(Snapshot())
+    func monitorStarted() { snapshot.withLock { $0.monitored = true } }
+    func noteScroll() { snapshot.withLock { $0.scrolls += 1 } }
+    var current: Snapshot { snapshot.withLock { $0 } }
+}
 
 extension ScrollingCaptureRaster {
     nonisolated init?(image: CGImage, colorSpace: CGColorSpace) {
@@ -75,6 +90,9 @@ actor ScrollingCaptureEngine {
     private var traceInput: ScrollingCaptureRaster?
     private var stages: [String: TimeInterval] = [:]
     private var observedIdle = false
+    private let scrollInput: ScrollingCaptureScrollInput?
+    /// The scroll input read once per call: its decisions and trace record use this.
+    private var scrollState: ScrollingCaptureScrollInput.Snapshot?
     private var traceEvents: [String] = []
     private var traceRecoveryAttempt = false
     private(set) var engine: Engine = .legacy
@@ -83,7 +101,7 @@ actor ScrollingCaptureEngine {
     init?(firstFrame: CGImage, selection: ScrollingCaptureOutputRect? = nil,
           ignoredTrailingColumns: Int, maximumHeight: Int = 16_384,
           traceDirectory: URL? = ScrollingCaptureTrace.defaultDirectory,
-          traceGeometry: ScrollingCaptureTraceGeometry? = nil) {
+          traceGeometry: ScrollingCaptureTraceGeometry? = nil, scrollInput: ScrollingCaptureScrollInput? = nil) {
         let space = firstFrame.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil }
             ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let raster = ScrollingCaptureRaster(image: firstFrame, colorSpace: space) else { return nil }
@@ -98,6 +116,7 @@ actor ScrollingCaptureEngine {
         else { return nil }
         self.selection = rect
         self.legacy = legacy
+        self.scrollInput = scrollInput
         colorSpace = space
         self.maximumHeight = maximumHeight
         lastSafeFrame = raster
@@ -116,6 +135,12 @@ actor ScrollingCaptureEngine {
 
     func add(_ image: CGImage, at time: TimeInterval = ScrollingCaptureSampleTiming.now(),
              timing: ScrollingCaptureSampleTiming = .init()) async -> Update {
+        scrollState = scrollInput?.current
+        return await addSample(image, at: time, timing: timing)
+    }
+
+    private func addSample(_ image: CGImage, at time: TimeInterval,
+                           timing: ScrollingCaptureSampleTiming = .init()) async -> Update {
         let old = previous
         traceEvents.removeAll(keepingCapacity: true)
         traceRecoveryAttempt = recovering
@@ -139,12 +164,13 @@ actor ScrollingCaptureEngine {
 
     /// One idle rest look, never a fresh sample or settling observation.
     func noteIdle(at time: TimeInterval) async -> Update {
+        scrollState = scrollInput?.current
         if time.isFinite { lastObservationTime = max(lastObservationTime ?? time, time) }
         guard let screenTime = previousTime, time.isFinite, time - screenTime >= 0.1 else {
             return update(recovering ? .lost : .pending)
         }
         if !observedIdle, let image = previous.image(in: colorSpace) {
-            let result = await add(image, at: screenTime, timing: .init(stages: ["idleObserved": time]))
+            let result = await addSample(image, at: screenTime, timing: .init(stages: ["idleObserved": time]))
             observedIdle = true
             return result
         }
@@ -174,7 +200,7 @@ actor ScrollingCaptureEngine {
             contentRows: buffer?.initial.contentRows, engine: result.engine.rawValue,
             state: String(describing: result.state), height: result.height, events: traceEvents,
             recoveryAttempt: traceRecoveryAttempt, recoveryRows: recoveryPatch?.rows,
-            recoveryPatch: recoveryPatch?.frame, timing: timing))
+            recoveryPatch: recoveryPatch?.frame, timing: timing, scrollInput: scrollState))
     }
 
     private func note(_ event: @autoclosure () -> String) { if trace != nil { traceEvents.append(event()) } }

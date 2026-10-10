@@ -15,6 +15,10 @@ import AppKit
 /// the height limit and the end of the page; only Done finishes. It never
 /// carries on across a break by itself: the user scrolls back to join the
 /// parts, or presses again to go on in the new part. No key is watched.
+///
+/// The monitors last the whole capture session, running or not: any scroll
+/// marks `scrollInput`, so the engine never takes a page scrolled away for one
+/// at rest. Watching scrolling needs no permission; only posting does.
 final class ScrollingCaptureAutoScroller {
     struct State {
         /// The stitched height, in captured pixels.
@@ -49,6 +53,7 @@ final class ScrollingCaptureAutoScroller {
     private let state: () -> State
     private let bar: () -> CGRect?
     private let onStop: () -> Void
+    private let scrollInput: ScrollingCaptureScrollInput
     private var pacer: AutoScrollPacer?
     private var monitors: [Any] = []
     private var poller: Task<Void, Never>?
@@ -57,7 +62,7 @@ final class ScrollingCaptureAutoScroller {
     private(set) var isRunning = false
 
     /// `region` is the selection in AppKit screen coordinates.
-    init(region: CGRect, scale: CGFloat, state: @escaping () -> State,
+    init(region: CGRect, scale: CGFloat, scrollInput: ScrollingCaptureScrollInput, state: @escaping () -> State,
          bar: @escaping () -> CGRect?, onStop: @escaping () -> Void) {
         // Quartz flips AppKit's y about the main display's height.
         point = CGPoint(x: region.midX, y: CGDisplayBounds(CGMainDisplayID()).height - region.midY)
@@ -67,6 +72,8 @@ final class ScrollingCaptureAutoScroller {
         self.state = state
         self.bar = bar
         self.onStop = onStop
+        self.scrollInput = scrollInput
+        installMonitors()
     }
 
     /// Posting scroll events to another app needs the Accessibility
@@ -76,7 +83,6 @@ final class ScrollingCaptureAutoScroller {
         isRunning = true
         partCountAtStart = state().partCount
         pointerAtStart = NSEvent.mouseLocation
-        installMonitors()
         pacer = AutoScrollPacer(stepPixels: stepPixels, height: state().height, now: ScrollingCaptureSampleTiming.now())
         post()
         poller = Task { [weak self] in
@@ -95,9 +101,14 @@ final class ScrollingCaptureAutoScroller {
         poller?.cancel()
         poller = nil
         pacer = nil
+        onStop()
+    }
+
+    /// Ends the session: stops scrolling and removes the monitors.
+    func invalidate() {
+        stop()
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors = []
-        onStop()
     }
 
     private func tick() {
@@ -121,6 +132,8 @@ final class ScrollingCaptureAutoScroller {
                             wheel1: -stepPoints, wheel2: 0, wheel3: 0)
         event?.location = point
         event?.setIntegerValueField(.eventSourceUserData, value: Self.eventTag)
+        // Marked before the page can move, since monitors hear of it later.
+        scrollInput.noteScroll()
         event?.post(tap: .cghidEventTap)
     }
 
@@ -130,6 +143,7 @@ final class ScrollingCaptureAutoScroller {
             self?.handle(event)
         }) {
             monitors.append(monitor)
+            scrollInput.monitorStarted()
         }
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
             self?.handle(event)
@@ -140,11 +154,15 @@ final class ScrollingCaptureAutoScroller {
     }
 
     private func handle(_ event: NSEvent) {
-        guard isRunning else { return }
         if event.type == .scrollWheel {
-            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.eventTag { stop() }
+            // Its own steps were marked as they were posted.
+            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.eventTag {
+                scrollInput.noteScroll()
+                stop()
+            }
             return
         }
+        guard isRunning else { return }
         // The pointer starts on the bar, where auto-scroll was turned on, and
         // goes back there to pause it or click Done; only leaving it counts.
         let location = NSEvent.mouseLocation

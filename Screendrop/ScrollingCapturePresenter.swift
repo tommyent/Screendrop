@@ -207,6 +207,15 @@ final class ScrollingCapturePresenter {
             stream = nil
         }
         var events = source.events.makeAsyncIterator()
+        // One for the whole session: every part's engine reads it.
+        let scrollInput = ScrollingCaptureScrollInput()
+        // Its monitors start before the stream, so no scroll before the first frame goes
+        // unheard; leaving by any path, a failed start or Cancel included, removes them.
+        autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, scrollInput: scrollInput, state: { [unowned self] in
+            .init(height: stitchedHeight, lastFrameTime: lastFrameTime, partCount: partCount,
+                  canContinue: session.outcome == nil && !hasReachedLimit && !isActivePartLost)
+        }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
+        defer { endAutoScroll() }
         let stitcher: ScrollingCaptureEngine
         var lastFrame: ScrollingCaptureStream.Frame?
         var lastSequence = 0
@@ -222,7 +231,8 @@ final class ScrollingCapturePresenter {
                       firstFrame: firstFrame.image,
                       selection: output,
                       ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()),
-                      traceGeometry: traceGeometry
+                      traceGeometry: traceGeometry,
+                      scrollInput: scrollInput
                   ) else { return nil }
             stitcher = firstStitcher
             lastFrame = firstFrame
@@ -245,12 +255,7 @@ final class ScrollingCapturePresenter {
         isActivePartLost = false
         isJoiningParts = false
         let bandRows = Int((ScrollingCaptureBreakMark.bandPoints * scale).rounded())
-        autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, state: { [unowned self] in
-            .init(height: stitchedHeight, lastFrameTime: lastFrameTime, partCount: partCount,
-                  canContinue: session.outcome == nil && !hasReachedLimit && !isActivePartLost)
-        }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
         canAutoScroll = true
-        defer { endAutoScroll() }
         // Frames and idle ticks arrive until Done, Cancel, the height limit
         // or a stream error stops the stream.
         events: while let event = await events.next() {
@@ -290,7 +295,8 @@ final class ScrollingCapturePresenter {
             let broke = update.state == .lost && session.outcome == nil && update.height > output.rows.count
             if broke, let frame = lastFrame,
                let next = ScrollingCaptureEngine(firstFrame: frame.image, selection: output,
-                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()), traceGeometry: traceGeometry) {
+                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()), traceGeometry: traceGeometry,
+                   scrollInput: scrollInput) {
                 listener = (active, parts.count - 1)
                 parts.append(next)
                 heights.append(output.rows.count)
@@ -429,7 +435,7 @@ final class ScrollingCapturePresenter {
     }
 
     private func endAutoScroll() {
-        autoScroller?.stop()
+        autoScroller?.invalidate()
         autoScroller = nil
         canAutoScroll = false
     }
