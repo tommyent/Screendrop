@@ -85,16 +85,64 @@ import Testing
         #expect(buffer.pendingCount == 0 && buffer.lastVerifiedOffset == 190)
     }
 
-    @Test("Dominant motion retention is bounded by actual sample time and by decoded bytes", arguments: [false, true])
+    @Test("Dominant motion retention allows 40 changing samples, bounded first by decoded bytes", arguments: [false, true])
     func retentionLimits(bytes: Bool) throws {
         var buffer = try primed(bytes: bytes ? F.frame(0).byteCount * 5 : 128 * 1024 * 1024)
         let a = F.frame(400, phase: 10, video: 400..<600)
         #expect(buffer.add(a, at: 2, time: 10.05).state == .pending)
         #expect(buffer.pendingCount == 1)
-        let end = buffer.add(F.frame(400, phase: 11, video: 400..<600), at: 3, time: bytes ? 10.10 : 12.10)
+        var end = pendingEvent(buffer: &buffer, index: 3, phase: 11)
+        if !bytes {
+            for index in 4...41 {
+                #expect(end.state == .pending)
+                end = pendingEvent(buffer: &buffer, index: index, phase: index + 8)
+            }
+            #expect(end.state == .pending && buffer.pendingCount == 40)
+            let unchanged = F.frame(400, phase: 49, video: 400..<600)
+            for index in 42...50 {
+                #expect(buffer.add(unchanged, at: index, time: 4_100 + Double(index - 41) * 0.05).state == .pending)
+                #expect(buffer.pendingCount == 40)
+            }
+            end = buffer.add(F.frame(400, phase: 50, video: 400..<600), at: 51, time: 4_101)
+        }
         #expect(end.failure == (bytes ? .bufferExhausted : .motionTimeout))
         #expect(buffer.pendingCount == 0 && buffer.lastVerifiedOffset == 5)
         buffer.discardUnresolved()
         #expect(!buffer.isLost && buffer.pendingCount == 0)
+    }
+
+    private func pendingEvent(buffer: inout ScrollingCaptureRegistrationBuffer, index: Int,
+                              phase: Int) -> ScrollingCaptureRegistrationBuffer.Event {
+        buffer.add(F.frame(400, phase: phase, video: 400..<600), at: index, time: Double(index) * 100)
+    }
+
+    @Test("Idle repeats never settle media; excluded-column changes never spend the motion window")
+    func repeatedEvidence() throws {
+        let video = 100..<160, first = F.frame(0, phase: 2, video: 100..<160)
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height, observedMotionRows: Set(video),
+            pageWitnessRows: Set(0..<100).union(160..<200)))
+        #expect(buffer.add(F.frame(20, phase: 2, video: video), at: 1).placements.last?.offset == 20)
+        let before = buffer.settledPageRows
+        for index in 2...20 { _ = buffer.add(F.frame(20, phase: 2, video: video), at: index) }
+        #expect(buffer.settledPageRows == before)
+        #expect(buffer.noteIdle(at: 100).state == .pending)
+        #expect(buffer.settledPageRows == before)
+
+        let columns = [0..<(F.width - 1)]
+        let origin = try #require(F.frame(0, pinned: 70..<90).using(columns: columns))
+        var masked = try #require(ScrollingCaptureRegistrationBuffer(first: origin, confirmation: origin,
+            contentRows: 0..<F.height, maximumBufferedBytes: origin.byteCount * 4))
+        let shifted = try #require(F.frame(20, pinned: 70..<90).using(columns: columns))
+        _ = masked.add(shifted, at: 1)
+        _ = masked.add(shifted, at: 2)
+        for index in 3...50 {
+            var pixels = shifted.pixels
+            for y in 0..<F.height { pixels[y * F.width + F.width - 1] = UInt32(index) }
+            let frame = try #require(ScrollingCaptureRaster(width: F.width, height: F.height,
+                pixels: pixels, matchingColumns: columns))
+            #expect(masked.add(frame, at: index).state == .pending)
+            #expect(masked.pendingCount == 1)
+        }
     }
 }

@@ -28,8 +28,8 @@ import Testing
     func staticDispatch() async throws {
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
             selection: rect, ignoredTrailingColumns: 0))
-        for offset in [20, 40, 60, 40, 20, 5, 80] {
-            let update = await engine.add(F.frame(offset).image(in: space)!)
+        for (index, offset) in [20, 40, 60, 40, 20, 5, 80].enumerated() {
+            let update = await engine.add(F.frame(offset).image(in: space)!, at: Double(index + 1) * 0.05)
             #expect(update.state != .lost && update.engine == .legacy)
             let image = try #require(await engine.makeImage())
             #expect(update.height == image.height && image.height == offset + 80)
@@ -38,10 +38,10 @@ import Testing
                 #expect(output.pixels[y * output.width + x] == F.pixel(x: x + 4, pageY: y + 60))
             } }
         }
-        var update = await engine.add(F.frame(500).image(in: space)!)
-        for _ in 0..<25 { update = await engine.add(F.frame(500).image(in: space)!) }
+        var update = await engine.add(F.frame(500).image(in: space)!, at: 1)
+        for index in 1...25 { update = await engine.add(F.frame(500).image(in: space)!, at: 1 + Double(index) * 0.05) }
         #expect(update.state == .lost && update.height == 160)
-        update = await engine.add(F.frame(80).image(in: space)!)
+        update = await engine.add(F.frame(80).image(in: space)!, at: 3)
         #expect(update.state != .lost && update.height == 160)
     }
 
@@ -52,7 +52,8 @@ import Testing
             selection: rect, ignoredTrailingColumns: 0))
         for (step, offset) in stride(from: 20, through: 240, by: 20).enumerated() {
             for phase in 0..<2 {
-                let update = await engine.add(F.frame(offset, phase: step * 2 + phase + 1, video: video).image(in: space)!)
+                let update = await engine.add(F.frame(offset, phase: step * 2 + phase + 1, video: video).image(in: space)!,
+                    at: Double(step * 2 + phase + 1) * 0.05)
                 #expect(update.state != .lost)
                 #expect(await engine.makeImage() != nil)
             }
@@ -68,12 +69,14 @@ import Testing
             else { #expect(pixel == F.pixel(x: sourceX, pageY: pageY)) }
         } }
         #expect(phases.count == 1)
-        var update = await engine.add(F.frame(600, phase: 50, video: video).image(in: space)!)
-        for _ in 0..<25 { update = await engine.add(F.frame(600, phase: 50, video: video).image(in: space)!) }
+        var update = await engine.add(F.frame(600, phase: 50, video: video).image(in: space)!, at: 2)
+        for index in 1...25 {
+            update = await engine.add(F.frame(600, phase: 50, video: video).image(in: space)!, at: 2 + Double(index) * 0.05)
+        }
         #expect(update.state == .lost)
         let recovery = videoStart == 160 ? 80 : 160
-        _ = await engine.add(F.frame(recovery, phase: 60, video: video).image(in: space)!)
-        update = await engine.add(F.frame(recovery, phase: 61, video: video).image(in: space)!)
+        _ = await engine.add(F.frame(recovery, phase: 60, video: video).image(in: space)!, at: 4)
+        update = await engine.add(F.frame(recovery, phase: 61, video: video).image(in: space)!, at: 4.05)
         #expect(update.state != .lost && update.height == recovery + 80 && update.engine == .buffered)
     }
 
@@ -290,11 +293,11 @@ import Testing
         }
         let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0, 0), selection: rect, ignoredTrailingColumns: 0))
         for (index, offset) in stride(from: 20, through: 600, by: 20).enumerated() {
-            _ = await engine.add(frame(offset, index + 1))
+            _ = await engine.add(frame(offset, index + 1), at: Double(index + 1) * 0.05)
         }
         let before = try #require(await engine.makeImage())
-        var update = await engine.add(frame(1000, 100))
-        for _ in 0..<25 { update = await engine.add(frame(1000, 100)) }
+        var update = await engine.add(frame(1000, 100), at: 2)
+        for index in 1...25 { update = await engine.add(frame(1000, 100), at: 2 + Double(index) * 0.05) }
         try #require(update.state == .lost && update.height == 680)
         let target = try #require(ScrollingCaptureRaster(image: await engine.recoveryRows(60)!, colorSpace: space))
         try #require(target.height == 38)
@@ -302,11 +305,11 @@ import Testing
             #expect(target.pixels[y * target.width + x] == F.pixel(x: x + 4, pageY: y + 660))
         } }
         #expect(await engine.makeImage()?.height == before.height)
-        _ = await engine.add(frame(600, 101))
-        update = await engine.add(frame(600, 102))
+        _ = await engine.add(frame(600, 101), at: 4)
+        update = await engine.add(frame(600, 102), at: 4.05)
         #expect(update.state != .lost && update.height == 680)
         for (index, offset) in stride(from: 620, through: 900, by: 20).enumerated() {
-            update = await engine.add(frame(offset, 103 + index))
+            update = await engine.add(frame(offset, 103 + index), at: 4.10 + Double(index) * 0.05)
             #expect(update.state != .lost)
         }
         #expect(await engine.makeImage()?.height == 980)

@@ -18,8 +18,14 @@ import Testing
             traceDirectory: directory))
         for record in document.records {
             let frame = try record.input.decoded()
-            _ = await engine.add(frame.image(in: colorSpace)!, at: record.time)
-            #expect(await engine.lastTraceRecord() == record, "Replay differs at sample \(record.index)")
+            if let idle = record.timing?.stages["idleObserved"] {
+                _ = await engine.noteIdle(at: idle)
+            } else {
+                _ = await engine.add(frame.image(in: colorSpace)!, at: record.time)
+            }
+            var actual = await engine.lastTraceRecord(), expected = record
+            actual?.timing = nil; expected.timing = nil
+            #expect(actual == expected, "Replay differs at sample \(record.index)")
         }
         let image = try #require(await engine.makeImage())
         #expect(image.height == document.records.last?.height)
@@ -48,7 +54,9 @@ import Testing
         _ = await engine.add(F.frame(240).image(in: space)!, at: Double(index + 1) * 0.05)
         _ = await engine.add(F.frame(240).image(in: space)!, at: Double(index + 2) * 0.05)
         let output = try #require(await engine.makeImage())
-        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        _ = await engine.lastTraceRecord() // Drain diagnostics explicitly; Done itself never waits.
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
         let document = try ScrollingCaptureTrace.read(file)
         #expect(document.savedAfterLoss && document.savedOnDone)
         #expect(document.records.count == index + 2 && document.records.last?.height == output.height)
@@ -60,6 +68,82 @@ import Testing
         #expect(document.records.allSatisfy { $0.changedInPlace.count == F.height && $0.maximumChannelDifference.count == F.height })
         #expect(document.records.last?.input.columns == document.records.last?.matchingColumns)
         try await replay(document)
+    }
+
+    @Test("Numeric source/stage timings are retained; repeated recovery failures write only once until Done")
+    func timingsAndWrites() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
+            ignoredTrailingColumns: 0, traceDirectory: directory))
+        _ = await engine.add(F.frame(20).image(in: space)!, at: 10,
+            timing: .init(sequence: 7, displayTime: 10, callbackTime: 10.01,
+                engineEnqueued: 10.02, droppedSinceLast: 2, status: 0))
+        await engine.noteTiming(.init(stages: ["uiPublished": 10.03]))
+        let timing = try #require(await engine.lastTraceRecord()?.timing)
+        #expect(timing.sequence == 7 && timing.droppedSinceLast == 2 && timing.displayTime == 10)
+        #expect(timing.stages["uiPublished"] == 10.03)
+        for stage in ["engine", "decode", "hash", "r7", "rowStats", "compression", "recordEncode"] {
+            let start = try #require(timing.stages[stage + "Started"])
+            let end = try #require(timing.stages[stage + "Finished"])
+            #expect(end >= start)
+        }
+        for index in 1...25 { _ = await engine.add(F.frame(1000).image(in: space)!, at: 11 + Double(index) * 0.05) }
+        _ = await engine.lastTraceRecord()
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
+        #expect(try ScrollingCaptureTrace.read(file).writeTimings?.count == 1)
+        _ = await engine.makeImage()
+        _ = await engine.lastTraceRecord()
+        #expect(try ScrollingCaptureTrace.read(file).writeTimings?.count == 2)
+        let writes = try PropertyListDecoder().decode([[String: TimeInterval]].self,
+            from: Data(contentsOf: file.appendingPathExtension("timing")))
+        #expect(writes.count == 2)
+        #expect(writes.allSatisfy { ($0["fileWriteFinished"] ?? 0) >= ($0["fileWriteStarted"] ?? .infinity) })
+    }
+
+    @Test("Trace queue exhaustion omits diagnostics explicitly, without retaining uncapped frames")
+    func queuedByteCap() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let frame = F.frame(0)
+        let writer = ScrollingCaptureTraceWriter(first: frame,
+            selection: .init(columns: 0..<F.width, rows: 0..<F.height), ignoredTrailingColumns: 0,
+            maximumHeight: 1000, colorSpace: space, directory: directory, maximumQueuedBytes: frame.byteCount)
+        _ = await writer.document()
+        writer.append(.init(index: 1, time: 1, old: frame, frame: frame, viewport: 0..<F.height,
+            contentRows: nil, engine: "buffered", state: "lost", height: F.height, events: [],
+            recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil, timing: .init()))
+        let document = try #require(await writer.document())
+        #expect(document.omittedSamples == 1 && document.records.isEmpty && document.savedAfterLoss)
+        #expect(document.lastOmittedEvent?.contains("traceQueueFull") == true)
+    }
+
+    @Test("Stopping on recovery rows then sending only idle recovers on one rest look")
+    func idleRecovery() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
+            ignoredTrailingColumns: 0, traceDirectory: directory))
+        for (index, offset) in [20, 40, 60].enumerated() {
+            _ = await engine.add(F.frame(offset, phase: index, video: 180..<300).image(in: space)!, at: Double(index))
+        }
+        #expect(await engine.engine == .buffered)
+        _ = await engine.add(F.frame(1000).image(in: space)!, at: 3)
+        _ = await engine.noteIdle(at: 3.2)
+        #expect(await engine.noteIdle(at: 4.2).state == .lost)
+        #expect(await engine.add(F.frame(60, phase: 2, video: 180..<300).image(in: space)!, at: 5).state == .lost)
+        #expect(await engine.noteIdle(at: 5.2).state != .lost)
+        let recovered = try #require(await engine.lastTraceRecord())
+        #expect(recovered.events.contains { $0.hasPrefix("recovery: 60;") }, "\(recovered.events)")
+        #expect(recovered.timing?.stages["idleObserved"] == 5.2)
+        for index in 1...20 { #expect(await engine.noteIdle(at: 5.2 + Double(index) * 0.05).state != .lost) }
+        #expect(await engine.lastTraceRecord()?.index == recovered.index)
+        _ = await engine.makeImage()
+        _ = await engine.lastTraceRecord()
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
+        try await replay(ScrollingCaptureTrace.read(file))
     }
 
     @Test("Traces save only after loss; capped history is explicitly incomplete and pruned")
@@ -104,5 +188,30 @@ import Testing
     func externalTrace() async throws {
         let path = try #require(ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_TRACE"])
         try await replay(ScrollingCaptureTrace.read(URL(fileURLWithPath: path)))
+    }
+
+    @Test("Private direction regression grows past the repeated-post rival and keeps complete source rows",
+          .enabled(if: ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_DIRECTION_TRACE"] != nil))
+    func externalDirectionTrace() async throws {
+        let path = try #require(ProcessInfo.processInfo.environment["SUKUSHO_SCROLL_DIRECTION_TRACE"])
+        let document = try ScrollingCaptureTrace.read(URL(fileURLWithPath: path))
+        let colorSpace = document.colorProfile.flatMap { CGColorSpace(iccData: $0 as CFData) } ?? space
+        let first = try document.first.decoded()
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first.image(in: colorSpace)!,
+            selection: .init(columns: document.selectionColumns, rows: document.selectionRows),
+            ignoredTrailingColumns: document.ignoredTrailingColumns, traceDirectory: nil))
+        var maximum = 0
+        for record in document.records {
+            let frame = try record.input.decoded()
+            let update = await engine.add(frame.image(in: colorSpace)!, at: record.time)
+            maximum = max(maximum, update.height)
+            if record.index == 8 {
+                let image = try #require(await engine.makeImage())
+                let output = try #require(ScrollingCaptureRaster(image: image, colorSpace: colorSpace))
+                try #require(output.height >= 2506 && output.width == frame.width && frame.height == 1084)
+                #expect(Array(output.pixels[(1422 * output.width)..<(2506 * output.width)]) == frame.pixels)
+            }
+        }
+        #expect(maximum >= 2506)
     }
 }
