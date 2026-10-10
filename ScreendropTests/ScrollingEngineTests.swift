@@ -1,10 +1,69 @@
 import CoreGraphics
+import Foundation
 import Testing
 
 @Suite struct ScrollingEngineTests {
     private typealias F = ScrollingReworkFixture
     private let rect = ScrollingCaptureOutputRect(columns: 4..<44, rows: 60..<140)
     private let space = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    @Test("A startup redraw waits silently through idle, then accepts the first scroll", arguments: [1, 3])
+    func startupRedraw(level: Int) async throws {
+        func frame(_ offset: Int, redraw: Int) -> CGImage {
+            let pixels = (0..<F.height).flatMap { y in (0..<F.width).map { x -> UInt32 in
+                let pageY = offset + y
+                if x == 0 { return redraw == 0 ? 0xff111111 : 0xff222222 }
+                if pageY % 20 >= 12 { return 0xffffffff }
+                if pageY % 20 == 0 { return x % 4 == 0 ? 0xff555555 : 0xffeeeeee }
+                let pixel = F.pixel(x: x, pageY: pageY)
+                if (17..<34).contains(pageY), (8..<14).contains(x) {
+                    return (pixel & 0xffffff00) | UInt32(min(255, Int(pixel & 255) + redraw))
+                }
+                return pixel
+            } }
+            return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = frame(0, redraw: 0), redrawn = frame(0, redraw: level)
+        let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
+        #expect(await legacy.add(redrawn) == .unchanged)
+        let position = try #require(await legacy.registration)
+        #expect(position.offset == 0 && !position.isStatic)
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first,
+            ignoredTrailingColumns: 0, traceDirectory: directory))
+        #expect(await engine.add(redrawn, at: 1).state == .pending)
+        let deferred = try #require(await engine.lastTraceRecord())
+        #expect(deferred.contentRows == nil && deferred.matchingColumns == [0..<F.width])
+        for time in [1.2, 1.4, 1.8, 2.2, 2.6, 5.0] {
+            #expect(await engine.noteIdle(at: time).state == .pending)
+            #expect(await engine.makeImage()?.height == F.height)
+        }
+        for (index, offset) in [20, 40].enumerated() {
+            let update = await engine.add(frame(offset, redraw: level), at: 6 + Double(index) * 0.05)
+            #expect(update.state == .appended && update.height == F.height + offset)
+        }
+        _ = await engine.lastTraceRecord()
+    }
+
+    @Test("An unchanged negative-offset startup backscroll still reaches registration")
+    func startupBackscroll() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = F.frame(60).image(in: space)!
+        var pixels = F.frame(40).pixels
+        pixels[70 * F.width + 10] ^= 1
+        let back = ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
+        let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
+        #expect(await legacy.add(back) == .unchanged)
+        let position = try #require(await legacy.registration)
+        #expect(position.offset == -20 && !position.isStatic)
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first,
+            ignoredTrailingColumns: 0, traceDirectory: directory))
+        _ = await engine.add(back, at: 1)
+        let record = try #require(await engine.lastTraceRecord())
+        #expect(record.contentRows != nil && record.events.contains { $0.hasPrefix("registration:") })
+    }
 
     @Test("Legacy redraw dispatch stops at two levels per channel", arguments: [2, 3])
     func redrawDispatch(level: Int) async throws {
