@@ -12,6 +12,9 @@ struct ScrollingCaptureRecoveryStrip: View {
     let hasRecovered: Bool
     let isPausedForVideo: Bool
     let onContinue: () -> Void
+    /// A new part already started: scrolling back joins the parts, and
+    /// carrying on is fine too.
+    var joinsParts = false
 
     @Environment(\.displayScale) private var displayScale
 
@@ -44,13 +47,14 @@ struct ScrollingCaptureRecoveryStrip: View {
             .frame(height: 24)
             Text(isPausedForVideo ? Self.pauseMessage : hasRecovered
                  ? "Continue scrolling to capture."
-                 : "Scroll back to where you left off.")
+                 : joinsParts ? "Scroll back here to join the parts, or keep going." : "Scroll back to where you left off.")
                 .font(.callout)
                 .foregroundStyle(BarMetrics.activeTint)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(height: 48, alignment: .topLeading)
                 .accessibilityLabel(isPausedForVideo ? "Scrolling capture paused. \(Self.pauseMessage)" : hasRecovered
                     ? "Frames line up again. Continue scrolling to capture."
+                    : joinsParts ? "A new part started. Scroll back to the rows in the preview to join the parts, or keep going."
                     : "Scroll back to the last captured rows shown in the preview.")
             Group {
                 if let target {
