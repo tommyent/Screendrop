@@ -278,6 +278,13 @@ actor ScrollingCaptureEngine {
                     observedMotionRows = Set(viewport.filter {
                         viewport.contains($0 + delta) && !old.sameRow($0 + delta, as: new, at: $0)
                     }.map { $0 + delta })
+                    // Rows R7's exact shift carried are page witnesses, in the old
+                    // frame's coordinates where registration starts. A page handing
+                    // over on its first move has no others to place moving frames by.
+                    pageWitnessRows = Set(viewport.filter {
+                        viewport.contains($0 + delta) && old.sameRow($0 + delta, as: new, at: $0)
+                            && !old.sameRow($0 + delta, as: new, at: $0 + delta)
+                    }.map { $0 + delta })
                 }
             }
         }
