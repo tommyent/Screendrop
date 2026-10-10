@@ -28,13 +28,4 @@ enum ScrollingReworkFixture {
         } }
         return ScrollingCaptureRaster(width: width, height: height, pixels: pixels)!
     }
-    static func placement(_ offset: Int, index: Int, phase: Int = 0, video: Range<Int>? = nil,
-                          header: Int = 0, footer: Int = 0, pinned: Range<Int>? = nil) -> ScrollingCapturePlacement {
-        let a = frame(offset, phase: phase, video: video, header: header, footer: footer, pinned: pinned)
-        let b = frame(offset, phase: phase + 1, video: video, header: header, footer: footer, pinned: pinned)
-        let rows = header..<(height - footer)
-        let stable = Set(rows.filter { a.sameRow($0, as: b, at: $0) })
-        return ScrollingCapturePlacement(index: index, offset: offset, frame: b,
-            stableRows: stable, motionRows: Set(rows).subtracting(stable), contentRows: rows)
-    }
 }

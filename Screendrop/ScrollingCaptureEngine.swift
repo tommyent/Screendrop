@@ -43,16 +43,12 @@ extension ScrollingCaptureRaster {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
+}
 
-    nonisolated func columns(_ columns: Range<Int>) -> Self? {
-        let included = matchingColumns.compactMap { range -> Range<Int>? in
-            let lower = max(range.lowerBound, columns.lowerBound), upper = min(range.upperBound, columns.upperBound)
-            return lower < upper ? (lower - columns.lowerBound)..<(upper - columns.lowerBound) : nil
-        }
-        return Self(width: columns.count, height: height, pixels: (0..<height).flatMap {
-            Array(row($0).dropFirst(columns.lowerBound).prefix(columns.count))
-        }, matchingColumns: included)
-    }
+/// The exported rectangle inside a larger frame, in integer device pixels.
+nonisolated struct ScrollingCaptureOutputRect: Sendable {
+    let columns: Range<Int>
+    let rows: Range<Int>
 }
 
 /// R7 places every frame from exact rows. A frame it can't place waits while no
