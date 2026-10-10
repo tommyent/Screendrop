@@ -1,5 +1,7 @@
 # Logic tests
 
+Opted-in traces also save on Done or Cancel when a pending observation follows the last append or height change and progress has stalled for at least three seconds. These files mark the stall separately from loss; Cancel saves diagnostics without rendering an image. Session-end times use the same mach clock as frame timing.
+
 Scrolling failure traces are opt-in (`ScrollingCaptureTrace` in the app's defaults), local only, and git-ignored. After loss, they are saved under the app's Caches folder in `Sukusho/ScrollingCaptureTraces`, with exact BGRA inputs, matching masks, events, recovery attempts and row diagnostics. Limits: 64 MiB/session, 256 MiB total and seven days. A session exceeding the limit is marked incomplete; replay refuses to certify it. Traces contain screen content; inspect and share them deliberately.
 
 `ScrollingTraceTests.externalTrace` reads `SUKUSHO_SCROLL_TRACE=/absolute/path/session.scrolltrace` from the test runner environment and is skipped when unset. Set `TEST_RUNNER_SUKUSHO_SCROLL_TRACE` to forward that value through `xcodebuild test`. Replay checks every recorded event, mask, placement, recovery patch, height and the final output checksum. Generated traces exercise the same reader without screen access.

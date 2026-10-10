@@ -62,6 +62,7 @@ actor ScrollingCaptureEngine {
     private var direction = 0
     private var sampleIndex = 0
     private var previousTime: TimeInterval?
+    private var lastObservationTime: TimeInterval?
     private var buffer: ScrollingCaptureRegistrationBuffer?
     private var compositor: ScrollingCaptureBandCompositor?
     private var prefix: [UInt32] = []
@@ -126,6 +127,7 @@ actor ScrollingCaptureEngine {
         observedIdle = false
         let result = await process(image, at: time)
         previousTime = time
+        if time.isFinite { lastObservationTime = max(lastObservationTime ?? time, time) }
         mark("engineFinished")
         record(result, old: old, time: time, timing: timing)
         return result
@@ -136,6 +138,7 @@ actor ScrollingCaptureEngine {
 
     /// One idle rest look, never a fresh sample or settling observation.
     func noteIdle(at time: TimeInterval) async -> Update {
+        if time.isFinite { lastObservationTime = max(lastObservationTime ?? time, time) }
         guard let screenTime = previousTime, time.isFinite, time - screenTime >= 0.1 else {
             return update(recovering ? .lost : .pending)
         }
@@ -430,11 +433,13 @@ actor ScrollingCaptureEngine {
         return update(.pending)
     }
 
-    func makeImage() -> CGImage? {
+    func makeImage(at time: TimeInterval? = nil) -> CGImage? {
         let raster = renderedRaster()
-        trace?.finish(output: raster)
+        trace?.finish(at: time ?? lastObservationTime ?? ScrollingCaptureSampleTiming.now(), output: raster)
         return raster?.image(in: colorSpace)
     }
+
+    func finishTrace(at time: TimeInterval) { trace?.finish(at: time) }
 
     private func renderedRaster() -> ScrollingCaptureRaster? {
         guard engine == .buffered, let tail = compositor?.finish() else { return safeImage }

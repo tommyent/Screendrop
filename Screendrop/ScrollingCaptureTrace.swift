@@ -115,15 +115,16 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
         }
     }
 
-    func finish(output: ScrollingCaptureRaster?) {
+    func finish(at time: TimeInterval, output: ScrollingCaptureRaster? = nil) {
         let bytes = output?.byteCount ?? 0
+        let done = output != nil
         if reserve(bytes) {
             queue.async {
                 defer { self.release(bytes) }
-                self.trace?.save(done: true, output: output)
+                self.trace?.save(done: done, output: output, endedAt: time)
             }
         } else {
-            queue.async { self.trace?.save(done: true) }
+            queue.async { self.trace?.save(done: done, endedAt: time) }
         }
     }
 
@@ -228,6 +229,8 @@ nonisolated struct ScrollingCaptureTrace {
         var lastOmittedEvent: String?
         var savedAfterLoss = false
         var savedOnDone = false
+        var savedAfterStall: Bool? = nil
+        var endedAt: TimeInterval? = nil
         var outputChecksum: UInt64?
         var writeTimings: [[String: TimeInterval]]? = nil
     }
@@ -292,11 +295,14 @@ nonisolated struct ScrollingCaptureTrace {
         document.records[last].timing = current
     }
 
-    mutating func save(done: Bool = false, output: ScrollingCaptureRaster? = nil) {
-        guard sawLoss else { return }
+    mutating func save(done: Bool = false, output: ScrollingCaptureRaster? = nil, endedAt: TimeInterval? = nil) {
+        let stalled = endedAt.map { self.stalled(at: $0) } ?? false
+        guard sawLoss || stalled else { return }
         do {
-            document.savedAfterLoss = true
+            document.savedAfterLoss = sawLoss
             document.savedOnDone = document.savedOnDone || done
+            if stalled { document.savedAfterStall = true }
+            if let endedAt { document.endedAt = endedAt }
             if done { document.outputChecksum = output.map(Self.checksum) }
             let encoder = PropertyListEncoder()
             encoder.outputFormat = .binary
@@ -340,6 +346,23 @@ nonisolated struct ScrollingCaptureTrace {
         } catch {
             NSLog("Scrolling Capture trace could not be saved: %@", error.localizedDescription)
         }
+    }
+
+    private func stalled(at time: TimeInterval) -> Bool {
+        guard time.isFinite, let first = document.records.first else { return false }
+        var progressTime = first.timing?.stages["idleObserved"] ?? first.time
+        var height = document.selectionRows.count
+        var pending = false
+        for record in document.records {
+            if record.state == "appended" || record.height != height {
+                progressTime = record.timing?.stages["idleObserved"] ?? record.time
+                pending = false
+            } else if record.state == "pending" {
+                pending = true
+            }
+            height = record.height
+        }
+        return pending && time - progressTime >= 3
     }
 
     static func read(_ url: URL) throws -> Document {
