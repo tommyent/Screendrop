@@ -22,11 +22,15 @@ nonisolated struct ScrollingCaptureRaster: Equatable, Sendable {
         var hashes: [Int] = []
         var blanks: [Bool] = []
         for y in 0..<height {
-            let row = columns.flatMap { pixels[(y * width + $0.lowerBound)..<(y * width + $0.upperBound)] }
             var hasher = Hasher()
-            for pixel in row { hasher.combine(pixel) }
+            let first = pixels[y * width + columns[0].lowerBound]
+            var blank = true
+            for range in columns { for pixel in pixels[(y * width + range.lowerBound)..<(y * width + range.upperBound)] {
+                hasher.combine(pixel)
+                if pixel != first { blank = false }
+            } }
             hashes.append(hasher.finalize())
-            blanks.append(row.allSatisfy { $0 == row.first })
+            blanks.append(blank)
         }
         rowHashes = hashes
         blankRows = blanks
@@ -49,7 +53,8 @@ nonisolated struct ScrollingCaptureRaster: Equatable, Sendable {
     }
     func isBlank(_ y: Int) -> Bool { blankRows[y] }
     func using(columns: [Range<Int>]) -> Self? {
-        Self(width: width, height: height, pixels: pixels, matchingColumns: columns)
+        if columns == matchingColumns { return self }
+        return Self(width: width, height: height, pixels: pixels, matchingColumns: columns)
     }
 }
 
@@ -103,7 +108,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private var everMovingPageRows: Set<Int>
     private var settledObservations: [Int: Int] = [:]
     private var pageWitnessRows: Set<Int>?
-    private var noOverlapSince: Int?
+    private var noOverlapSince: TimeInterval?
     private let contentRows: Range<Int>
     private let minimumRows = 8
     private var lastTime: TimeInterval = -.infinity
@@ -150,9 +155,9 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
               frame.matchingColumns == initial.frame.matchingColumns else { return lose(.invalidSample) }
         lastIndex = index
         lastTime = time
-        let fresh = frame.pixels != previous.pixels
-        if fresh { freshIndex += 1 }
         let stable = Set(contentRows.filter { previous.sameRow($0, as: frame, at: $0) })
+        let fresh = stable.count != contentRows.count
+        if fresh { freshIndex += 1 }
         let sample = Sample(index: index, frame: frame, stable: stable,
                             motion: Set(contentRows).subtracting(stable), freshIndex: freshIndex)
         previous = frame
@@ -179,7 +184,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             var resolved = [placement]
             movingPageRows.formUnion(placement.motionRows.map { $0 + offset })
             everMovingPageRows.formUnion(placement.motionRows.map { $0 + offset })
-            observeSettledRows(placement)
+            if fresh { observeSettledRows(placement) }
             if pageWitnessRows != nil {
                 pageWitnessRows!.formUnion(placement.stableRows.map { $0 + offset })
             }
@@ -214,8 +219,8 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         case .absent, .ambiguous:
             let votes = keys.flatMap { votes($0, sample).values }
             if stable.filter({ !frame.isBlank($0) }).count >= minimumRows, votes.isEmpty {
-                noOverlapSince = noOverlapSince ?? index
-                if index - noOverlapSince! >= 20 { return lose(.noOverlap) }
+                noOverlapSince = noOverlapSince ?? time
+                if time - noOverlapSince! >= 1 { return lose(.noOverlap) }
                 return Event(state: .pending, pendingReason: .noOverlap)
             }
             noOverlapSince = nil
@@ -228,7 +233,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                 return Event(state: .pending, pendingReason: .motion)
             }
             // Repeated pixels may prove rest, but cannot spend or renew the motion budget.
-            if unresolved.last?.frame.pixels != frame.pixels { unresolved.append(sample) }
+            if unresolved.last?.freshIndex != freshIndex { unresolved.append(sample) }
             trimKeys()
             if bufferedBytes > maximumBufferedBytes { return lose(.bufferExhausted) }
             if let first = unresolved.first, freshIndex - first.freshIndex >= maximumPendingSamples {
@@ -241,6 +246,11 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     /// Recovery drops unresolved samples; they must not reappear after Continue.
     mutating func discardUnresolved() { unresolved.removeAll(); isLost = false; noOverlapSince = nil; direction = 0 }
     mutating func clearDirection() { direction = 0 }
+
+    mutating func noteIdle(at time: TimeInterval) -> Event {
+        if let noOverlapSince, time.isFinite, time - noOverlapSince >= 1 { return lose(.noOverlap) }
+        return Event(state: isLost ? .lost : .pending)
+    }
 
     private mutating func trimKeys() {
         while keys.count > 1, bufferedBytes > maximumBufferedBytes { keys.removeFirst() }
