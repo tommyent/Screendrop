@@ -206,6 +206,10 @@ actor ScrollingCaptureEngine {
             }
             if let position = await legacy.registration {
                 note("legacy position: \(position.offset); static: \(position.isStatic); minor: \(position.hasOnlyMinorRedraw)")
+                // A redraw at rest has no displaced page witnesses; wait for R7 to move.
+                if buffer == nil, result == .unchanged, position.offset == safeOffset, !position.isStatic {
+                    return update(.pending)
+                }
                 let body = (position.rows.lowerBound + selection.rows.lowerBound)..<(position.rows.upperBound + selection.rows.lowerBound)
                 let legacyOutput = position.isStatic || (result == .appended && position.hasOnlyMinorRedraw)
                 if buffer == nil || legacyOutput {
