@@ -44,25 +44,39 @@ import Testing
         var p = pacer()
         var now = 10.0
         var actions: [AutoScrollPacer.Action] = []
-        for _ in 0..<AutoScrollPacer.maximumUnstitchedSteps {
+        for _ in 0..<AutoScrollPacer.maximumStepsWithoutProgress {
             // A frame just now, so the view never settles; the step times out.
             now += AutoScrollPacer.stepTimeout
             actions.append(p.update(height: 1000, lastFrameTime: now - 0.01, now: now))
         }
-        #expect(actions == Array(repeating: .step, count: AutoScrollPacer.maximumUnstitchedSteps - 1) + [.endOfPage])
+        #expect(actions == Array(repeating: .step, count: AutoScrollPacer.maximumStepsWithoutProgress - 1) + [.endOfPage])
+    }
+
+    @Test("Changed and still steps share one budget: never more than two steps since the last progress")
+    func mixedNoProgress() {
+        // Sol's review case: the first step changes the view with nothing
+        // stitched, the second changes nothing. Separate counters let a third
+        // step through.
+        var p = pacer()
+        #expect(p.update(height: 1000, lastFrameTime: 10.1, now: 10.6) == .step)
+        #expect(p.update(height: 1000, lastFrameTime: 10.1, now: 11.7) == .endOfPage)
+        // The other order: unanswered first, then a changed view with nothing stitched.
+        var q = pacer()
+        #expect(q.update(height: 1000, lastFrameTime: 9, now: 11) == .step)
+        #expect(q.update(height: 1000, lastFrameTime: 11.1, now: 11.6) == .endOfPage)
     }
 
     @Test("Stitching again after re-covering kept rows resets the allowance")
     func recoversAfterUnstitched() {
         var p = pacer()
         var now = 10.0
-        for _ in 0..<(AutoScrollPacer.maximumUnstitchedSteps - 1) {
+        for _ in 0..<(AutoScrollPacer.maximumStepsWithoutProgress - 1) {
             now += AutoScrollPacer.stepTimeout
             #expect(p.update(height: 1000, lastFrameTime: now - 0.01, now: now) == .step)
         }
         now += 0.5
         #expect(p.update(height: 1100, lastFrameTime: now - 0.25, now: now) == .step)
-        for _ in 0..<(AutoScrollPacer.maximumUnstitchedSteps - 1) {
+        for _ in 0..<(AutoScrollPacer.maximumStepsWithoutProgress - 1) {
             now += AutoScrollPacer.stepTimeout
             #expect(p.update(height: 1100, lastFrameTime: now - 0.25, now: now) == .step)
         }

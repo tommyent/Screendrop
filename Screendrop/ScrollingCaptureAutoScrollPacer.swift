@@ -17,13 +17,13 @@ import Foundation
 /// - The view went still (no new frame for `settleTime`), or the step ran
 ///   out of time: most of a step stitched is an app scrolling a little less
 ///   than asked, so carry on; a smaller remainder is the end of the page.
-/// - Nothing on screen changed since the step: the page didn't move. One
-///   retry, then the end of the page.
-/// - The view changed but nothing new was stitched: rows already captured
-///   (auto-scroll started after scrolling back), a playing video at the end
-///   of the page, or a view the engine can't line up yet. These can't be told
-///   apart, so allow one more step and then hand back: the view still
-///   overlaps the last stitched rows, so scrolling back stays short.
+/// - Nothing on screen changed since the step (the page didn't move), or the
+///   view changed but nothing new was stitched (rows already captured after
+///   scrolling back, a playing video at the end of the page, or a view the
+///   engine can't line up yet): these can't be told apart, and they share
+///   one budget. At most `maximumStepsWithoutProgress` steps are ever posted
+///   since the last stitched progress, then auto-scroll hands back, so the
+///   view stays close to the last stitched rows and scrolling back is short.
 nonisolated struct AutoScrollPacer: Equatable {
     enum Action: Equatable {
         /// The step is still under way.
@@ -42,19 +42,19 @@ nonisolated struct AutoScrollPacer: Equatable {
     static let stepTimeout: TimeInterval = 1.5
     /// A step after which nothing on screen changed counts as unanswered.
     static let responseTime: TimeInterval = 1
-    /// Two steps of a quarter region each: never more than half a region past
-    /// what was stitched. On a playing video that blocks registration, five
-    /// carried the page a region and a quarter past it (VM, 2026-10-10).
+    /// Steps posted since the last stitched progress, the one in flight
+    /// included: two quarter-region steps keep the view within half a region
+    /// of what was stitched. Five carried the page a region and a quarter
+    /// past it on a playing video that blocks registration (VM, 2026-10-10).
     /// ponytail: re-covering rows captured before auto-scroll started stops
     /// after this too; the user presses again to go further.
-    static let maximumUnstitchedSteps = 2
+    static let maximumStepsWithoutProgress = 2
 
     /// One step's distance, in captured pixels.
     let stepPixels: Int
     private var postedAt: TimeInterval
     private var startHeight: Int
-    private var unansweredSteps = 0
-    private var unstitchedSteps = 0
+    private var stepsWithoutProgress = 1
 
     /// Starts pacing with the first step posted at `now`, at this height.
     /// Times are the stream's clock (`ScrollingCaptureSampleTiming.now()`).
@@ -68,28 +68,29 @@ nonisolated struct AutoScrollPacer: Equatable {
     /// the engine has seen. On `.step` the caller posts the next step now.
     mutating func update(height: Int, lastFrameTime: TimeInterval, now: TimeInterval) -> Action {
         let stitched = height - startHeight
-        let hasFreshFrame = lastFrameTime > postedAt
-        guard hasFreshFrame else {
+        guard lastFrameTime > postedAt else {
             guard now - postedAt >= Self.responseTime else { return .wait }
-            unansweredSteps += 1
-            return unansweredSteps >= 2 ? .endOfPage : next(height: height, now: now)
+            return noProgress(height: height, now: now)
         }
-        unansweredSteps = 0
-        if stitched >= stepPixels {
-            unstitchedSteps = 0
-            return next(height: height, now: now)
-        }
+        if stitched >= stepPixels { return progress(height: height, now: now) }
         guard now - lastFrameTime >= Self.settleTime || now - postedAt >= Self.stepTimeout else { return .wait }
-        if stitched * 2 >= stepPixels {
-            unstitchedSteps = 0
-            return next(height: height, now: now)
-        }
+        if stitched * 2 >= stepPixels { return progress(height: height, now: now) }
         if stitched > 0 { return .endOfPage }
-        unstitchedSteps += 1
-        return unstitchedSteps >= Self.maximumUnstitchedSteps ? .endOfPage : next(height: height, now: now)
+        return noProgress(height: height, now: now)
     }
 
-    private mutating func next(height: Int, now: TimeInterval) -> Action {
+    private mutating func progress(height: Int, now: TimeInterval) -> Action {
+        stepsWithoutProgress = 1
+        return post(height: height, now: now)
+    }
+
+    private mutating func noProgress(height: Int, now: TimeInterval) -> Action {
+        guard stepsWithoutProgress < Self.maximumStepsWithoutProgress else { return .endOfPage }
+        stepsWithoutProgress += 1
+        return post(height: height, now: now)
+    }
+
+    private mutating func post(height: Int, now: TimeInterval) -> Action {
         postedAt = now
         startHeight = height
         return .step
