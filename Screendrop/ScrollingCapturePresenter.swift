@@ -267,6 +267,9 @@ final class ScrollingCapturePresenter {
                 hasLostTrack = update.state == .lost
             }
             isJoiningParts = listener != nil && !hasLostTrack
+            stitchedHeight = heights.reduce(0, +) + bandRows * (parts.count - 1)
+            hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
+            if hasReachedLimit { source.stop() }
             if hasLostTrack, !wasLost || started, session.outcome == nil {
                 let recovering = listener?.engine ?? active
                 // The strip shows a few hundred points of the rows; a full-resolution
