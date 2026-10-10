@@ -5,6 +5,8 @@
 
 import AppKit
 import CoreGraphics
+import CoreMedia
+import CoreVideo
 import ScreenCaptureKit
 import SwiftUI
 
@@ -33,7 +35,7 @@ final class ScrollingCapturePresenter {
     private static let maximumHeight = 16_384
     /// Scrolling further than the region's height between two samples leaves
     /// no overlap to line frames up with, so sample often.
-    private static let sampleInterval: Duration = .milliseconds(50)
+    private static let frameInterval = CMTime(value: 1, timescale: 20)
     /// Right-edge strip left out of matching, where the overlay scroll bar
     /// appears while scrolling.
     private static let scrollBarWidth: CGFloat = 20
@@ -58,6 +60,10 @@ final class ScrollingCapturePresenter {
     @ObservationIgnored private var recoveryPanel: NSPanel?
     @ObservationIgnored private var recoveryHideTask: Task<Void, Never>?
     @ObservationIgnored private var region: CGRect = .zero
+    @ObservationIgnored private var stream: ScrollingCaptureStream?
+    /// Done's or Cancel's click, on the engine's clock: frames shown after
+    /// it aren't kept, and a trace ends there.
+    @ObservationIgnored private var cutoff: TimeInterval?
 
     /// How long the strip shows that frames line up again before it goes.
     private static let recoveredDisplayTime: Duration = .milliseconds(1500)
@@ -130,6 +136,9 @@ final class ScrollingCapturePresenter {
         configuration.width = max(1, Int((sourceRect.width * scale).rounded()))
         configuration.height = max(1, Int((sourceRect.height * scale).rounded()))
         configuration.showsCursor = false
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.minimumFrameInterval = Self.frameInterval
+        configuration.queueDepth = 3
 
         stitchedHeight = output.rows.count
         hasLostTrack = false
@@ -147,15 +156,31 @@ final class ScrollingCapturePresenter {
             RecordingAreaHighlightPresenter.shared.hide()
         }
 
+        let source = ScrollingCaptureStream()
+        stream = source
+        cutoff = nil
+        defer {
+            source.stop()
+            stream = nil
+        }
+        var events = source.events.makeAsyncIterator()
         let stitcher: ScrollingCaptureEngine
+        var lastSequence = 0
         do {
-            let firstFrame = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            guard let firstStitcher = ScrollingCaptureEngine(
-                firstFrame: firstFrame,
-                selection: output,
-                ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())
-            ) else { return nil }
+            try await source.start(filter: filter, configuration: configuration)
+            // Cancel, or Done before capturing starts, ends the stream here.
+            var first: ScrollingCaptureStream.Frame?
+            while first == nil, let event = await events.next() {
+                if case .frame(let frame) = event { first = frame }
+            }
+            guard let firstFrame = first, session.outcome == nil,
+                  let firstStitcher = ScrollingCaptureEngine(
+                      firstFrame: firstFrame.image,
+                      selection: output,
+                      ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())
+                  ) else { return nil }
             stitcher = firstStitcher
+            lastSequence = firstFrame.sequence
         } catch {
             FailureAlert.present(message: "Scrolling capture couldn't start", error: error)
             return nil
@@ -163,19 +188,32 @@ final class ScrollingCapturePresenter {
 
         isCapturing = true
         defer { isCapturing = false }
-        // ponytail: a sample that fails is skipped silently; a display that
-        // keeps failing leaves the height still until the user ends the session.
-        while session.outcome == nil {
-            try? await Task.sleep(for: Self.sampleInterval)
-            guard session.outcome == nil, !hasReachedLimit,
-                  let frame = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) else {
-                continue
-            }
+        // Frames and idle ticks arrive until Done, Cancel, the height limit
+        // or a stream error stops the stream.
+        events: while let event = await events.next() {
+            guard session.outcome != .cancelled, !hasReachedLimit else { break }
             let wasLost = hasLostTrack
-            let update = await stitcher.add(frame)
+            let update: ScrollingCaptureEngine.Update
+            switch event {
+            case .frame(let frame):
+                guard frame.time <= cutoff ?? .infinity else { break events }
+                update = await stitcher.add(frame.image, at: frame.time, timing: ScrollingCaptureSampleTiming(
+                    sequence: frame.sequence, displayTime: frame.time, callbackTime: frame.callbackTime,
+                    engineEnqueued: ScrollingCaptureSampleTiming.now(), droppedSinceLast: frame.sequence - lastSequence - 1,
+                    status: frame.status.rawValue))
+                lastSequence = frame.sequence
+            case .idle(let time):
+                // A still page sends nothing else, so idle ticks let the
+                // engine decide a jump it couldn't place is lost. After Done,
+                // only frames shown before the click count.
+                guard cutoff == nil else { continue }
+                update = await stitcher.noteIdle(at: time)
+            }
+            let uiStart = ScrollingCaptureSampleTiming.now()
             hasLostTrack = update.state == .lost
             stitchedHeight = update.height
             hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
+            if hasReachedLimit { source.stop() }
             if hasLostTrack, !wasLost, session.outcome == nil {
                 // The strip shows a few hundred points of the rows; a full-resolution
                 // copy would hold megabytes for as long as track stays lost.
@@ -205,9 +243,23 @@ final class ScrollingCapturePresenter {
             } else if wasLost, !hasLostTrack {
                 showRecovered()
             }
+            if case .frame = event {
+                await stitcher.noteTiming(ScrollingCaptureSampleTiming(sequence: lastSequence,
+                    stages: ["uiStart": uiStart, "uiEnd": ScrollingCaptureSampleTiming.now()]))
+            }
         }
 
-        guard session.outcome != .cancelled, let image = await stitcher.makeImage() else { return nil }
+        // ponytail: after a stream error the bar doesn't say capture stopped;
+        // it waits for Done, which keeps what's captured, or Cancel.
+        while session.outcome == nil {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        let endTime = cutoff ?? ScrollingCaptureSampleTiming.now()
+        guard session.outcome != .cancelled else {
+            await stitcher.finishTrace(at: endTime)
+            return nil
+        }
+        guard let image = await stitcher.makeImage(at: endTime) else { return nil }
         let capped = image.height > Self.maximumHeight
             ? image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: Self.maximumHeight))
             : image
@@ -219,14 +271,18 @@ final class ScrollingCapturePresenter {
     /// is nothing to keep, so it cancels instead.
     func finish() {
         if isCapturing {
+            cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
             session.finish()
+            stream?.stop()
         } else {
             cancel()
         }
     }
 
     func cancel() {
+        cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
         session.cancel()
+        stream?.stop()
         if isSelectingArea {
             RecordingAreaSelectionPresenter.shared.cancel()
         }
