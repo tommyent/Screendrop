@@ -5,8 +5,7 @@ import Vision
 /// Proposes how far the content moved up between two frames, in device pixels
 /// (`new[y] == last[y + offset]`), with Vision's translational registration.
 /// Only a candidate: it can be a few pixels off, so OffsetVerifier confirms it
-/// exactly. Frames are tightly packed BGRA (premultipliedFirst, little endian),
-/// as `ScrollingCaptureStitcher.pixels(of:colorSpace:)` draws them.
+/// exactly. Frames are `ScrollingCapturePixels`.
 nonisolated enum ScrollingCaptureOffsetEstimator {
     /// Side-by-side bands, each the full height: a pinned sidebar or a playing
     /// video spoils one or two of them, not the page's motion in the rest.
@@ -66,18 +65,10 @@ nonisolated enum ScrollingCaptureOffsetEstimator {
 
     /// The edge to Vision: CGImages of the packed bytes.
     private static func images(_ last: [UInt8], _ new: [UInt8], width: Int, height: Int) -> (last: CGImage, new: CGImage)? {
-        guard let last = image(last, width: width, height: height), let new = image(new, width: width, height: height)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let last = ScrollingCapturePixels.image(last, width: width, height: height, colorSpace: space),
+              let new = ScrollingCapturePixels.image(new, width: width, height: height, colorSpace: space)
         else { return nil }
         return (last, new)
-    }
-
-    private static func image(_ pixels: [UInt8], width: Int, height: Int) -> CGImage? {
-        guard pixels.count == width * height * 4,
-              let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
-                           | CGBitmapInfo.byteOrder32Little.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 }

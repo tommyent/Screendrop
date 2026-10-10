@@ -8,7 +8,7 @@
 // its page.json supplies selection and ignoredTrailingColumns.
 //
 // swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-run.swift \
-//   Screendrop/ScrollingCapture{Stitcher,FrameStitcher}.swift Screendrop/ScrollingCaptureOffset{Estimator,Verifier}.swift \
+//   Screendrop/ScrollingCapture{Stitcher,FrameStitcher,Registration}.swift Screendrop/ScrollingCaptureOffset{Estimator,Verifier}.swift \
 //   -o /tmp/scroll-corpus-run
 // /tmp/scroll-corpus-run <corpus dir> --matcher r7|estimator|vision-verify|stitcher [--compare <matcher>]
 //
@@ -124,7 +124,7 @@ final class StitcherMatcher: CorpusMatcher {
 
     func place(_ frame: CGImage, index: Int) async -> Claim {
         guard let pixels = VisionMatcher.pixels(frame) else { return Claim(against: reference, offset: nil) }
-        let placement = await stitcher.add(pixels)
+        let placement = await stitcher.add(pixels).placement
         let claim = Claim(against: reference, offset: placement.offset)
         if placement.isReference { reference = index }
         return claim

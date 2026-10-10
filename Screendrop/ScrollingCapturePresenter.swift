@@ -12,18 +12,15 @@ import SwiftUI
 
 /// Runs a scrolling capture: the user draws a region, scrolls the content
 /// under it, and clicks Done. Frames are sampled while they scroll and handed
-/// to `ScrollingCaptureEngine`, which places each one with R7's exact rows.
+/// to `ScrollingCaptureFeed`: Vision proposes each frame's offset, exact
+/// pixels confirm it, and a frame that doesn't fit is skipped until one does.
 ///
 /// The region stays highlighted for the whole session, with a small bar below
-/// it showing the stitched height and Done/Cancel. The app being scrolled
-/// keeps the keyboard throughout, so the bar's buttons - or pressing the
-/// shortcut again - are how a session ends.
-///
-/// The bar's auto-scroll button scrolls the region a step at a time instead
-/// (`ScrollingCaptureAutoScroller`). Scrolling by hand, moving the pointer off
-/// the bar, the end of the page, the height limit, a lost track or a new part
-/// hand the session back to the user; only Done finishes it. Auto-scroll can
-/// be started again in a new part, but never carries on across a break.
+/// it: capturing (the stitched height), waiting ("Scroll back a little", the
+/// latest frame didn't fit) or at the height limit, and Done/Cancel. The app
+/// being scrolled keeps the keyboard throughout, so the bar's buttons - or
+/// pressing the shortcut again - are how a session ends. The bar's auto-scroll
+/// button scrolls the region a step at a time instead (`ScrollingCaptureAutoScroller`).
 @Observable
 final class ScrollingCapturePresenter {
     static let shared = ScrollingCapturePresenter()
@@ -33,10 +30,9 @@ final class ScrollingCapturePresenter {
         let displayID: CGDirectDisplayID
         /// Pixels per point of the captured display.
         let scale: CGFloat
-        /// The rows of each break band in `image`, where parts that couldn't
-        /// be lined up meet.
-        let breaks: [Range<Int>]
     }
+
+    private enum Outcome { case done, cancelled }
 
     /// ponytail: stops growing at 16,384 px, the GPU texture limit on Apple
     /// silicon, because the editor isn't verified with taller images. Raise
@@ -51,60 +47,33 @@ final class ScrollingCapturePresenter {
 
     private(set) var isRunning = false
     private(set) var stitchedHeight = 0
-    /// The latest frame couldn't be lined up, usually from scrolling too far
-    /// between samples. Scrolling back to where it left off recovers.
-    private(set) var hasLostTrack = false
+    /// The latest frame didn't fit the last one placed; scrolling back a
+    /// little brings the view back to where it does.
+    private(set) var isWaiting = false
     /// The capture is as tall as it can get; only Done or Cancel are left.
     private(set) var hasReachedLimit = false
-    /// The end of the stitch so far, downscaled: what a capture that lost
-    /// track has to scroll back to, shown in the recovery strip.
-    private(set) var recoveryTarget: CGImage?
-    /// Frames line up again after track was lost; the strip says so briefly.
-    private(set) var hasRecovered = false
-    /// How many parts the capture has: a lost track starts a new one.
-    private(set) var partCount = 1
-    /// A new part just started; the bar says so for a moment.
-    private(set) var hasNewPart = false
-    /// The part before the latest break is back on track, so Done can join
-    /// the parts once its rows reach the next part's.
-    private(set) var isJoiningParts = false
-    /// The part being captured now can't line up its latest frame. Auto-scroll stops on it.
-    private(set) var isActivePartLost = false
     /// Screendrop is scrolling the region itself, a step at a time.
     private(set) var isAutoScrolling = false
-    /// Frames are coming in, so auto-scroll has something to follow. False
-    /// before capture starts and once the stream ends, even before Done.
+    /// Frames are coming in, so auto-scroll has something to follow.
     private(set) var canAutoScroll = false
     /// Auto-scroll was asked for without the Accessibility permission it
     /// needs to post scroll events; the user scrolls by hand.
     private(set) var needsScrollPermission = false
 
-    private(set) var session = ScrollingCaptureSession()
+    @ObservationIgnored private var outcome: Outcome?
     @ObservationIgnored private var isSelectingArea = false
     @ObservationIgnored private var isCapturing = false
     @ObservationIgnored private var panel: NSPanel?
-    @ObservationIgnored private var recoveryPanel: NSPanel?
-    @ObservationIgnored private var recoveryHideTask: Task<Void, Never>?
-    @ObservationIgnored private var newPartTask: Task<Void, Never>?
-    @ObservationIgnored private var region: CGRect = .zero
     @ObservationIgnored private var stream: ScrollingCaptureStream?
-    /// Done's or Cancel's click, on the engine's clock: frames shown after
-    /// it aren't kept, and a trace ends there.
+    /// Done's or Cancel's click, on the stream's clock: frames shown after it aren't kept.
     @ObservationIgnored private var cutoff: TimeInterval?
     @ObservationIgnored private var autoScroller: ScrollingCaptureAutoScroller?
-    /// The display time of the newest frame the engine has taken, which
+    /// The display time of the newest frame placed or skipped, which
     /// auto-scroll waits for before each step.
     @ObservationIgnored private var lastFrameTime: TimeInterval = 0
     /// macOS shows the Accessibility prompt at most once, so it's asked for
     /// on the first press only; after that the button opens Settings.
     @ObservationIgnored private var didRequestScrollPermission = false
-
-    /// How long the strip shows that frames line up again before it goes.
-    private static let recoveredDisplayTime: Duration = .milliseconds(1500)
-    /// How long the bar says a new part started.
-    private static let newPartDisplayTime: Duration = .seconds(2)
-
-    var isPausedForVideo: Bool { session.isPausedForVideo }
 
     private init() {}
 
@@ -117,7 +86,7 @@ final class ScrollingCapturePresenter {
             return nil
         }
         isRunning = true
-        session = ScrollingCaptureSession()
+        outcome = nil
         defer { isRunning = false }
 
         guard ScreenRecordingManager.ensureScreenCapturePermission(),
@@ -126,34 +95,25 @@ final class ScrollingCapturePresenter {
         }
         let pointerDisplayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
         guard let display = content.displays.first(where: { $0.displayID == pointerDisplayID }) ?? content.displays.first,
-              session.outcome == nil,
-              let rect = await selectArea(on: display),
-              session.outcome != .cancelled else {
+              outcome == nil, let rect = await selectArea(on: display), outcome != .cancelled else {
             return nil
         }
 
         // Screendrop's own windows are always left out, whatever the
         // app-windows preference says: the capture bar and highlight sit on
         // screen the whole time and must never end up in a frame.
-        let filter = ScreenRecordingCapture.displayFilter(
-            display: display,
-            content: content,
-            includesAppWindows: false
-        )
+        let filter = ScreenRecordingCapture.displayFilter(display: display, content: content, includesAppWindows: false)
         let screen = ActiveDisplayResolver.screen(for: display.displayID)
         // Whole points, so every frame maps 1:1 onto screen pixels with no
         // resampling. Stitching relies on rows matching exactly.
-        let selectionRect = ScreenRecordingManager.sourceRect(
-            forAppKitSelectionRect: rect,
-            screenFrame: screen?.frame,
-            contentRect: filter.contentRect
-        ).integral.intersection(filter.contentRect)
+        let selectionRect = ScreenRecordingManager.sourceRect(forAppKitSelectionRect: rect, screenFrame: screen?.frame,
+            contentRect: filter.contentRect).integral.intersection(filter.contentRect)
         let allowed = Set(content.windows.filter {
             $0.windowLayer == 0 && $0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier
         }.map(\.windowID))
         let displayBounds = CGDisplayBounds(display.displayID)
         let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, target: Bool)? in
+            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, isTarget: Bool)? in
                 guard let id = info[kCGWindowNumber as String] as? UInt32,
                       info[kCGWindowOwnerPID as String] as? Int32 != ProcessInfo.processInfo.processIdentifier,
                       (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
@@ -161,9 +121,8 @@ final class ScrollingCapturePresenter {
                       let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
                 return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id))
             }
-        let matching = ScrollingCaptureRegion.matching(selection: selectionRect, display: filter.contentRect,
-            frontToBackWindows: windows.map { (frame: $0.frame, isTarget: $0.target) })
-        let sourceRect = matching.rect
+        let sourceRect = ScrollingCaptureRegion.matching(selection: selectionRect, display: filter.contentRect,
+            frontToBackWindows: windows).rect
         let scale = max(1, CGFloat(filter.pointPixelScale))
         let output = ScrollingCaptureRegion.output(selection: selectionRect, matching: sourceRect, scale: scale)
         let configuration = SCStreamConfiguration()
@@ -176,18 +135,13 @@ final class ScrollingCapturePresenter {
         configuration.queueDepth = 3
 
         stitchedHeight = output.rows.count
-        hasLostTrack = false
+        isWaiting = false
         hasReachedLimit = false
-        recoveryTarget = nil
-        let recoveryPixelWidth = Int((ScrollingCaptureRecoveryStrip.imageSize.width * scale).rounded())
-        // Rows that fill the strip's image: downscaled to its width, or at
-        // native size when the selection is narrower than the strip.
-        let recoveryRows = Int((CGFloat(max(output.columns.count, recoveryPixelWidth))
-            * ScrollingCaptureRecoveryStrip.imageSize.height / ScrollingCaptureRecoveryStrip.imageSize.width).rounded())
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
         showPanel(below: rect, on: screen)
         defer {
-            hidePanel()
+            panel?.orderOut(nil)
+            panel = nil
             RecordingAreaHighlightPresenter.shared.hide()
         }
 
@@ -199,17 +153,14 @@ final class ScrollingCapturePresenter {
             stream = nil
         }
         var events = source.events.makeAsyncIterator()
-        // One for the whole session: every part's engine reads it.
-        let scrollInput = ScrollingCaptureScrollInput()
-        // Its monitors start before the stream, so no scroll before the first frame goes
-        // unheard; leaving by any path, a failed start or Cancel included, removes them.
-        autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, scrollInput: scrollInput, state: { [unowned self] in
-            .init(height: stitchedHeight, lastFrameTime: lastFrameTime, partCount: partCount,
-                  canContinue: session.outcome == nil && !hasReachedLimit && !isActivePartLost)
+        // Its monitors start before the stream; leaving by any path, a failed
+        // start or Cancel included, removes them.
+        autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, state: { [unowned self] in
+            .init(height: stitchedHeight, lastFrameTime: lastFrameTime,
+                  canContinue: outcome == nil && !hasReachedLimit && !isWaiting)
         }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
         defer { endAutoScroll() }
-        let stitcher: ScrollingCaptureEngine
-        var lastFrame: ScrollingCaptureStream.Frame?
+        let feed: ScrollingCaptureFeed
         do {
             try await source.start(filter: filter, configuration: configuration)
             // Cancel, or Done before capturing starts, ends the stream here.
@@ -217,16 +168,10 @@ final class ScrollingCapturePresenter {
             while first == nil, let event = await events.next() {
                 if case .frame(let frame) = event { first = frame }
             }
-            guard let firstFrame = first, session.outcome == nil,
-                  let firstStitcher = ScrollingCaptureEngine(
-                      firstFrame: firstFrame.image,
-                      at: firstFrame.time,
-                      selection: output,
-                      ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()),
-                      scrollInput: scrollInput
-                  ) else { return nil }
-            stitcher = firstStitcher
-            lastFrame = firstFrame
+            guard let firstFrame = first, outcome == nil,
+                  let firstFeed = ScrollingCaptureFeed(firstFrame: firstFrame.image, at: firstFrame.time, selection: output,
+                      ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())) else { return nil }
+            feed = firstFeed
         } catch {
             FailureAlert.present(message: "Scrolling capture couldn't start", error: error)
             return nil
@@ -234,95 +179,19 @@ final class ScrollingCapturePresenter {
 
         isCapturing = true
         defer { isCapturing = false }
-        // A lost track starts a new part from the current view, so capture
-        // keeps going. The part that lost track listens on: scrolling back to
-        // where it left off lets it catch up, and Done joins the parts
-        // seamlessly where the pixels prove they meet, with a band elsewhere.
-        var parts = [stitcher]
-        var heights = [stitchedHeight]
-        var listener: (engine: ScrollingCaptureEngine, index: Int)?
-        partCount = 1
-        isActivePartLost = false
-        isJoiningParts = false
-        let bandRows = Int((ScrollingCaptureBreakMark.bandPoints * scale).rounded())
         canAutoScroll = true
-        // Frames and idle ticks arrive until Done, Cancel, the height limit
-        // or a stream error stops the stream.
+        // Frames arrive until Done, Cancel, the height limit or a stream error
+        // stops the stream. Idle ticks say nothing moved, so there's nothing to place.
         events: while let event = await events.next() {
-            guard session.outcome != .cancelled, !hasReachedLimit else { break }
-            let wasLost = hasLostTrack
-            let active = parts[parts.count - 1]
-            let update: ScrollingCaptureEngine.Update
-            let heard: ScrollingCaptureEngine.Update?
-            switch event {
-            case .frame(let frame):
-                guard frame.time <= cutoff ?? .infinity else { break events }
-                update = await active.add(frame.image, at: frame.time)
-                heard = await listener?.engine.add(frame.image, at: frame.time)
-                lastFrameTime = frame.time
-                lastFrame = frame
-            case .idle(let time):
-                // A still page sends nothing else, so idle ticks let the
-                // engine decide a jump it couldn't place is lost. After Done,
-                // only frames shown before the click count.
-                guard cutoff == nil else { continue }
-                update = await active.noteIdle(at: time)
-                heard = await listener?.engine.noteIdle(at: time)
-            }
-            heights[parts.count - 1] = update.height
-            if let listener, let heard { heights[listener.index] = heard.height }
-            // Only a part that got somewhere starts another when it loses
-            // track. Scrolling back to join the parts takes the view above
-            // the newest part's first frame, and that part losing track then
-            // must not start yet another. A part that can't start (no frame
-            // yet, or the engine refuses it) leaves the capture lost, as
-            // before parts existed.
-            let broke = update.state == .lost && session.outcome == nil && update.height > output.rows.count
-            if broke, let frame = lastFrame,
-               let next = ScrollingCaptureEngine(firstFrame: frame.image, at: frame.time, selection: output,
-                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()), scrollInput: scrollInput) {
-                listener = (active, parts.count - 1)
-                parts.append(next)
-                heights.append(output.rows.count)
-                partCount = parts.count
-                showNewPart()
-            }
-            let started = broke && listener?.engine === active
-            if started {
-                hasLostTrack = true
-            } else if let heard {
-                hasLostTrack = heard.state == .lost
-            } else {
-                hasLostTrack = update.state == .lost
-            }
-            isJoiningParts = listener != nil && !hasLostTrack
-            isActivePartLost = update.state == .lost && !started
-            stitchedHeight = heights.reduce(0, +) + bandRows * (parts.count - 1)
-            hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
+            guard outcome != .cancelled, !hasReachedLimit else { break }
+            guard case .frame(let frame) = event else { continue }
+            guard frame.time <= cutoff ?? .infinity else { break events }
+            let update = await feed.add(frame.image, at: frame.time)
+            lastFrameTime = frame.time
+            stitchedHeight = update.height
+            isWaiting = update.placement == .skipped
+            hasReachedLimit = stitchedHeight >= Self.maximumHeight
             if hasReachedLimit { source.stop() }
-            if hasLostTrack, !wasLost || started, session.outcome == nil {
-                let recovering = listener?.engine ?? active
-                // The strip shows a few hundred points of the rows; a full-resolution
-                // copy would hold megabytes for as long as track stays lost.
-                func fitted(_ rows: CGImage?) -> CGImage? {
-                    guard let rows, rows.width > recoveryPixelWidth else { return rows }
-                    return try? AnnotationScenePreviewRenderer.downscaled(
-                        rows, scale: CGFloat(recoveryPixelWidth) / CGFloat(rows.width),
-                        colorSpace: rows.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!)
-                }
-                recoveryTarget = fitted(await recovering.recoveryRows(recoveryRows))
-                showRecoveryStrip()
-                if let recoveryPanel {
-                    NSAccessibility.post(element: recoveryPanel, notification: .announcementRequested, userInfo: [
-                        .announcement: partCount > 1
-                            ? "Couldn’t line up, so a new part started. Scroll back to join the parts, or keep going. Done keeps both."
-                            : "Scroll back to where you left off. Done keeps what’s captured.",
-                        .priority: NSAccessibilityPriorityLevel.high.rawValue
-                    ])
-                }
-            } else if wasLost, !hasLostTrack {
-                showRecovered()
-            }
         }
         // The stream has ended (Done, Cancel, the height limit or an error):
         // nothing more can be captured, so nothing more may be scrolled.
@@ -330,28 +199,13 @@ final class ScrollingCapturePresenter {
 
         // ponytail: after a stream error the bar doesn't say capture stopped;
         // it waits for Done, which keeps what's captured, or Cancel.
-        while session.outcome == nil {
+        while outcome == nil {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        guard session.outcome != .cancelled else { return nil }
-        var images: [CGImage] = []
-        for part in parts {
-            guard let image = await part.makeImage() else { return nil }
-            images.append(image)
-        }
-        guard images.count > 1 else {
-            let capped = images[0].height > Self.maximumHeight
-                ? images[0].cropping(to: CGRect(x: 0, y: 0, width: images[0].width, height: Self.maximumHeight))
-                : images[0]
-            return capped.map { Capture(image: $0, displayID: display.displayID, scale: scale, breaks: []) }
-        }
-        let space = images[0].colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        let rasters = images.compactMap { ScrollingCaptureRaster(image: $0, colorSpace: space) }
-        guard rasters.count == images.count,
-              let joined = ScrollingCaptureBreakMark.join(rasters, scale: scale, colorSpace: space,
-                  maximumHeight: Self.maximumHeight),
-              let image = joined.raster.image(in: space) else { return nil }
-        return Capture(image: image, displayID: display.displayID, scale: scale, breaks: joined.bands)
+        guard outcome != .cancelled, let image = await feed.makeImage() else { return nil }
+        let capped = image.height > Self.maximumHeight
+            ? image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: Self.maximumHeight)) : image
+        return capped.map { Capture(image: $0, displayID: display.displayID, scale: scale) }
     }
 
     /// Ends the session, keeping what was captured. Until frames are being
@@ -361,7 +215,7 @@ final class ScrollingCapturePresenter {
         autoScroller?.stop()
         if isCapturing {
             cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
-            session.finish()
+            outcome = outcome ?? .done
             stream?.stop()
         } else {
             cancel()
@@ -371,7 +225,7 @@ final class ScrollingCapturePresenter {
     func cancel() {
         autoScroller?.stop()
         cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
-        session.cancel()
+        outcome = .cancelled
         stream?.stop()
         if isSelectingArea {
             RecordingAreaSelectionPresenter.shared.cancel()
@@ -427,29 +281,8 @@ final class ScrollingCapturePresenter {
 
     private func showPanel(below rect: CGRect, on screen: NSScreen?) {
         let size = ScrollingCaptureBar.panelSize
-        let panel = Self.makePanel(ScrollingCaptureBar(), size: size, origin: Self.panelOrigin(size: size, below: rect, on: screen))
-        panel.orderFrontRegardless()
-        self.panel = panel
-        region = rect
-    }
-
-    private func hidePanel() {
-        newPartTask?.cancel()
-        hasNewPart = false
-        hideRecoveryStrip()
-        recoveryPanel = nil
-        recoveryTarget = nil
-        panel?.orderOut(nil)
-        panel = nil
-    }
-
-    private static func makePanel(_ content: some View, size: CGSize, origin: CGPoint) -> NSPanel {
-        let panel = ScrollingCapturePanel(
-            contentRect: CGRect(origin: origin, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
+        let panel = ScrollingCapturePanel(contentRect: CGRect(origin: Self.panelOrigin(size: size, below: rect, on: screen),
+            size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         PreviewWindowCaptureExclusion.shared.register(window: panel)
         panel.backgroundColor = .clear
         panel.isOpaque = false
@@ -458,8 +291,7 @@ final class ScrollingCapturePresenter {
         panel.isReleasedWhenClosed = false
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        let hostingView = NSHostingView(rootView: content)
+        let hostingView = NSHostingView(rootView: ScrollingCaptureBar())
         // Sized like the recording bar's panel: the panel sets the size and
         // the hosting view follows it, so the two never negotiate sizes
         // through constraints. That negotiation is what AppKit's constraint
@@ -469,52 +301,8 @@ final class ScrollingCapturePresenter {
         hostingView.autoresizingMask = [.width, .height]
         hostingView.frame = CGRect(origin: .zero, size: size)
         panel.contentView = hostingView
-        return panel
-    }
-
-    // MARK: - Recovery strip
-
-    /// A panel of its own, shown only while track is lost and briefly after,
-    /// so the bar's fixed-size panel never changes and nothing sits on screen
-    /// during a normal capture.
-    private func showRecoveryStrip() {
-        guard let panel else { return }
-        recoveryHideTask?.cancel()
-        hasRecovered = false
-        let size = ScrollingCaptureRecoveryStrip.panelSize
-        let strip = recoveryPanel ?? Self.makePanel(ScrollingCaptureRecoveryContent(), size: size, origin: .zero)
-        strip.setFrameOrigin(ScrollingCaptureRegion.recoveryPanelOrigin(size: size, bar: panel.frame, region: region,
-            visible: panel.screen?.visibleFrame ?? panel.frame, margin: ScrollingCaptureBar.margin))
-        strip.orderFrontRegardless()
-        recoveryPanel = strip
-    }
-
-    private func showNewPart() {
-        hasNewPart = true
-        newPartTask?.cancel()
-        newPartTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.newPartDisplayTime)
-            guard !Task.isCancelled else { return }
-            self?.hasNewPart = false
-        }
-    }
-
-    private func showRecovered() {
-        guard recoveryPanel?.isVisible == true else { return }
-        hasRecovered = true
-        recoveryHideTask?.cancel()
-        recoveryHideTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.recoveredDisplayTime)
-            guard !Task.isCancelled else { return }
-            self?.hideRecoveryStrip()
-        }
-    }
-
-    private func hideRecoveryStrip() {
-        recoveryHideTask?.cancel()
-        recoveryHideTask = nil
-        recoveryPanel?.orderOut(nil)
-        hasRecovered = false
+        panel.orderFrontRegardless()
+        self.panel = panel
     }
 
     /// Centered under the region, else above it, else inside its bottom edge.
@@ -523,21 +311,13 @@ final class ScrollingCapturePresenter {
         let x = min(max(rect.midX - size.width / 2, visible.minX), visible.maxX - size.width)
         let below = rect.minY - size.height
         let above = rect.maxY
-        let y = if below >= visible.minY {
-            below
-        } else if above + size.height <= visible.maxY {
-            above
-        } else {
-            rect.minY
-        }
+        let y = if below >= visible.minY { below } else if above + size.height <= visible.maxY { above } else { rect.minY }
         return CGPoint(x: x, y: y)
     }
 }
 
 private final class ScrollingCapturePanel: NSPanel {
-    override var canBecomeKey: Bool {
-        true
-    }
+    override var canBecomeKey: Bool { true }
 }
 
 private struct ScrollingCaptureBar: View {
@@ -564,8 +344,7 @@ private struct ScrollingCaptureBar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.hasNewPart || presenter.hasLostTrack && presenter.partCount == 1
-                        ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
+                    .foregroundStyle(presenter.isWaiting ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.monospacedDigit())
@@ -615,62 +394,27 @@ private struct ScrollingCaptureBar: View {
         .padding(Self.margin)
     }
 
-    /// A lost track in the part being captured, or the height limit, stops
-    /// auto-scroll, and it can't start again until the user has dealt with
-    /// either; pausing always works. An earlier part waiting for a join
-    /// doesn't block it. Once the stream has ended there is nothing to follow.
+    /// Waiting or the height limit stops auto-scroll, and it can't start again
+    /// until the user has dealt with either; pausing always works.
     private var canToggleAutoScroll: Bool {
-        presenter.isAutoScrolling
-            || (presenter.canAutoScroll && !presenter.isActivePartLost && !presenter.hasReachedLimit
-                && !presenter.isPausedForVideo)
+        presenter.isAutoScrolling || presenter.canAutoScroll && !presenter.isWaiting && !presenter.hasReachedLimit
     }
 
     private var autoScrollHelp: String {
         if presenter.isAutoScrolling { return "Pause auto-scroll" }
-        if presenter.needsScrollPermission {
-            return "Auto-scroll needs Accessibility. Click to open Privacy & Security."
-        }
+        if presenter.needsScrollPermission { return "Auto-scroll needs Accessibility. Click to open Privacy & Security." }
         return "Auto-scroll"
     }
 
     private var title: String {
-        if presenter.hasReachedLimit {
-            "Maximum height reached"
-        } else if presenter.isPausedForVideo {
-            "Capture paused"
-        } else if presenter.hasNewPart {
-            "New part started"
-        } else if presenter.hasLostTrack && presenter.partCount == 1 {
-            "Scroll back to where you left off"
-        } else {
-            "Scroll to capture"
-        }
+        presenter.hasReachedLimit ? "Maximum height reached"
+            : presenter.isWaiting ? "Scroll back a little" : "Scroll to capture"
     }
 
     private var detail: String {
-        if presenter.isPausedForVideo { return "Done keeps what’s captured" }
-        if presenter.hasNewPart { return presenter.partCount == 2 ? "Done keeps both parts" : "Done keeps every part" }
-        if presenter.hasLostTrack && presenter.partCount == 1 && !presenter.hasReachedLimit {
-            return "Couldn't line this view up"
-        }
-        let height = presenter.partCount == 1 ? "\(presenter.stitchedHeight.formatted()) px tall"
-            : presenter.isJoiningParts ? "Joining the parts"
-            : "Part \(presenter.partCount) · \(presenter.stitchedHeight.formatted()) px tall"
+        if presenter.isWaiting && !presenter.hasReachedLimit { return "This view doesn’t line up yet" }
+        let height = "\(presenter.stitchedHeight.formatted()) px tall"
         guard let finishShortcut else { return height }
         return "\(height) · \(finishShortcut) to finish"
-    }
-}
-
-private struct ScrollingCaptureRecoveryContent: View {
-    @State private var presenter = ScrollingCapturePresenter.shared
-
-    var body: some View {
-        ScrollingCaptureRecoveryStrip(
-            target: presenter.recoveryTarget,
-            hasRecovered: presenter.hasRecovered,
-            isPausedForVideo: false,
-            onContinue: {},
-            joinsParts: presenter.partCount > 1
-        )
     }
 }

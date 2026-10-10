@@ -82,6 +82,12 @@ nonisolated enum ScrollingCaptureRegion {
     }
 }
 
+/// The exported rectangle inside a larger frame, in integer device pixels.
+nonisolated struct ScrollingCaptureOutputRect: Sendable {
+    let columns: Range<Int>
+    let rows: Range<Int>
+}
+
 extension ScrollingCaptureRegion {
     /// Where the recovery panel goes, in AppKit screen points: the first spot
     /// on screen whose glass stays 8 pt clear of the region and the bar. Tried

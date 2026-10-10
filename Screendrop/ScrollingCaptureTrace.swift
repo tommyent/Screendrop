@@ -4,14 +4,14 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// Opt-in frame dump (`defaults write com.fayazahmed.Screendrop ScrollingCaptureTrace -bool YES`).
-/// Each part writes a new folder in Caches/Screendrop/ScrollingCaptureFrames, laid out as a
-/// corpus page (scripts/scroll-corpus-run.swift): NNNN.png, the selection crop R7 sees at full
-/// resolution; page.json with the selection and ignored trailing columns; and frames.jsonl, one
-/// line per frame: index, time (mach seconds), candidateOffset (null: no estimator yet),
-/// verifiedOffset (the output row R7 put the frame's top at, so a seam is the difference of two
-/// frames' values; null when R7 didn't place it) and action (the engine's state). A waiting
-/// frame that an idle tick decides is lost gets a second line. Adding truth.json makes the folder
-/// a corpus page. It holds screen content: local only, owner-only permissions.
+/// Each capture writes a new folder in Caches/Screendrop/ScrollingCaptureFrames, laid out as a
+/// corpus page (scripts/scroll-corpus-run.swift): NNNN.png, the selection crop the stitcher sees
+/// at full resolution; page.json with the selection and ignored trailing columns; and
+/// frames.jsonl, one line per frame: index, time (mach seconds), reference (the frame it was
+/// compared with), candidateOffset (Vision's) and verifiedOffset (the verifier's; null when it
+/// wasn't placed), both against the reference, and action (the stitcher's placement). Adding
+/// truth.json makes the folder a corpus page. It holds screen content: local only, owner-only
+/// permissions.
 nonisolated final class ScrollingCaptureFrameDump: Sendable {
     private let folder: URL
     private let lines: FileHandle
@@ -33,15 +33,18 @@ nonisolated final class ScrollingCaptureFrameDump: Sendable {
     }
 
     // ponytail: no queue or disk budget; it's an opt-in diagnostic, turn it off when done.
-    func write(index: Int, time: TimeInterval, frame: CGImage?, verifiedOffset: Int?, action: String) {
+    func write(index: Int, time: TimeInterval, frame: CGImage?, reference: Int? = nil, candidateOffset: Int? = nil,
+               verifiedOffset: Int?, action: String) {
         queue.async { [folder, lines] in
             if let frame, let png = CGImageDestinationCreateWithURL(folder.appendingPathComponent(
                 String(format: "%04d.png", index)) as CFURL, UTType.png.identifier as CFString, 1, nil) {
                 CGImageDestinationAddImage(png, frame, nil)
                 CGImageDestinationFinalize(png)
             }
-            let offset = verifiedOffset.map(String.init) ?? "null"
-            lines.write(Data((#"{"index":\#(index),"time":\#(time),"candidateOffset":null,"verifiedOffset":\#(offset),"action":"\#(action)"}"# + "\n").utf8))
+            func json(_ value: Int?) -> String { value.map(String.init) ?? "null" }
+            lines.write(Data((#"{"index":\#(index),"time":\#(time),"reference":\#(json(reference)),"#
+                + #""candidateOffset":\#(json(candidateOffset)),"verifiedOffset":\#(json(verifiedOffset)),"action":"\#(action)"}"#
+                + "\n").utf8))
         }
     }
 }

@@ -33,10 +33,10 @@ private final class OffsetFixtureBundle: NSObject {}
         let top = try frame(3), lower = try frame(4)
         let stitcher = try #require(ScrollingCaptureFrameStitcher(firstFrame: top.pixels,
             width: top.width, height: top.height, ignoredTrailingColumns: 0))
-        #expect(await stitcher.add(lower.pixels) == .appended(180))
-        #expect(await stitcher.add(top.pixels) == .upward(-180))
+        #expect(await stitcher.add(lower.pixels).placement == .appended(180))
+        #expect(await stitcher.add(top.pixels).placement == .upward(-180))
         #expect(await stitcher.stitchedHeight == top.height + 180)
-        #expect(await stitcher.add(top.pixels) == .trimmed(-180))
+        #expect(await stitcher.add(top.pixels).placement == .trimmed(-180))
         #expect(await stitcher.stitchedHeight == top.height)
         #expect(await stitcher.makeImage() == top.pixels)
     }

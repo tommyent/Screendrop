@@ -55,12 +55,6 @@ extension ScrollingCaptureRaster {
     }
 }
 
-/// The exported rectangle inside a larger frame, in integer device pixels.
-nonisolated struct ScrollingCaptureOutputRect: Sendable {
-    let columns: Range<Int>
-    let rows: Range<Int>
-}
-
 /// R7 places every frame from exact rows. A frame it can't place waits while no
 /// scroll has been heard since this part last placed one: a video playing or a
 /// hover at rest is not a scroll. After one, that frame is lost, and the session
