@@ -15,6 +15,18 @@ Sukusho started as a fork of [Screendrop](https://github.com/fayazara/Screendrop
 > [!NOTE]
 > There are no releases yet. To use Sukusho, [build it from source](#building-from-source). It is under active development, so expect rough edges.
 
+## Screenshots
+
+The Library keeps captures together, with a grid and an inspector for the selected image.
+
+![Sukusho Library with Wikipedia page captures, a London map and NASA photographs](docs/screenshots/library.png)
+
+Annotate an image with arrows, text, shapes, pixelation and blur.
+
+![Sukusho editor annotating the Earthrise article with an arrow, text, a rectangle, pixelation and blur](docs/screenshots/editor.png)
+
+[Image sources and licences](docs/screenshots/README.md): Wikipedia contributors (CC BY-SA 4.0), NASA imagery (public domain), and © OpenStreetMap contributors (ODbL).
+
 ## Features
 
 ### Capture
