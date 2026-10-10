@@ -202,7 +202,7 @@ import Testing
         try await replay(ScrollingCaptureTrace.read(file))
     }
 
-    @Test("Capped history keeps the newest inputs, with explicit gaps and bounded private files")
+    @Test("Capped history freezes a few records after the first loss, with explicit gaps and bounded private files")
     func limits() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -224,12 +224,58 @@ import Testing
             for index in 2..<50 { trace.append(record(index, state: "lost")) }
             trace.save(done: true)
             #expect(trace.document.omittedSamples > 0)
-            #expect(trace.document.records.last?.index == 49)
-            #expect(trace.document.omittedRanges == [1..<(trace.document.records.first?.index ?? 1)])
+            // The first loss (sample 2) and at most six after it stay; later lost frames are explicit gaps.
+            let kept = trace.document.records.map(\.index)
+            #expect(kept.contains(2) && kept.last! <= 8 && kept == Array(kept.first!...kept.last!))
+            #expect(trace.document.omittedRanges == (kept.first! > 1 ? [1..<kept.first!] : []) + [(kept.last! + 1)..<50])
+            #expect(trace.document.lastOmittedEvent == "sample 49: traceFrozenAfterLoss")
         }
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey])
         #expect(try files.reduce(0) { $0 + (try $1.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) } <= 600_000)
         #expect(try files.allSatisfy { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize! <= 150_000 })
+    }
+
+    @Test("Lost frames after the first loss never evict the frames leading up to it")
+    func frozenAfterLoss() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = F.frame(0)
+        var trace = try ScrollingCaptureTrace(first: first, selection: .init(columns: 0..<F.width, rows: 0..<F.height),
+            ignoredTrailingColumns: 0, maximumHeight: 1000, colorSpace: space, directory: directory,
+            maximumBytes: 2_000_000)
+        for index in 1...200 {
+            trace.append(.init(index: index, time: Double(index), input: try ScrollingCaptureTrace.Raster(F.frame(index)),
+                viewport: 0..<F.height, contentRows: nil, matchingColumns: first.matchingColumns, engine: "buffered",
+                state: index < 101 ? "pending" : "lost", height: F.height, events: [], recoveryAttempt: false,
+                recoveryRows: nil, recoveryPatch: nil, bestShift: nil, changedInPlace: Data(), maximumChannelDifference: Data()))
+        }
+        let kept = trace.document.records.map(\.index)
+        // Pending history up to the loss at 101, then exactly six lost frames; nothing after them.
+        #expect(kept.count > 20 && kept.last == 107 && kept == Array(kept.first!...107), "\(kept)")
+        #expect(trace.document.omittedRanges == [1..<kept.first!, 108..<201])
+    }
+
+    @Test("A loss dropped before it reached the history freezes it the same way", arguments: ["lost", "limit"])
+    func frozenAfterOmittedLoss(state: String) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = F.frame(0)
+        var trace = try ScrollingCaptureTrace(first: first, selection: .init(columns: 0..<F.width, rows: 0..<F.height),
+            ignoredTrailingColumns: 0, maximumHeight: 1000, colorSpace: space, directory: directory,
+            maximumBytes: 2_000_000)
+        func append(_ index: Int, state: String) throws {
+            trace.append(.init(index: index, time: Double(index), input: try ScrollingCaptureTrace.Raster(F.frame(index)),
+                viewport: 0..<F.height, contentRows: nil, matchingColumns: first.matchingColumns, engine: "buffered",
+                state: state, height: F.height, events: [], recoveryAttempt: false, recoveryRows: nil,
+                recoveryPatch: nil, bestShift: nil, changedInPlace: Data(), maximumChannelDifference: Data()))
+        }
+        for index in 1...100 { try append(index, state: "pending") }
+        let before = trace.document.records.map(\.index)
+        trace.omit(index: 101, state: state)
+        for index in 102...200 { try append(index, state: state) }
+        // No pre-loss sample is evicted, and exactly six follow the dropped loss.
+        #expect(trace.document.records.map(\.index) == before + Array(102...107))
+        #expect(trace.document.omittedRanges == [1..<before.first!, 101..<102, 108..<201])
     }
 
     @Test("History eviction cannot reset the stalled-session deadline")
