@@ -19,7 +19,7 @@ import Testing
     func obstacleAbove() {
         // A dictation panel at the top centre, as on the user's Mac.
         #expect(matching(inFront: [CGRect(x: 735, y: 34, width: 240, height: 160)])
-            == .init(rect: CGRect(x: 600, y: 194, width: 500, height: 918), reason: .clipped, obstacles: [0]))
+            == .init(rect: CGRect(x: 600, y: 194, width: 500, height: 918), reason: .clipped, obstacles: [0], target: 1))
         // A fractional edge rounds inward, so none of it is captured.
         #expect(matching(inFront: [CGRect(x: 735, y: 34, width: 240, height: 160.4)]).rect
             == CGRect(x: 600, y: 195, width: 500, height: 917))
@@ -28,14 +28,14 @@ import Testing
     @Test("A floating window below the selection's columns stops the frames just above it")
     func obstacleBelow() {
         #expect(matching(inFront: [CGRect(x: 700, y: 900, width: 200, height: 100)])
-            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 862), reason: .clipped, obstacles: [0]))
+            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 862), reason: .clipped, obstacles: [0], target: 1))
     }
 
     @Test("A window beside the selection's columns doesn't count")
     func obstacleBeside() {
         // A utility panel at the right edge of the display.
         #expect(matching(inFront: [CGRect(x: 1638, y: 572, width: 72, height: 100)])
-            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 1074), reason: .expanded, obstacles: []))
+            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 1074), reason: .expanded, obstacles: [], target: 1))
     }
 
     @Test("A window over the selection itself keeps frames to the selection")
@@ -48,10 +48,25 @@ import Testing
     func dockAndNearest() {
         let dock = CGRect(x: 300, y: 1040, width: 1100, height: 72)
         #expect(matching(inFront: [dock])
-            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 1002), reason: .clipped, obstacles: [0]))
+            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 1002), reason: .clipped, obstacles: [0], target: 1))
         let near = matching(inFront: [CGRect(x: 735, y: 34, width: 240, height: 160), dock,
                                       CGRect(x: 900, y: 100, width: 300, height: 150), CGRect(x: 600, y: 800, width: 50, height: 50)])
         #expect(near.rect == CGRect(x: 600, y: 250, width: 500, height: 550))
         #expect(near.reason == .clipped && near.obstacles == [0, 1, 2, 3])
+    }
+
+    @Test("A window over the whole display (the Dock's, Notification Center's) is neither in front of the selection nor an obstacle")
+    func systemOverlays() {
+        // The Dock's window in the test VM, and Notification Center's here: the display's own frame, layer 20 or 23.
+        #expect(matching(inFront: [display])
+            == .init(rect: CGRect(x: 600, y: 38, width: 500, height: 1074), reason: .expanded, obstacles: [], target: 1, ignored: [0]))
+        #expect(matching(inFront: [display, CGRect(x: 735, y: 34, width: 240, height: 160), display])
+            == .init(rect: CGRect(x: 600, y: 194, width: 500, height: 918), reason: .clipped, obstacles: [1], target: 3, ignored: [0, 2]))
+    }
+
+    @Test("A window over most but not all of the display still counts")
+    func almostWholeDisplay() {
+        #expect(matching(inFront: [CGRect(x: 0, y: 30, width: 1710, height: 1082)])
+            == .init(rect: selection, reason: .frontNotTarget, obstacles: [0]))
     }
 }

@@ -128,7 +128,7 @@ import Testing
         let selection = CGRect(x: 200, y: 300, width: 300, height: 100)
         let window = (frame: CGRect(x: 100, y: -100, width: 700, height: 1000), isTarget: true)
         let wide = ScrollingCaptureRegion.matching(selection: selection, display: display, frontToBackWindows: [window])
-        #expect(wide == .init(rect: CGRect(x: 200, y: 0, width: 300, height: 800), reason: .expanded, obstacles: []))
+        #expect(wide == .init(rect: CGRect(x: 200, y: 0, width: 300, height: 800), reason: .expanded, obstacles: [], target: 0))
         let output = ScrollingCaptureRegion.output(selection: selection, matching: wide.rect, scale: 2)
         #expect(output.columns == 0..<600 && output.rows == 600..<800)
         #expect(ScrollingCaptureRegion.matching(selection: selection, display: display, frontToBackWindows: [])
