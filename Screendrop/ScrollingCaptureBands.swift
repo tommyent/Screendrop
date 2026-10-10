@@ -296,18 +296,24 @@ nonisolated struct ScrollingCaptureBandCompositor {
         let reach = max(1, (upper - lower) / 8)
         let edges = Set(lower..<min(upper, lower + reach)).union(max(lower, upper - reach)..<upper)
             .filter { x in matchingColumns.contains { $0.contains(x) } }
+        let views = [oldest, middle, placement]
         var cells: [Int: UInt32] = [:]
         for y in contentRows {
             for x in edges {
                 let value = placement.frame.pixels[y * width + x]
-                let views = [oldest, middle, placement]
-                guard oldest.frame.pixels[y * width + x] == value, middle.frame.pixels[y * width + x] == value,
-                      views.flatMap({ view in views.map { other in
-                          let otherY = view.offset + y - other.offset
-                          return other.index != view.index && contentRows.contains(otherY)
-                              && other.frame.pixels[otherY * width + x] != value
-                      } }).filter({ $0 }).count >= 2 else { continue }
-                cells[y * width + x] = value
+                guard oldest.frame.pixels[y * width + x] == value, middle.frame.pixels[y * width + x] == value else { continue }
+                // This runs on every buffered frame without a cover: no allocation, stop at two.
+                var disagreements = 0
+                pairs: for view in views {
+                    for other in views where other.index != view.index {
+                        let otherY = view.offset + y - other.offset
+                        if contentRows.contains(otherY), other.frame.pixels[otherY * width + x] != value {
+                            disagreements += 1
+                            if disagreements == 2 { break pairs }
+                        }
+                    }
+                }
+                if disagreements == 2 { cells[y * width + x] = value }
             }
         }
         guard cells.count >= 16 else { return nil }
