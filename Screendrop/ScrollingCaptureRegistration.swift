@@ -218,12 +218,13 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                          placements: resolved.sorted { $0.index < $1.index })
         case .absent, .ambiguous:
             let votes = keys.flatMap { votes($0, sample).values }
-            if stable.filter({ !frame.isBlank($0) }).count >= minimumRows, votes.isEmpty {
+            if stable.filter({ !frame.isBlank($0) }).count >= minimumRows, votes.allSatisfy({ $0.count < minimumRows }) {
                 noOverlapSince = noOverlapSince ?? time
                 if time - noOverlapSince! >= 1 { return lose(.noOverlap) }
-                return Event(state: .pending, pendingReason: .noOverlap)
+                if votes.isEmpty { return Event(state: .pending, pendingReason: .noOverlap) }
+            } else {
+                noOverlapSince = nil
             }
-            noOverlapSince = nil
             // A stationary page with hover/video changes is not a scrolling gap.
             let stationary = lastWitness.map { witness in
                 hasPageWitness(witness) && witness.stableRows.allSatisfy { witness.frame.sameRow($0, as: frame, at: $0) }
@@ -239,7 +240,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             if let first = unresolved.first, freshIndex - first.freshIndex >= maximumPendingSamples {
                 return lose(.motionTimeout)
             }
-            return Event(state: .pending, pendingReason: .motion)
+            return Event(state: .pending, pendingReason: noOverlapSince == nil ? .motion : .noOverlap)
         }
     }
 
@@ -248,6 +249,8 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     mutating func clearDirection() { direction = 0 }
 
     mutating func noteIdle(at time: TimeInterval) -> Event {
+        // After the idle rest look, an unresolved frame needs recovery, not fresh samples.
+        if time.isFinite, !unresolved.isEmpty { noOverlapSince = noOverlapSince ?? time }
         if let noOverlapSince, time.isFinite, time - noOverlapSince >= 1 { return lose(.noOverlap) }
         return Event(state: isLost ? .lost : .pending)
     }
