@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7700000000000000000002 /* ScrollingCaptureTrace.swift */; };
+		AD6600000000000000000001 /* ScrollingCaptureAutoScrollPacer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD6600000000000000000002 /* ScrollingCaptureAutoScrollPacer.swift */; };
 		AC6600000000000000000005 /* ScrollingCaptureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000006 /* ScrollingCaptureEngine.swift */; };
 		AC6600000000000000000007 /* ScrollingCaptureRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000008 /* ScrollingCaptureRegion.swift */; };
 		AC8800000000000000000001 /* ScrollingCaptureBreakMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC8800000000000000000002 /* ScrollingCaptureBreakMark.swift */; };
@@ -76,6 +77,7 @@
 
 /* Begin PBXFileReference section */
 		AC7700000000000000000002 /* ScrollingCaptureTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureTrace.swift; sourceTree = SOURCE_ROOT; };
+		AD6600000000000000000002 /* ScrollingCaptureAutoScrollPacer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureAutoScrollPacer.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000006 /* ScrollingCaptureEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureEngine.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000008 /* ScrollingCaptureRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureRegion.swift; sourceTree = SOURCE_ROOT; };
 		AC8800000000000000000002 /* ScrollingCaptureBreakMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureBreakMark.swift; sourceTree = SOURCE_ROOT; };
@@ -248,6 +250,7 @@
 				AC6600000000000000000004 /* ScrollingCaptureBands.swift */,
 				AC6600000000000000000006 /* ScrollingCaptureEngine.swift */,
 				AC7700000000000000000002 /* ScrollingCaptureTrace.swift */,
+				AD6600000000000000000002 /* ScrollingCaptureAutoScrollPacer.swift */,
 				AC6600000000000000000008 /* ScrollingCaptureRegion.swift */,
 				AC8800000000000000000002 /* ScrollingCaptureBreakMark.swift */,
 				AA61000000000000000000F3 /* Screendrop/PixelInspection.swift */,
@@ -421,6 +424,7 @@
 				AC6600000000000000000003 /* ScrollingCaptureBands.swift in Sources */,
 				AC6600000000000000000005 /* ScrollingCaptureEngine.swift in Sources */,
 				AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */,
+				AD6600000000000000000001 /* ScrollingCaptureAutoScrollPacer.swift in Sources */,
 				AC6600000000000000000007 /* ScrollingCaptureRegion.swift in Sources */,
 				AC8800000000000000000001 /* ScrollingCaptureBreakMark.swift in Sources */,
 				AA610000000000000000008F /* Screendrop/PixelInspection.swift in Sources */,
