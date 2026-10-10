@@ -218,6 +218,52 @@ import Testing
         #expect(await engine.makeImage()?.height == F.height + offset)
     }
 
+    @Test("Done and Cancel preserve an opted-in pending stall without claiming a loss", arguments: [false, true])
+    func stalledSessionEnd(cancel: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
+            ignoredTrailingColumns: 0, traceDirectory: directory))
+        #expect(await engine.add(F.frame(0, phase: 1, video: 60..<100).image(in: space)!, at: 1).state == .pending)
+        if cancel {
+            await engine.finishTrace(at: 4.1)
+        } else {
+            #expect(await engine.makeImage(at: 4.1)?.height == F.height)
+        }
+        _ = await engine.lastTraceRecord()
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .first { $0.pathExtension == "scrolltrace" })
+        let document = try ScrollingCaptureTrace.read(file)
+        #expect(document.savedAfterStall == true && !document.savedAfterLoss)
+        #expect(document.savedOnDone == !cancel && (document.outputChecksum == nil) == cancel)
+        #expect(document.endedAt == 4.1 && document.records.allSatisfy { $0.state == "pending" })
+    }
+
+    @Test("A short pending interval is not a stall, and progress resets its deadline")
+    func stallDeadline() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let frame = F.frame(0), input = try ScrollingCaptureTrace.Raster(frame)
+        var trace = try ScrollingCaptureTrace(first: frame, selection: .init(columns: 0..<F.width, rows: 0..<F.height),
+            ignoredTrailingColumns: 0, maximumHeight: 1000, colorSpace: space, directory: directory)
+        func record(_ index: Int, time: Double, height: Int, state: String) -> ScrollingCaptureTrace.Record {
+            .init(index: index, time: time, input: input, viewport: 0..<F.height, contentRows: nil,
+                matchingColumns: frame.matchingColumns, engine: "legacy", state: state, height: height,
+                events: [], recoveryAttempt: false, recoveryRows: nil, recoveryPatch: nil,
+                bestShift: 0, changedInPlace: Data(), maximumChannelDifference: Data())
+        }
+        trace.append(record(1, time: 1, height: F.height, state: "pending"))
+        trace.save(endedAt: 3.9)
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+        trace.append(record(2, time: 3, height: F.height + 20, state: "appended"))
+        trace.append(record(3, time: 3.1, height: F.height + 20, state: "pending"))
+        trace.save(endedAt: 5.9)
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+        trace.save(endedAt: 6)
+        #expect(trace.document.savedAfterStall == true && !trace.document.savedAfterLoss && !trace.document.savedOnDone)
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     @Test("Row diagnostics separate translation, redraw and local motion without supplying an offset")
     func rowStats() {
         let old = F.frame(0), new = F.frame(20, phase: 3, video: 80..<120)
