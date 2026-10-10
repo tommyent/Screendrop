@@ -28,6 +28,19 @@ private final class OffsetFixtureBundle: NSObject {}
         #expect(verified(177) == nil)
     }
 
+    @Test("The stitcher trims on the second upward frame, not the first")
+    func stitcherTrimsOnSecondUpwardFrame() async throws {
+        let top = try frame(3), lower = try frame(4)
+        let stitcher = try #require(ScrollingCaptureFrameStitcher(firstFrame: top.pixels,
+            width: top.width, height: top.height, ignoredTrailingColumns: 0))
+        #expect(await stitcher.add(lower.pixels) == .appended(180))
+        #expect(await stitcher.add(top.pixels) == .upward(-180))
+        #expect(await stitcher.stitchedHeight == top.height + 180)
+        #expect(await stitcher.add(top.pixels) == .trimmed(-180))
+        #expect(await stitcher.stitchedHeight == top.height)
+        #expect(await stitcher.makeImage() == top.pixels)
+    }
+
     @Test("The bands of two frames with no overlap reach no consensus")
     func estimatorBandsDisagree() throws {
         let last = try frame(3), far = try frame(25)

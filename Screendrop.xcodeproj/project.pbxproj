@@ -10,6 +10,7 @@
 		AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7700000000000000000002 /* ScrollingCaptureTrace.swift */; };
 		AC9900000000000000000001 /* ScrollingCaptureOffsetEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9900000000000000000002 /* ScrollingCaptureOffsetEstimator.swift */; };
 		AC9900000000000000000003 /* ScrollingCaptureOffsetVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9900000000000000000004 /* ScrollingCaptureOffsetVerifier.swift */; };
+		AC9900000000000000000005 /* ScrollingCaptureFrameStitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9900000000000000000006 /* ScrollingCaptureFrameStitcher.swift */; };
 		AD6600000000000000000001 /* ScrollingCaptureAutoScrollPacer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD6600000000000000000002 /* ScrollingCaptureAutoScrollPacer.swift */; };
 		AC6600000000000000000005 /* ScrollingCaptureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000006 /* ScrollingCaptureEngine.swift */; };
 		AC6600000000000000000007 /* ScrollingCaptureRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6600000000000000000008 /* ScrollingCaptureRegion.swift */; };
@@ -80,6 +81,7 @@
 		AC7700000000000000000002 /* ScrollingCaptureTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureTrace.swift; sourceTree = SOURCE_ROOT; };
 		AC9900000000000000000002 /* ScrollingCaptureOffsetEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureOffsetEstimator.swift; sourceTree = SOURCE_ROOT; };
 		AC9900000000000000000004 /* ScrollingCaptureOffsetVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureOffsetVerifier.swift; sourceTree = SOURCE_ROOT; };
+		AC9900000000000000000006 /* ScrollingCaptureFrameStitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureFrameStitcher.swift; sourceTree = SOURCE_ROOT; };
 		AD6600000000000000000002 /* ScrollingCaptureAutoScrollPacer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureAutoScrollPacer.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000006 /* ScrollingCaptureEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureEngine.swift; sourceTree = SOURCE_ROOT; };
 		AC6600000000000000000008 /* ScrollingCaptureRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureRegion.swift; sourceTree = SOURCE_ROOT; };
@@ -253,6 +255,7 @@
 				AC7700000000000000000002 /* ScrollingCaptureTrace.swift */,
 				AC9900000000000000000002 /* ScrollingCaptureOffsetEstimator.swift */,
 				AC9900000000000000000004 /* ScrollingCaptureOffsetVerifier.swift */,
+				AC9900000000000000000006 /* ScrollingCaptureFrameStitcher.swift */,
 				AD6600000000000000000002 /* ScrollingCaptureAutoScrollPacer.swift */,
 				AC6600000000000000000008 /* ScrollingCaptureRegion.swift */,
 				AC8800000000000000000002 /* ScrollingCaptureBreakMark.swift */,
@@ -428,6 +431,7 @@
 				AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */,
 				AC9900000000000000000001 /* ScrollingCaptureOffsetEstimator.swift in Sources */,
 				AC9900000000000000000003 /* ScrollingCaptureOffsetVerifier.swift in Sources */,
+				AC9900000000000000000005 /* ScrollingCaptureFrameStitcher.swift in Sources */,
 				AD6600000000000000000001 /* ScrollingCaptureAutoScrollPacer.swift in Sources */,
 				AC6600000000000000000007 /* ScrollingCaptureRegion.swift in Sources */,
 				AC8800000000000000000001 /* ScrollingCaptureBreakMark.swift in Sources */,
