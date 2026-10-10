@@ -153,18 +153,25 @@ final class ScrollingCapturePresenter {
         }.map(\.windowID))
         let displayBounds = CGDisplayBounds(display.displayID)
         let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, target: Bool)? in
+            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, target: Bool, layer: Int, owner: String)? in
                 guard let id = info[kCGWindowNumber as String] as? UInt32,
                       info[kCGWindowOwnerPID as String] as? Int32 != ProcessInfo.processInfo.processIdentifier,
                       (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                       let bounds = info[kCGWindowBounds as String] as? [String: Any],
                       let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
-                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id))
+                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id),
+                        info[kCGWindowLayer as String] as? Int ?? 0, info[kCGWindowOwnerName as String] as? String ?? "?")
             }
-        let sourceRect = windows.first(where: { $0.frame.intersects(selectionRect) })?.target == true
-            ? ScrollingCaptureRegion.matching(selection: selectionRect,
-                display: filter.contentRect, frontToBackWindows: windows.map(\.frame))
-            : selectionRect
+        let matching = ScrollingCaptureRegion.matching(selection: selectionRect, display: filter.contentRect,
+            frontToBackWindows: windows.map { (frame: $0.frame, isTarget: $0.target) })
+        let sourceRect = matching.rect
+        // Owner names stay in the local trace only.
+        let ignored = matching.ignored.map { "\(windows[$0].owner)@\(windows[$0].layer)" }
+        let traceGeometry = ScrollingCaptureTraceGeometry(displayID: display.displayID, selection: selectionRect,
+            matchingRect: sourceRect, targetWindowFrame: matching.target.map { windows[$0].frame },
+            targetWindowLayer: matching.target.map { windows[$0].layer },
+            reason: matching.reason.rawValue + (ignored.isEmpty ? "" : " ignored=" + ignored.joined(separator: ",")),
+            obstacles: matching.obstacles.map { .init(frame: windows[$0].frame, layer: windows[$0].layer) })
         let scale = max(1, CGFloat(filter.pointPixelScale))
         let output = ScrollingCaptureRegion.output(selection: selectionRect, matching: sourceRect, scale: scale)
         let configuration = SCStreamConfiguration()
@@ -214,7 +221,8 @@ final class ScrollingCapturePresenter {
                   let firstStitcher = ScrollingCaptureEngine(
                       firstFrame: firstFrame.image,
                       selection: output,
-                      ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())
+                      ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()),
+                      traceGeometry: traceGeometry
                   ) else { return nil }
             stitcher = firstStitcher
             lastFrame = firstFrame
@@ -282,7 +290,7 @@ final class ScrollingCapturePresenter {
             let broke = update.state == .lost && session.outcome == nil && update.height > output.rows.count
             if broke, let frame = lastFrame,
                let next = ScrollingCaptureEngine(firstFrame: frame.image, selection: output,
-                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())) {
+                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()), traceGeometry: traceGeometry) {
                 listener = (active, parts.count - 1)
                 parts.append(next)
                 heights.append(output.rows.count)
