@@ -52,6 +52,11 @@ nonisolated struct ScrollingCaptureBandCompositor {
     private var sources: [Int: Int] = [:]
     /// A cover that moved, grew or lay over real motion is never trusted again.
     private var occlusionRevoked = false
+    /// Distinct verified displacements this session. Until the second, a cover
+    /// can't be proved, so a pinned mismatch inside one compact edge rectangle
+    /// waits in an unlocked band instead of failing at once; it never re-arms.
+    private var displacements = 0
+    private var deferred: Set<Int> = []
     private var cache: [ScrollingCapturePlacement] = []
     private let width: Int
     private let height: Int
@@ -174,6 +179,7 @@ nonisolated struct ScrollingCaptureBandCompositor {
                 rows[y] = cropRow(placement.frame, at: y)
             }
         }
+        if let previous = cache.last, previous.offset != placement.offset { displacements += 1 }
         if let occlusion, !keeps(occlusion, in: placement.frame) || occlusion.rows.contains(where: { y in
             // Change beside the cover in its own rows: it grew, or covers real motion.
             let pageY = placement.offset + y
@@ -198,13 +204,28 @@ nonisolated struct ScrollingCaptureBandCompositor {
                 }
             }
         }
+        if occlusion != nil {
+            deferred = []
+        } else if displacements >= 2, !deferred.isEmpty {
+            return .pinnedOverlay
+        }
         if let previous = cache.last, previous.offset != placement.offset {
+            var held: [(y: Int, columns: Range<Int>)] = []
             for y in contentRows where !placement.frame.isBlank(y)
                 && previous.frame.sameRow(y, as: placement.frame, at: y) {
                 if let old = rows[placement.offset + y], !sameSelectedRow(old, as: placement.frame, at: y),
                    !onlyOccluded(placement.offset + y, reference: placement) {
-                    return .pinnedOverlay
+                    guard occlusion == nil, !occlusionRevoked, displacements < 2,
+                          let columns = edgeMismatch(old, placement.frame, y) else { return .pinnedOverlay }
+                    held.append((y, columns))
                 }
+            }
+            // Held rows ascend; together they must still be one compact edge rectangle.
+            if !held.isEmpty, let edges {
+                let columns = held.map(\.columns.lowerBound).min()!..<held.map(\.columns.upperBound).max()!
+                guard columns.lowerBound == edges.lower || columns.upperBound == edges.upper, columns.count <= edges.reach,
+                      held.last!.y - held[0].y < contentRows.count / 4 else { return .pinnedOverlay }
+                deferred.formUnion(held.map { placement.offset + $0.y })
             }
         }
 
@@ -268,6 +289,10 @@ nonisolated struct ScrollingCaptureBandCompositor {
             }
             let leaving = range.lowerBound < ownerRows(placement).lowerBound
             guard !leaving || owner != nil else { return .noCompleteOwner }
+            // A band holding a deferred mismatch must stay open until the cover is proved.
+            if deferred.contains(where: range.contains), leaving || locked.contains(where: { band in
+                touches(band.rows, range) || band.owner.map { touches($0.sourcePageRows, range) } == true
+            }) { return .pinnedOverlay }
             nextBands.append(Band(rows: range, owner: owner, locked: leaving))
         }
         bands = nextBands.sorted { $0.rows.lowerBound < $1.rows.lowerBound }
@@ -284,16 +309,15 @@ nonisolated struct ScrollingCaptureBandCompositor {
 
     /// Three views at two distinct verified displacements: edge cells that
     /// keep their screen position and value while the page registered at
-    /// their position disagrees in at least two pairs of views (a cell's page
-    /// position can itself be covered in another view). One compact region
-    /// touching an edge of the matched columns; anything else stays unsupported.
+    /// their position disagrees in at least four of the six ordered pairs of
+    /// views (a cell's page position can itself be covered in another view).
+    /// A plain background cell beside the cover disagrees only in the pairs
+    /// that look toward it, at most three. One compact region touching an
+    /// edge of the matched columns; anything else stays unsupported.
     private func proposeOcclusion(_ placement: ScrollingCapturePlacement) -> Occlusion? {
         guard let middle = cache.last, middle.offset != placement.offset,
               let oldest = cache.last(where: { $0.offset != middle.offset && $0.offset != placement.offset }),
-              let lower = matchingColumns.first.map({ max($0.lowerBound, selection.columns.lowerBound) }),
-              let upper = matchingColumns.last.map({ min($0.upperBound, selection.columns.upperBound) }),
-              lower < upper else { return nil }
-        let reach = max(1, (upper - lower) / 8)
+              let (lower, upper, reach) = self.edges else { return nil }
         let edges = Set(lower..<min(upper, lower + reach)).union(max(lower, upper - reach)..<upper)
             .filter { x in matchingColumns.contains { $0.contains(x) } }
         let views = [oldest, middle, placement]
@@ -302,18 +326,18 @@ nonisolated struct ScrollingCaptureBandCompositor {
             for x in edges {
                 let value = placement.frame.pixels[y * width + x]
                 guard oldest.frame.pixels[y * width + x] == value, middle.frame.pixels[y * width + x] == value else { continue }
-                // This runs on every buffered frame without a cover: no allocation, stop at two.
+                // This runs on every buffered frame without a cover: no allocation, stop at four.
                 var disagreements = 0
                 pairs: for view in views {
                     for other in views where other.index != view.index {
                         let otherY = view.offset + y - other.offset
                         if contentRows.contains(otherY), other.frame.pixels[otherY * width + x] != value {
                             disagreements += 1
-                            if disagreements == 2 { break pairs }
+                            if disagreements == 4 { break pairs }
                         }
                     }
                 }
-                if disagreements == 2 { cells[y * width + x] = value }
+                if disagreements == 4 { cells[y * width + x] = value }
             }
         }
         guard cells.count >= 16 else { return nil }
@@ -323,6 +347,30 @@ nonisolated struct ScrollingCaptureBandCompositor {
               rows.count <= contentRows.count / 4, cells.count * 2 >= rows.count * columns.count else { return nil }
         return Occlusion(rows: rows, columns: columns,
             fixed: rows.flatMap { y in columns.map { cells[y * width + $0] } })
+    }
+    /// The matched columns' outer bounds, and how far in from either a cover may reach.
+    private var edges: (lower: Int, upper: Int, reach: Int)? {
+        guard let lower = matchingColumns.first.map({ max($0.lowerBound, selection.columns.lowerBound) }),
+              let upper = matchingColumns.last.map({ min($0.upperBound, selection.columns.upperBound) }),
+              lower < upper else { return nil }
+        return (lower, upper, max(1, (upper - lower) / 8))
+    }
+    /// The columns where a stored row differs from this view, when they all
+    /// lie within a cover's reach of one edge.
+    private func edgeMismatch(_ old: [UInt32], _ frame: ScrollingCaptureRaster, _ y: Int) -> Range<Int>? {
+        guard let edges else { return nil }
+        var first = Int.max, last = Int.min
+        for columns in matchingColumns {
+            for x in max(columns.lowerBound, selection.columns.lowerBound)..<min(columns.upperBound, selection.columns.upperBound)
+                where old[x - selection.columns.lowerBound] != frame.pixels[y * width + x] {
+                first = min(first, x); last = max(last, x)
+            }
+        }
+        guard first <= last, last < edges.lower + edges.reach || first >= edges.upper - edges.reach else { return nil }
+        return first..<(last + 1)
+    }
+    private func touches(_ a: Range<Int>, _ b: Range<Int>) -> Bool {
+        a.lowerBound <= b.upperBound && b.lowerBound <= a.upperBound
     }
     private func keeps(_ occlusion: Occlusion, in frame: ScrollingCaptureRaster) -> Bool {
         var index = 0
