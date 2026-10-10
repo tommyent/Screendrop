@@ -29,6 +29,12 @@
 // minus the truth (frame height plus the run's summed offsets), "-" when a
 // seam is unknown or the matcher doesn't stitch; totals sum |page heightErr|
 // over the pages with one, "/Np".
+// dupBlocks, output only: in each run's stitched output, the 32-row blocks of
+// a column strip (8 strips, grid-aligned; at least 8 distinct rows, so not
+// blank space, lines or rules) whose pixels also occur
+// at another height at least 32 rows away: content copied twice, such as a
+// fixed sidebar or card appended into every slice. Repeated content on the
+// page itself counts too. "--dup-blocks <png>..." prints it for saved captures.
 // --compare runs a second matcher too and prints, for both, the correct seams
 // among those both score, and |heightErr| summed over the jump-free pages
 // (no known seam with nothing fitting) where both have a height.
@@ -46,6 +52,8 @@ protocol CorpusMatcher: AnyObject {
     func place(_ frame: CGImage, index: Int) async -> Claim
     /// The output's height so far; nil for a matcher that doesn't stitch.
     var stitchedHeight: Int? { get async }
+    /// The output so far, packed BGRA; nil for a matcher that doesn't stitch.
+    var stitchedImage: (pixels: [UInt8], width: Int)? { get async }
 }
 
 /// R7 as the engine drives it: the stitcher alone, on the selection crop. It
@@ -73,6 +81,9 @@ final class R7Matcher: CorpusMatcher {
     }
 
     var stitchedHeight: Int? { get async { await stitcher.stitchedHeight } }
+    var stitchedImage: (pixels: [UInt8], width: Int)? {
+        get async { await stitcher.makeImage().flatMap { image in VisionMatcher.pixels(image).map { ($0, image.width) } } }
+    }
 }
 
 /// Vision's candidate against the frame before, alone or confirmed by the
@@ -103,6 +114,7 @@ final class VisionMatcher: CorpusMatcher {
     }
 
     var stitchedHeight: Int? { get async { nil } }
+    var stitchedImage: (pixels: [UInt8], width: Int)? { get async { nil } }
 
     static func pixels(_ image: CGImage) -> [UInt8]? {
         ScrollingCapturePixels.bytes(of: image, in: ScrollingCapturePixels.colorSpace(of: image))
@@ -113,12 +125,14 @@ final class VisionMatcher: CorpusMatcher {
 /// skipped, and the next is compared with the reference it kept.
 final class StitcherMatcher: CorpusMatcher {
     let stitcher: ScrollingCaptureFrameStitcher
+    let width: Int
     var reference: Int
 
     init?(first: CGImage, index: Int, ignoredTrailingColumns: Int) {
         guard let pixels = VisionMatcher.pixels(first), let stitcher = ScrollingCaptureFrameStitcher(firstFrame: pixels,
             width: first.width, height: first.height, ignoredTrailingColumns: ignoredTrailingColumns) else { return nil }
         self.stitcher = stitcher
+        width = first.width
         reference = index
     }
 
@@ -131,6 +145,40 @@ final class StitcherMatcher: CorpusMatcher {
     }
 
     var stitchedHeight: Int? { get async { await stitcher.stitchedHeight } }
+    var stitchedImage: (pixels: [UInt8], width: Int)? { get async { (await stitcher.makeImage(), width) } }
+}
+
+/// Grid-aligned 32-row blocks of 8 column strips, with at least 8 distinct
+/// rows, whose pixels also occur at least 32 rows above or below.
+func dupBlocks(_ pixels: [UInt8], width: Int, usableWidth: Int) -> Int {
+    let height = pixels.count / (width * 4), block = 32
+    guard height >= 2 * block else { return 0 }
+    let strips = (0..<8).map { ($0 * usableWidth / 8)..<(($0 + 1) * usableWidth / 8) }
+    var count = 0
+    pixels.withUnsafeBytes { bytes in
+        for x in strips {
+            var rowHash = [Int](repeating: 0, count: height)
+            for y in 0..<height {
+                var hasher = Hasher()
+                hasher.combine(bytes: UnsafeRawBufferPointer(start: bytes.baseAddress! + (y * width + x.lowerBound) * 4,
+                                                             count: x.count * 4))
+                rowHash[y] = hasher.finalize()
+            }
+            var heights: [Int: [Int]] = [:]
+            for y in 0...(height - block) {
+                var hasher = Hasher()
+                for row in y..<(y + block) { hasher.combine(rowHash[row]) }
+                heights[hasher.finalize(), default: []].append(y)
+            }
+            // Blank space, lines and rules repeat anywhere: a block needs 8 distinct rows.
+            for y in stride(from: 0, through: height - block, by: block) where Set(rowHash[y..<(y + block)]).count >= 8 {
+                var hasher = Hasher()
+                for row in y..<(y + block) { hasher.combine(rowHash[row]) }
+                if heights[hasher.finalize()]!.contains(where: { abs($0 - y) >= block }) { count += 1 }
+            }
+        }
+    }
+    return count
 }
 
 let matchers: [String: (_ first: CGImage, _ index: Int, _ ignoredTrailingColumns: Int) -> CorpusMatcher?] = [
@@ -156,6 +204,8 @@ struct Tally {
     /// A page's signed height error; totals keep only the two sums below.
     var heightErr: Int?
     var heightAbs = 0, heightPages = 0
+    /// Summed over runs and pages; nil when a matcher doesn't stitch.
+    var dupBlocks: Int?
     /// A page's seams (by frame index) for --compare, and whether any known seam has nothing fitting.
     var scoredSeams = Set<Int>(), correctSeams = Set<Int>()
     var jumpFree = true
@@ -164,6 +214,7 @@ struct Tally {
         lhs.pages += rhs.pages; lhs.seams += rhs.seams; lhs.scored += rhs.scored; lhs.correct += rhs.correct
         lhs.wrong += rhs.wrong; lhs.skipped += rhs.skipped; lhs.unscored += rhs.unscored; lhs.stuck += rhs.stuck
         lhs.heightAbs += rhs.heightAbs; lhs.heightPages += rhs.heightPages
+        if let dup = rhs.dupBlocks { lhs.dupBlocks = (lhs.dupBlocks ?? 0) + dup }
         lhs.offBy.merge(rhs.offBy, uniquingKeysWith: +)
     }
 
@@ -172,13 +223,24 @@ struct Tally {
         let off = offBy.values.reduce(0, +)
         return ["\(pages)", "\(seams)", "\(scored)", "\(correct)", off == 0 ? "0" : "\(off) (\(histogram))",
                 "\(wrong)", "\(skipped)", "\(unscored)", "\(stuck)",
-                pages == 1 ? heightErr.map(String.init) ?? "-" : "\(heightAbs)/\(heightPages)p"]
+                pages == 1 ? heightErr.map(String.init) ?? "-" : "\(heightAbs)/\(heightPages)p",
+                dupBlocks.map(String.init) ?? "-"]
     }
 }
 
 @main struct ScrollCorpusRun {
     static func main() async throws {
         let arguments = CommandLine.arguments
+        if arguments.count > 2, arguments[1] == "--dup-blocks" {
+            for path in arguments.dropFirst(2) {
+                guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                      let pixels = VisionMatcher.pixels(image) else { print(path, "unreadable"); continue }
+                print(path, "dupBlocks", dupBlocks(pixels, width: image.width, usableWidth:
+                    ScrollingCaptureOffsetVerifier.hashedWidth(width: image.width, ignoredTrailingColumns: 40)))
+            }
+            return
+        }
         let names = matchers.keys.sorted().joined(separator: "|")
         guard arguments.count == 4 || arguments.count == 6, arguments[2] == "--matcher", let make = matchers[arguments[3]],
               arguments.count == 4 || arguments[4] == "--compare" && matchers[arguments[5]] != nil else {
@@ -221,7 +283,7 @@ struct Tally {
                     + "jump-free pages with heights \(jumpFreePages), sum |heightErr| \(jumpFreeHeight.0) vs \(jumpFreeHeight.1)")
             }
         }
-        let header = ["page", "pages", "seams", "scored", "correct", "off-by-N (N:count)", "wrong", "skipped", "unscored", "stuck", "heightErr"]
+        let header = ["page", "pages", "seams", "scored", "correct", "off-by-N (N:count)", "wrong", "skipped", "unscored", "stuck", "heightErr", "dupBlocks"]
         let table = [header] + rows
         let widths = header.indices.map { column in table.map { $0[column].count }.max()! }
         for row in table {
@@ -255,6 +317,10 @@ struct Tally {
         func finishRun() async {
             guard let matcher else { return }
             tally.stuck += run.trailingNil
+            if let image = await matcher.stitchedImage {
+                tally.dupBlocks = (tally.dupBlocks ?? 0) + dupBlocks(image.pixels, width: image.width, usableWidth:
+                    ScrollingCaptureOffsetVerifier.hashedWidth(width: image.width, ignoredTrailingColumns: truth.ignoredTrailingColumns))
+            }
             if run.known, let height = await matcher.stitchedHeight {
                 pageErr += height - (Int(crop.height) + run.position)
             } else { pageKnown = false }
