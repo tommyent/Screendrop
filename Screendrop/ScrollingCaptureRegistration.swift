@@ -83,13 +83,13 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         let frame: ScrollingCaptureRaster
         let stable: Set<Int>
         let motion: Set<Int>
-        let time: TimeInterval
+        let freshIndex: Int
     }
     private enum Match { case absent, ambiguous, offset(Int) }
 
     let initial: ScrollingCapturePlacement
     let maximumBufferedBytes: Int
-    let maximumPendingTime: TimeInterval
+    let maximumPendingSamples: Int
     private(set) var frontier = 0
     private(set) var lastVerifiedOffset = 0
     private(set) var isLost = false
@@ -97,6 +97,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     private var unresolved: [Sample] = []
     private var previous: ScrollingCaptureRaster
     private var lastIndex = 0
+    private var freshIndex = 0
     private var lastWitness: ScrollingCapturePlacement?
     private var movingPageRows: Set<Int>
     private var everMovingPageRows: Set<Int>
@@ -111,12 +112,12 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
     init?(first: ScrollingCaptureRaster, confirmation: ScrollingCaptureRaster,
           contentRows: Range<Int>, maximumBufferedBytes: Int = 128 * 1024 * 1024,
           observedMotionRows: Set<Int> = [], pageWitnessRows: Set<Int>? = nil,
-          maximumPendingTime: TimeInterval = 2, direction: Int = 0) {
+          maximumPendingSamples: Int = 40, direction: Int = 0) {
         guard first.width == confirmation.width, first.height == confirmation.height,
               first.matchingColumns == confirmation.matchingColumns,
               contentRows.lowerBound >= 0, contentRows.upperBound <= first.height,
               contentRows.count >= 16, maximumBufferedBytes / first.byteCount >= 4,
-              maximumPendingTime.isFinite, maximumPendingTime > 0 else { return nil }
+              maximumPendingSamples > 0 else { return nil }
         let stable = Set(contentRows.filter { first.sameRow($0, as: confirmation, at: $0) }).subtracting(observedMotionRows)
         let motion = Set(contentRows).subtracting(stable)
         initial = ScrollingCapturePlacement(index: 0, offset: 0, frame: confirmation,
@@ -128,7 +129,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         movingPageRows = motion
         everMovingPageRows = motion
         self.pageWitnessRows = pageWitnessRows
-        self.maximumPendingTime = maximumPendingTime
+        self.maximumPendingSamples = maximumPendingSamples
         self.direction = direction.signum()
     }
 
@@ -149,9 +150,11 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
               frame.matchingColumns == initial.frame.matchingColumns else { return lose(.invalidSample) }
         lastIndex = index
         lastTime = time
+        let fresh = frame.pixels != previous.pixels
+        if fresh { freshIndex += 1 }
         let stable = Set(contentRows.filter { previous.sameRow($0, as: frame, at: $0) })
         let sample = Sample(index: index, frame: frame, stable: stable,
-                            motion: Set(contentRows).subtracting(stable), time: time)
+                            motion: Set(contentRows).subtracting(stable), freshIndex: freshIndex)
         previous = frame
         var match = locate(sample)
         var movingPlacement = false
@@ -181,7 +184,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
                 pageWitnessRows!.formUnion(placement.stableRows.map { $0 + offset })
             }
             keys.append(placement)
-            for waiting in unresolved where time - waiting.time < maximumPendingTime {
+            for waiting in unresolved where freshIndex - waiting.freshIndex < maximumPendingSamples {
                 var match = locate(waiting, requiringDisplacement: true)
                 if case .absent = match, let position = movingOffset(waiting), position != lastVerifiedOffset {
                     match = .offset(position)
@@ -209,7 +212,6 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             return Event(state: advanced ? .appended : .pending,
                          placements: resolved.sorted { $0.index < $1.index })
         case .absent, .ambiguous:
-            if let first = unresolved.first, time - first.time >= maximumPendingTime { return lose(.motionTimeout) }
             let votes = keys.flatMap { votes($0, sample).values }
             if stable.filter({ !frame.isBlank($0) }).count >= minimumRows, votes.isEmpty {
                 noOverlapSince = noOverlapSince ?? index
@@ -225,10 +227,13 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
             guard !stationary, hasNonzeroEvidence(sample) || frontier > 0 else {
                 return Event(state: .pending, pendingReason: .motion)
             }
-            unresolved.append(sample)
+            // Repeated pixels may prove rest, but cannot spend or renew the motion budget.
+            if unresolved.last?.frame.pixels != frame.pixels { unresolved.append(sample) }
             trimKeys()
             if bufferedBytes > maximumBufferedBytes { return lose(.bufferExhausted) }
-            if time - unresolved[0].time >= maximumPendingTime { return lose(.motionTimeout) }
+            if let first = unresolved.first, freshIndex - first.freshIndex >= maximumPendingSamples {
+                return lose(.motionTimeout)
+            }
             return Event(state: .pending, pendingReason: .motion)
         }
     }

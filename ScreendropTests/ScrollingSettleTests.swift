@@ -85,16 +85,34 @@ import Testing
         #expect(buffer.pendingCount == 0 && buffer.lastVerifiedOffset == 190)
     }
 
-    @Test("Dominant motion retention is bounded by actual sample time and by decoded bytes", arguments: [false, true])
+    @Test("Dominant motion retention allows 40 changing samples, bounded first by decoded bytes", arguments: [false, true])
     func retentionLimits(bytes: Bool) throws {
         var buffer = try primed(bytes: bytes ? F.frame(0).byteCount * 5 : 128 * 1024 * 1024)
         let a = F.frame(400, phase: 10, video: 400..<600)
         #expect(buffer.add(a, at: 2, time: 10.05).state == .pending)
         #expect(buffer.pendingCount == 1)
-        let end = buffer.add(F.frame(400, phase: 11, video: 400..<600), at: 3, time: bytes ? 10.10 : 12.10)
+        var end = pendingEvent(buffer: &buffer, index: 3, phase: 11)
+        if !bytes {
+            for index in 4...41 {
+                #expect(end.state == .pending)
+                end = pendingEvent(buffer: &buffer, index: index, phase: index + 8)
+            }
+            #expect(end.state == .pending && buffer.pendingCount == 40)
+            let unchanged = F.frame(400, phase: 49, video: 400..<600)
+            for index in 42...50 {
+                #expect(buffer.add(unchanged, at: index, time: Double(index) * 100).state == .pending)
+                #expect(buffer.pendingCount == 40)
+            }
+            end = buffer.add(F.frame(400, phase: 50, video: 400..<600), at: 51, time: 5_100)
+        }
         #expect(end.failure == (bytes ? .bufferExhausted : .motionTimeout))
         #expect(buffer.pendingCount == 0 && buffer.lastVerifiedOffset == 5)
         buffer.discardUnresolved()
         #expect(!buffer.isLost && buffer.pendingCount == 0)
+    }
+
+    private func pendingEvent(buffer: inout ScrollingCaptureRegistrationBuffer, index: Int,
+                              phase: Int) -> ScrollingCaptureRegistrationBuffer.Event {
+        buffer.add(F.frame(400, phase: phase, video: 400..<600), at: index, time: Double(index) * 100)
     }
 }
