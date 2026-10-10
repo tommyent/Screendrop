@@ -52,6 +52,9 @@ final class ScrollingCapturePresenter {
     private(set) var isWaiting = false
     /// The capture is as tall as it can get; only Done or Cancel are left.
     private(set) var hasReachedLimit = false
+    /// At rest, a video plays over most of the region: frames can't be placed
+    /// past it, so the bar asks for it to be paused.
+    private(set) var isVideoPlaying = false
     /// Screendrop is scrolling the region itself, a step at a time.
     private(set) var isAutoScrolling = false
     /// Frames are coming in, so auto-scroll has something to follow.
@@ -137,6 +140,7 @@ final class ScrollingCapturePresenter {
         stitchedHeight = output.rows.count
         isWaiting = false
         hasReachedLimit = false
+        isVideoPlaying = false
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
         showPanel(below: rect, on: screen)
         defer {
@@ -190,6 +194,7 @@ final class ScrollingCapturePresenter {
             lastFrameTime = frame.time
             stitchedHeight = update.height
             isWaiting = update.placement == .skipped
+            isVideoPlaying = update.isVideoPlaying
             hasReachedLimit = stitchedHeight >= Self.maximumHeight
             if hasReachedLimit { source.stop() }
         }
@@ -344,7 +349,8 @@ private struct ScrollingCaptureBar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.isWaiting ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
+                    .foregroundStyle(presenter.isWaiting || presenter.isVideoPlaying
+                        ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.monospacedDigit())
@@ -408,11 +414,14 @@ private struct ScrollingCaptureBar: View {
 
     private var title: String {
         presenter.hasReachedLimit ? "Maximum height reached"
+            : presenter.isVideoPlaying ? "A video is playing."
             : presenter.isWaiting ? "Scroll back a little" : "Scroll to capture"
     }
 
     private var detail: String {
-        if presenter.isWaiting && !presenter.hasReachedLimit { return "This view doesn’t line up yet" }
+        guard !presenter.hasReachedLimit else { return "\(presenter.stitchedHeight.formatted()) px tall" }
+        if presenter.isVideoPlaying { return "Pause it to capture." }
+        if presenter.isWaiting { return "This view doesn’t line up yet" }
         let height = "\(presenter.stitchedHeight.formatted()) px tall"
         guard let finishShortcut else { return height }
         return "\(height) · \(finishShortcut) to finish"
