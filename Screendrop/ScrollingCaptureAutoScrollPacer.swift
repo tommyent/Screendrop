@@ -20,8 +20,10 @@ import Foundation
 /// - Nothing on screen changed since the step: the page didn't move. One
 ///   retry, then the end of the page.
 /// - The view changed but nothing new was stitched: rows already captured
-///   (auto-scroll started after scrolling back) or a playing video at the
-///   end of the page; these can't be told apart, so allow a few.
+///   (auto-scroll started after scrolling back), a playing video at the end
+///   of the page, or a view the engine can't line up yet. These can't be told
+///   apart, so allow one more step and then hand back: the view still
+///   overlaps the last stitched rows, so scrolling back stays short.
 nonisolated struct AutoScrollPacer: Equatable {
     enum Action: Equatable {
         /// The step is still under way.
@@ -40,9 +42,12 @@ nonisolated struct AutoScrollPacer: Equatable {
     static let stepTimeout: TimeInterval = 1.5
     /// A step after which nothing on screen changed counts as unanswered.
     static let responseTime: TimeInterval = 1
+    /// Two steps of a quarter region each: never more than half a region past
+    /// what was stitched. On a playing video that blocks registration, five
+    /// carried the page a region and a quarter past it (VM, 2026-10-10).
     /// ponytail: re-covering rows captured before auto-scroll started stops
-    /// after this many steps; the user presses again to go further.
-    static let maximumUnstitchedSteps = 5
+    /// after this too; the user presses again to go further.
+    static let maximumUnstitchedSteps = 2
 
     /// One step's distance, in captured pixels.
     let stepPixels: Int
