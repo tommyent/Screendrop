@@ -46,10 +46,14 @@ actor ScrollingCaptureFrameStitcher {
     private let height: Int
     private let ignoredTrailingColumns: Int
     /// Rows above it are appended; rows below it are held back.
+    // ponytail: a sticky footer taller than the held-back quarter is appended
+    // into every slice; cut at the top of the footer (R7's unmovedEdges) when
+    // a capture shows one.
     private let cut: Int
     private var first: [UInt8]
     private var appended: [UInt8] = []
     private var last: [UInt8]
+    /// The last frame was verified moving back down: the next one that does trims.
     private var lastWasUpward = false
 
     init?(firstFrame: [UInt8], width: Int, height: Int, ignoredTrailingColumns: Int) {
@@ -70,7 +74,11 @@ actor ScrollingCaptureFrameStitcher {
                   width: width, height: height, ignoredTrailingColumns: ignoredTrailingColumns),
               let k = ScrollingCaptureOffsetVerifier.verifiedOffset(candidate: candidate, from: last, to: frame,
                   width: width, height: height, ignoredTrailingColumns: ignoredTrailingColumns)?.offset
-        else { return .skipped }
+        else {
+            // A skipped frame breaks a run of upward frames.
+            lastWasUpward = false
+            return .skipped
+        }
         let rowBytes = width * 4
         if k < 0 {
             defer { lastWasUpward = true }
@@ -84,9 +92,9 @@ actor ScrollingCaptureFrameStitcher {
             appended.removeLast(-k * rowBytes)
             return .trimmed(k)
         }
+        lastWasUpward = false
         // Never true: the verifier only confirms overlap above the cut.
         guard k < cut else { return .skipped }
-        lastWasUpward = false
         last = frame
         guard k > 0 else { return .redrawn }
         appended.append(contentsOf: frame[((cut - k) * rowBytes)..<(cut * rowBytes)])
