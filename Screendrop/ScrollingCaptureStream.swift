@@ -7,26 +7,39 @@ import ScreenCaptureKit
 /// One ScreenCaptureKit stream for a whole Scrolling Capture session. The
 /// callback copies each new frame out of its surface, so SCK gets the surface
 /// back at once, and leaves it in a single latest-frame slot: a slow engine
-/// skips stale frames instead of working through a backlog.
+/// skips stale frames instead of working through a backlog. While the display
+/// doesn't change, SCK sends pixel-less idle samples at the frame interval;
+/// they go through the slot as idle ticks, but never in place of a frame.
 nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     struct Frame: @unchecked Sendable {
         let image: CGImage
-        /// When WindowServer showed the frame, in `now()` seconds.
+        /// When WindowServer showed the frame, on the engine's clock
+        /// (`ScrollingCaptureSampleTiming.now()`, mach absolute seconds).
         let time: TimeInterval
+        /// When the callback got it.
+        let callbackTime: TimeInterval
         /// Counts every new frame SCK delivered, so a gap means frames that
         /// were replaced in the slot before the engine took them.
         let sequence: Int
+        let status: SCFrameStatus
     }
 
-    let frames: AsyncStream<Frame>
-    private let continuation: AsyncStream<Frame>.Continuation
+    enum Event: @unchecked Sendable {
+        case frame(Frame)
+        /// The display hadn't changed when SCK said so, at this engine-clock time.
+        /// An idle sample's own display time stays at the last frame's.
+        case idle(TimeInterval)
+    }
+
+    let events: AsyncStream<Event>
+    private let continuation: AsyncStream<Event>.Continuation
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "com.screendrop.scrolling-capture.stream", qos: .userInteractive)
     /// Only touched on `queue`.
     private var sequence = 0
 
     override init() {
-        (frames, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
+        (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         super.init()
     }
 
@@ -37,16 +50,13 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         try await stream.startCapture()
     }
 
-    /// No more frames; one already waiting in the slot is still delivered.
+    /// No more events; one already waiting in the slot is still delivered.
     func stop() {
         continuation.finish()
         guard let stream else { return }
         self.stream = nil
         Task { try? await stream.stopCapture() }
     }
-
-    /// The clock frame times use: mach absolute time, in seconds.
-    static func now() -> TimeInterval { seconds(mach_absolute_time()) }
 
     private static let secondsPerTick: Double = {
         var timebase = mach_timebase_info_data_t()
@@ -57,18 +67,25 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
     private static func seconds(_ ticks: UInt64) -> TimeInterval { Double(ticks) * secondsPerTick }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        // Idle frames repeat the last one: the display didn't change, so they
-        // aren't new samples.
+        let callbackTime = ScrollingCaptureSampleTiming.now()
         guard type == .screen, sampleBuffer.isValid,
               let info = (CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
                 as? [[SCStreamFrameInfo: Any]])?.first,
-              let status = (info[.status] as? Int).flatMap(SCFrameStatus.init(rawValue:)),
-              status == .complete || status == .started,
+              let status = (info[.status] as? Int).flatMap(SCFrameStatus.init(rawValue:)) else { return }
+        if status == .idle {
+            // A frame still waiting in the slot matters more: put it back.
+            if case .dropped(.frame(let waiting)) = continuation.yield(.idle(callbackTime)) {
+                continuation.yield(.frame(waiting))
+            }
+            return
+        }
+        guard status == .complete || status == .started,
               let pixels = sampleBuffer.imageBuffer,
               let image = Self.copy(pixels) else { return }
         sequence += 1
-        let time = (info[.displayTime] as? UInt64).map(Self.seconds) ?? Self.now()
-        continuation.yield(Frame(image: image, time: time, sequence: sequence))
+        let time = (info[.displayTime] as? UInt64).map(Self.seconds) ?? callbackTime
+        continuation.yield(.frame(Frame(image: image, time: time, callbackTime: callbackTime,
+            sequence: sequence, status: status)))
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

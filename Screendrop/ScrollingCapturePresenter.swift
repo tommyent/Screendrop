@@ -162,18 +162,24 @@ final class ScrollingCapturePresenter {
             source.stop()
             stream = nil
         }
-        var frames = source.frames.makeAsyncIterator()
+        var events = source.events.makeAsyncIterator()
         let stitcher: ScrollingCaptureEngine
+        var lastSequence = 0
         do {
             try await source.start(filter: filter, configuration: configuration)
             // Cancel, or Done before capturing starts, ends the stream here.
-            guard let firstFrame = await frames.next(), session.outcome == nil,
+            var first: ScrollingCaptureStream.Frame?
+            while first == nil, let event = await events.next() {
+                if case .frame(let frame) = event { first = frame }
+            }
+            guard let firstFrame = first, session.outcome == nil,
                   let firstStitcher = ScrollingCaptureEngine(
                       firstFrame: firstFrame.image,
                       selection: output,
                       ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())
                   ) else { return nil }
             stitcher = firstStitcher
+            lastSequence = firstFrame.sequence
         } catch {
             FailureAlert.present(message: "Scrolling capture couldn't start", error: error)
             return nil
@@ -181,12 +187,28 @@ final class ScrollingCapturePresenter {
 
         isCapturing = true
         defer { isCapturing = false }
-        // Frames arrive until Done, Cancel, the height limit or a stream
-        // error stops the stream.
-        while let frame = await frames.next() {
-            guard session.outcome != .cancelled, !hasReachedLimit, frame.time <= cutoff ?? .infinity else { break }
+        // Frames and idle ticks arrive until Done, Cancel, the height limit
+        // or a stream error stops the stream.
+        events: while let event = await events.next() {
+            guard session.outcome != .cancelled, !hasReachedLimit else { break }
             let wasLost = hasLostTrack
-            let update = await stitcher.add(frame.image, at: frame.time)
+            let update: ScrollingCaptureEngine.Update
+            switch event {
+            case .frame(let frame):
+                guard frame.time <= cutoff ?? .infinity else { break events }
+                update = await stitcher.add(frame.image, at: frame.time, timing: ScrollingCaptureSampleTiming(
+                    sequence: frame.sequence, displayTime: frame.time, callbackTime: frame.callbackTime,
+                    engineEnqueued: ScrollingCaptureSampleTiming.now(), droppedSinceLast: frame.sequence - lastSequence - 1,
+                    status: frame.status.rawValue))
+                lastSequence = frame.sequence
+            case .idle(let time):
+                // A still page sends nothing else, so idle ticks let the
+                // engine decide a jump it couldn't place is lost. After Done,
+                // only frames shown before the click count.
+                guard cutoff == nil else { continue }
+                update = await stitcher.noteIdle(at: time)
+            }
+            let uiStart = ScrollingCaptureSampleTiming.now()
             hasLostTrack = update.state == .lost
             stitchedHeight = update.height
             hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
@@ -220,6 +242,10 @@ final class ScrollingCapturePresenter {
             } else if wasLost, !hasLostTrack {
                 showRecovered()
             }
+            if case .frame = event {
+                await stitcher.noteTiming(ScrollingCaptureSampleTiming(sequence: lastSequence,
+                    stages: ["uiStart": uiStart, "uiEnd": ScrollingCaptureSampleTiming.now()]))
+            }
         }
 
         // ponytail: after a stream error the bar doesn't say capture stopped;
@@ -239,7 +265,7 @@ final class ScrollingCapturePresenter {
     /// is nothing to keep, so it cancels instead.
     func finish() {
         if isCapturing {
-            cutoff = cutoff ?? ScrollingCaptureStream.now()
+            cutoff = cutoff ?? ScrollingCaptureSampleTiming.now()
             session.finish()
             stream?.stop()
         } else {
