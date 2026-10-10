@@ -16,8 +16,10 @@
 // without one starts a new run with a fresh matcher. A matcher's claim is
 // judged against the summed seam offsets from the frame it compared with;
 // any "unknown" seam on that path leaves the seam unscored. Placing a frame
-// where truth says nothing fits (a known seam with a null offset, or a total
-// at least the frame height) is wrong; returning nil there is correct.
+// where truth says nothing fits (a known seam with a null offset on the path,
+// or a total at least the frame height) is wrong; refusing there is correct,
+// and refusing elsewhere is skipped. A refusal is judged along the same path,
+// from the frame the matcher kept as its reference.
 // Pages are also totalled by name prefix (user-, fresh-) when there are several.
 // Each unscored seam's claim is printed above the table, for reading only.
 // Two more columns are output only. stuck: frames at the end of a run that
@@ -30,12 +32,13 @@ import Foundation
 import ImageIO
 
 /// The new frame's content moved up by `offset` device pixels from run frame
-/// `against`: new[y] == against[y + offset].
-struct Claim { let against: Int; let offset: Int }
+/// `against`: new[y] == against[y + offset]. A nil offset refuses, having
+/// compared the frame with `against`.
+struct Claim { let against: Int; let offset: Int? }
 
-/// Sees one run's frames in order, the first at creation. nil: can't place it.
+/// Sees one run's frames in order, the first at creation.
 protocol CorpusMatcher: AnyObject {
-    func place(_ frame: CGImage, index: Int) async -> Claim?
+    func place(_ frame: CGImage, index: Int) async -> Claim
     /// The output's height so far; nil for a matcher that doesn't stitch.
     var stitchedHeight: Int? { get async }
 }
@@ -53,10 +56,12 @@ final class R7Matcher: CorpusMatcher {
         reference = index
     }
 
-    func place(_ frame: CGImage, index: Int) async -> Claim? {
+    func place(_ frame: CGImage, index: Int) async -> Claim {
         let base = await stitcher.stitchedHeight - frame.height
         let update = await stitcher.add(frame)
-        guard update != .noMatch, let registration = await stitcher.registration else { return nil }
+        guard update != .noMatch, let registration = await stitcher.registration else {
+            return Claim(against: reference, offset: nil)
+        }
         let claim = Claim(against: reference, offset: registration.offset - base)
         if update == .appended { reference = index }
         return claim
@@ -81,15 +86,15 @@ final class VisionMatcher: CorpusMatcher {
         reference = index
     }
 
-    func place(_ frame: CGImage, index: Int) async -> Claim? {
-        guard let new = Self.pixels(frame) else { return nil }
+    func place(_ frame: CGImage, index: Int) async -> Claim {
+        guard let new = Self.pixels(frame) else { return Claim(against: reference, offset: nil) }
         defer { last = new; reference = index }
-        guard let candidate = ScrollingCaptureOffsetEstimator.candidateOffset(from: last, to: new,
-            width: frame.width, height: frame.height, ignoredTrailingColumns: ignoredTrailingColumns) else { return nil }
-        guard verify else { return Claim(against: reference, offset: candidate) }
-        return ScrollingCaptureOffsetVerifier.verifiedOffset(candidate: candidate, from: last, to: new,
+        let candidate = ScrollingCaptureOffsetEstimator.candidateOffset(from: last, to: new,
             width: frame.width, height: frame.height, ignoredTrailingColumns: ignoredTrailingColumns)
-            .map { Claim(against: reference, offset: $0.offset) }
+        guard verify, let candidate else { return Claim(against: reference, offset: candidate) }
+        return Claim(against: reference, offset: ScrollingCaptureOffsetVerifier.verifiedOffset(candidate: candidate,
+            from: last, to: new, width: frame.width, height: frame.height,
+            ignoredTrailingColumns: ignoredTrailingColumns)?.offset)
     }
 
     var stitchedHeight: Int? { get async { nil } }
@@ -114,10 +119,10 @@ final class StitcherMatcher: CorpusMatcher {
         reference = index
     }
 
-    func place(_ frame: CGImage, index: Int) async -> Claim? {
-        guard let pixels = VisionMatcher.pixels(frame) else { return nil }
+    func place(_ frame: CGImage, index: Int) async -> Claim {
+        guard let pixels = VisionMatcher.pixels(frame) else { return Claim(against: reference, offset: nil) }
         let placement = await stitcher.add(pixels)
-        let claim = placement.offset.map { Claim(against: reference, offset: $0) }
+        let claim = Claim(against: reference, offset: placement.offset)
         if placement.isReference { reference = index }
         return claim
     }
@@ -241,15 +246,8 @@ struct Tally {
             run.known = run.known && seam.truthKind != "unknown" && seam.offset != nil
             run.position += seam.offset ?? 0
             let page = folder.lastPathComponent
-            let placed = await matcher?.place(frame, index: index)
-            run.trailingNil = placed == nil ? run.trailingNil + 1 : 0
-            guard let claim = placed else {
-                if seam.truthKind == "unknown" { tally.unscored += 1; print("unscored \(page) \(seam.from)->\(index): claim nil"); continue }
-                tally.scored += 1
-                // Where nothing fits, refusing is the right answer.
-                if seam.offset.map({ abs($0) >= frame.height }) ?? true { tally.correct += 1 } else { tally.skipped += 1 }
-                continue
-            }
+            let claim = await matcher?.place(frame, index: index) ?? Claim(against: seam.from, offset: nil)
+            run.trailingNil = claim.offset == nil ? run.trailingNil + 1 : 0
             // Walk back along the run to the frame the matcher compared with.
             var path: [Truth.Seam] = []
             var at = index
@@ -260,15 +258,20 @@ struct Tally {
             }
             if path.contains(where: { $0.truthKind == "unknown" }) {
                 tally.unscored += 1
-                print("unscored \(page) \(seam.from)->\(index): claim \(claim.offset) against \(claim.against)")
+                print("unscored \(page) \(seam.from)->\(index): claim \(claim.offset.map(String.init) ?? "nil") against \(claim.against)")
                 continue
             }
             tally.scored += 1
             let offsets = path.map(\.offset)
             let total: Int? = offsets.contains(nil) ? nil : offsets.reduce(0) { $0 + $1! }
-            guard let expected = total, abs(expected) < frame.height else { tally.wrong += 1; continue }
-            let error = abs(claim.offset - expected)
-            let wrongSign = claim.offset != 0 && expected != 0 && (claim.offset > 0) != (expected > 0)
+            let nothingFits = total.map { abs($0) >= frame.height } ?? true
+            guard let offset = claim.offset else {
+                if nothingFits { tally.correct += 1 } else { tally.skipped += 1 }
+                continue
+            }
+            guard let expected = total, !nothingFits else { tally.wrong += 1; continue }
+            let error = abs(offset - expected)
+            let wrongSign = offset != 0 && expected != 0 && (offset > 0) != (expected > 0)
             if error == 0 { tally.correct += 1 }
             else if error <= 3 && !wrongSign { tally.offBy[error, default: 0] += 1 }
             else { tally.wrong += 1 }
