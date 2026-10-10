@@ -56,17 +56,16 @@ actor ScrollingCaptureFeed {
 
     func add(_ frame: CGImage, at time: TimeInterval) async -> Update {
         index += 1
-        guard CGSize(width: frame.width, height: frame.height) == frameSize,
-              let cropped = Self.crop(frame, to: selection),
-              let pixels = ScrollingCapturePixels.bytes(of: cropped, in: colorSpace) else {
-            dump?.write(index: index, time: time, frame: nil, reference: reference, verifiedOffset: nil, action: "skipped")
-            return Update(placement: .skipped, height: await stitcher.stitchedHeight, keepsChanging: false)
-        }
-        let (placement, candidate) = await stitcher.add(pixels)
-        let keepsChanging = placement == .skipped && Self.changedShare(previousPixels, pixels, width: cropped.width,
-            usableWidth: ScrollingCaptureOffsetVerifier.hashedWidth(width: cropped.width,
-                ignoredTrailingColumns: ignoredTrailingColumns)) > Self.changingCoverage
-        previousPixels = pixels
+        let cropped = CGSize(width: frame.width, height: frame.height) == frameSize ? Self.crop(frame, to: selection) : nil
+        let pixels = cropped.flatMap { ScrollingCapturePixels.bytes(of: $0, in: colorSpace) }
+        // A frame that can't be read goes to the stitcher as one that doesn't
+        // fit, so it also breaks a run of upward frames.
+        let (placement, candidate) = await stitcher.add(pixels ?? [])
+        let width = Int(selection.width)
+        let keepsChanging = placement == .skipped && pixels.map { Self.changedShare(previousPixels, $0, width: width,
+            usableWidth: ScrollingCaptureOffsetVerifier.hashedWidth(width: width,
+                ignoredTrailingColumns: ignoredTrailingColumns)) > Self.changingCoverage } ?? false
+        if let pixels { previousPixels = pixels }
         dump?.write(index: index, time: time, frame: cropped, reference: reference, candidateOffset: candidate,
                     verifiedOffset: placement.offset, action: String(String(describing: placement).prefix { $0 != "(" }))
         if placement.isReference { reference = index }
