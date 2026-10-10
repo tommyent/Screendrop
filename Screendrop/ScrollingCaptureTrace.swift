@@ -3,6 +3,21 @@ import Compression
 import Foundation
 import Darwin
 
+/// Capture geometry in display-local top-left points, matching SCStreamConfiguration.sourceRect.
+nonisolated struct ScrollingCaptureTraceGeometry: Codable, Equatable, Sendable {
+    struct Obstacle: Codable, Equatable, Sendable {
+        let frame: CGRect
+        let layer: Int
+    }
+    let displayID: UInt32
+    let selection: CGRect
+    let matchingRect: CGRect
+    let targetWindowFrame: CGRect?
+    let targetWindowLayer: Int?
+    let reason: String
+    let obstacles: [Obstacle]
+}
+
 /// All stage times use mach absolute time in seconds, including SCK displayTime.
 nonisolated struct ScrollingCaptureSampleTiming: Codable, Equatable, Sendable {
     var sequence: Int? = nil
@@ -44,17 +59,22 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
         var timing: ScrollingCaptureSampleTiming
     }
 
-    private let queue = DispatchQueue(label: "Sukusho.scrollTrace", qos: .utility)
+    private let queue: DispatchQueue
     private let lock = NSLock()
     private let maximumQueuedBytes: Int
     private var queuedBytes = 0 // lock-protected; all other mutable state is queue-confined.
-    private var omissions: (count: Int, index: Int, state: String)?
+    private var omissions: (ranges: [Range<Int>], state: String)?
+    private var pending: [(sample: Sample, bytes: Int)] = []
+    private var draining = false
     private var trace: ScrollingCaptureTrace?
     private var previousState: String?
 
     init(first: ScrollingCaptureRaster, selection: ScrollingCaptureOutputRect,
          ignoredTrailingColumns: Int, maximumHeight: Int, colorSpace: CGColorSpace,
-         directory: URL, maximumQueuedBytes: Int = 128 * 1024 * 1024) {
+         directory: URL, maximumQueuedBytes: Int = 128 * 1024 * 1024,
+         queue: DispatchQueue = DispatchQueue(label: "Sukusho.scrollTrace", qos: .utility),
+         geometry: ScrollingCaptureTraceGeometry? = nil) {
+        self.queue = queue
         self.maximumQueuedBytes = maximumQueuedBytes
         let profile = colorSpace.copyICCData() as Data?
         queuedBytes = first.byteCount
@@ -65,46 +85,69 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
                     ?? CGColorSpace(name: CGColorSpace.sRGB)!
                 self.trace = try ScrollingCaptureTrace(first: first, selection: selection,
                     ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
-                    colorSpace: space, directory: directory)
+                    colorSpace: space, directory: directory, geometry: geometry)
             } catch { NSLog("Scrolling Capture trace could not start: %@", error.localizedDescription) }
         }
     }
 
     func append(_ sample: Sample) {
         let bytes = sample.old.byteCount + sample.frame.byteCount + (sample.recoveryPatch?.byteCount ?? 0)
-        guard reserve(bytes) else {
-            omit(index: sample.index, state: sample.state)
-            return
-        }
-        queue.async {
-            defer { self.release(bytes) }
-            guard self.trace != nil else { return }
-            guard self.trace!.document.omittedSamples == 0 else {
-                self.trace?.omit(index: sample.index, state: sample.state)
-                self.saveTransition(sample.state)
-                return
+        let schedule = lock.withLock {
+            while bytes <= maximumQueuedBytes, bytes > maximumQueuedBytes - queuedBytes, !pending.isEmpty {
+                let old = pending.removeFirst()
+                queuedBytes -= old.bytes
+                omitLocked(index: old.sample.index, state: old.sample.state)
             }
-            do {
-                var timing = sample.timing
-                timing.stages["traceStarted"] = ScrollingCaptureSampleTiming.now()
-                timing.stages["rowStatsStarted"] = ScrollingCaptureSampleTiming.now()
-                let stats = ScrollingCaptureTrace.differences(from: sample.old, to: sample.frame, rows: sample.viewport)
-                timing.stages["rowStatsFinished"] = ScrollingCaptureSampleTiming.now()
-                timing.stages["compressionStarted"] = ScrollingCaptureSampleTiming.now()
-                let prior = self.trace!.document.records.last?.input ?? self.trace!.document.first
-                let input = sample.old.pixels == sample.frame.pixels && prior.columns == sample.frame.matchingColumns
-                    ? prior : try ScrollingCaptureTrace.Raster(sample.frame)
-                let patch = try sample.recoveryPatch.map(ScrollingCaptureTrace.Raster.init)
-                timing.stages["compressionFinished"] = ScrollingCaptureSampleTiming.now()
-                self.trace?.append(.init(index: sample.index, time: sample.time, input: input,
-                    viewport: sample.viewport, contentRows: sample.contentRows,
-                    matchingColumns: sample.frame.matchingColumns, engine: sample.engine, state: sample.state,
-                    height: sample.height, events: sample.events, recoveryAttempt: sample.recoveryAttempt,
-                    recoveryRows: sample.recoveryRows, recoveryPatch: patch, bestShift: stats.shift,
-                    changedInPlace: stats.changed, maximumChannelDifference: stats.difference, timing: timing))
-            } catch { self.trace?.omit(index: sample.index, state: sample.state) }
-            self.saveTransition(sample.state)
+            if bytes <= maximumQueuedBytes - queuedBytes {
+                queuedBytes += bytes
+                pending.append((sample, bytes))
+            } else { omitLocked(index: sample.index, state: sample.state) }
+            if draining { return false }
+            draining = true
+            return true
         }
+        if schedule { queue.async { self.drain() } }
+    }
+
+    private func drain() {
+        while true {
+            let next = lock.withLock { () -> (sample: Sample, bytes: Int)? in
+                guard !pending.isEmpty else { draining = false; return nil }
+                return pending.removeFirst()
+            }
+            let omittedFailure = flushOmissions()
+            guard let next else { if omittedFailure { trace?.save() }; return }
+            process(next.sample, bytes: next.bytes, saveAfterOmission: omittedFailure)
+        }
+    }
+
+    private func process(_ sample: Sample, bytes: Int, saveAfterOmission: Bool) {
+        defer { release(bytes) }
+        guard trace != nil else { return }
+        do {
+            var timing = sample.timing
+            timing.stages["traceStarted"] = ScrollingCaptureSampleTiming.now()
+            timing.stages["rowStatsStarted"] = ScrollingCaptureSampleTiming.now()
+            let busy = lock.withLock { queuedBytes > maximumQueuedBytes / 2 }
+            let stats: (shift: Int?, changed: Data, difference: Data) = busy ? (nil, Data(), Data())
+                : ScrollingCaptureTrace.differences(from: sample.old, to: sample.frame, rows: sample.viewport)
+            timing.stages["rowStatsFinished"] = ScrollingCaptureSampleTiming.now()
+            timing.stages["compressionStarted"] = ScrollingCaptureSampleTiming.now()
+            let prior = self.trace!.document.records.last?.input ?? self.trace!.document.first
+            let contiguous = (self.trace!.document.records.last?.index ?? 0) == sample.index - 1
+            let input = contiguous && sample.old.pixels == sample.frame.pixels && prior.columns == sample.frame.matchingColumns
+                ? prior : try ScrollingCaptureTrace.Raster(sample.frame)
+            let patch = try sample.recoveryPatch.map(ScrollingCaptureTrace.Raster.init)
+            timing.stages["compressionFinished"] = ScrollingCaptureSampleTiming.now()
+            self.trace?.append(.init(index: sample.index, time: sample.time, input: input,
+                viewport: sample.viewport, contentRows: sample.contentRows,
+                matchingColumns: sample.frame.matchingColumns, engine: sample.engine, state: sample.state,
+                height: sample.height, events: sample.events, recoveryAttempt: sample.recoveryAttempt,
+                recoveryRows: sample.recoveryRows, recoveryPatch: patch, bestShift: stats.shift,
+                changedInPlace: stats.changed, maximumChannelDifference: stats.difference, timing: timing,
+                diagnosticsOmitted: busy ? true : nil))
+        } catch { self.trace?.omit(index: sample.index, state: sample.state) }
+        self.saveTransition(sample.state, force: saveAfterOmission)
     }
 
     func noteTiming(_ timing: ScrollingCaptureSampleTiming) {
@@ -134,26 +177,23 @@ nonisolated final class ScrollingCaptureTraceWriter: @unchecked Sendable {
         }
     }
 
-    private func saveTransition(_ state: String) {
-        if (state == "lost" || state == "limit"), state != previousState { trace?.save() }
+    private func saveTransition(_ state: String, force: Bool = false) {
+        if force || ((state == "lost" || state == "limit") && state != previousState) { trace?.save() }
         previousState = state
     }
-    private func omit(index: Int, state: String) {
-        let schedule = lock.withLock {
-            let empty = omissions == nil
-            let failure = omissions?.state == "lost" || state == "lost" ? "lost"
-                : omissions?.state == "limit" || state == "limit" ? "limit" : state
-            omissions = ((omissions?.count ?? 0) + 1, index, failure)
-            return empty
-        }
-        guard schedule else { return }
-        queue.async {
-            let omitted = self.lock.withLock { let value = self.omissions; self.omissions = nil; return value }
-            if let omitted {
-                self.trace?.omit(index: omitted.index, state: omitted.state, count: omitted.count)
-                self.saveTransition(omitted.state)
-            }
-        }
+    private func omitLocked(index: Int, state: String) {
+        let failure = omissions?.state == "lost" || state == "lost" ? "lost"
+            : omissions?.state == "limit" || state == "limit" ? "limit" : state
+        var ranges = omissions?.ranges ?? []
+        if let last = ranges.last, last.upperBound == index { ranges[ranges.count - 1] = last.lowerBound..<(index + 1) }
+        else { ranges.append(index..<(index + 1)) }
+        omissions = (ranges, failure)
+    }
+    private func flushOmissions() -> Bool {
+        let omitted = lock.withLock { let value = omissions; omissions = nil; return value }
+        guard let omitted else { return false }
+        for range in omitted.ranges { trace?.omit(index: range.upperBound - 1, state: omitted.state, count: range.count) }
+        return omitted.state == "lost" || omitted.state == "limit"
     }
     private func reserve(_ bytes: Int) -> Bool {
         lock.withLock {
@@ -210,10 +250,11 @@ nonisolated struct ScrollingCaptureTrace {
         let recoveryAttempt: Bool
         let recoveryRows: Range<Int>?
         let recoveryPatch: Raster?
-        let bestShift: Int?
-        let changedInPlace: Data
-        let maximumChannelDifference: Data
+        var bestShift: Int?
+        var changedInPlace: Data
+        var maximumChannelDifference: Data
         var timing: ScrollingCaptureSampleTiming? = nil
+        var diagnosticsOmitted: Bool? = nil
     }
 
     struct Document: Codable, Sendable {
@@ -226,6 +267,7 @@ nonisolated struct ScrollingCaptureTrace {
         let first: Raster
         var records: [Record] = []
         var omittedSamples = 0
+        var omittedRanges: [Range<Int>]? = nil
         var lastOmittedEvent: String?
         var savedAfterLoss = false
         var savedOnDone = false
@@ -233,6 +275,7 @@ nonisolated struct ScrollingCaptureTrace {
         var endedAt: TimeInterval? = nil
         var outputChecksum: UInt64?
         var writeTimings: [[String: TimeInterval]]? = nil
+        var geometry: ScrollingCaptureTraceGeometry? = nil
     }
 
     static var defaultDirectory: URL? {
@@ -246,11 +289,16 @@ nonisolated struct ScrollingCaptureTrace {
     private let fileName = UUID().uuidString + ".scrolltrace"
     private let maximumBytes: Int
     private var retainedBytes: Int
+    private var recordSizes: [Int] = []
     private var sawLoss = false
+    private var progressTime: TimeInterval?
+    private var progressHeight: Int?
+    private var pendingSinceProgress = false
 
     init(first: ScrollingCaptureRaster, selection: ScrollingCaptureOutputRect,
          ignoredTrailingColumns: Int, maximumHeight: Int, colorSpace: CGColorSpace,
-         directory: URL, maximumBytes: Int = 64 * 1024 * 1024) throws {
+         directory: URL, maximumBytes: Int = 64 * 1024 * 1024,
+         geometry: ScrollingCaptureTraceGeometry? = nil) throws {
         let input = try Raster(first)
         self.directory = directory
         self.maximumBytes = maximumBytes
@@ -259,38 +307,59 @@ nonisolated struct ScrollingCaptureTrace {
         document = Document(version: 1, selectionColumns: selection.columns, selectionRows: selection.rows,
             ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
             colorProfile: colorSpace.copyICCData() as Data?, first: input)
+        document.geometry = geometry
     }
 
     mutating func append(_ record: Record) {
         var record = record
         sawLoss = sawLoss || record.state == "lost" || record.state == "limit"
-        // Keep a complete prefix, never present a truncated session as replayable.
+        let observed = record.timing?.stages["idleObserved"] ?? record.time
+        if progressTime == nil { progressTime = observed }
+        if record.state == "appended" || record.height != (progressHeight ?? document.selectionRows.count) {
+            progressTime = observed
+            pendingSinceProgress = false
+        } else if record.state == "pending" { pendingSinceProgress = true }
+        progressHeight = record.height
+        // Keep recent exact inputs; explicit gaps make a truncated session uncertifiable.
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         record.timing?.stages["recordEncodeStarted"] = ScrollingCaptureSampleTiming.now()
         let size = (try? encoder.encode(record).count) ?? maximumBytes
         record.timing?.stages["recordEncodeFinished"] = ScrollingCaptureSampleTiming.now()
         record.timing?.stages["traceFinished"] = ScrollingCaptureSampleTiming.now()
-        if document.omittedSamples == 0, document.records.count < 4096,
-           retainedBytes + size + 4096 < maximumBytes {
+        if document.first.bgraLZFSE.count + size + 8192 < maximumBytes {
+            while !document.records.isEmpty,
+                  document.records.count >= 4096 || retainedBytes + size + 4096 >= maximumBytes {
+                let old = document.records.removeFirst()
+                retainedBytes -= recordSizes.removeFirst()
+                omit(index: old.index, state: old.state, reason: "traceHistoryFull")
+            }
             document.records.append(record)
+            recordSizes.append(size)
             retainedBytes += size
         } else {
-            document.omittedSamples += 1
-            document.lastOmittedEvent = "sample \(record.index): \(record.state); \(record.events.joined(separator: "; "))"
+            omit(index: record.index, state: record.state, reason: "traceRecordTooLarge")
         }
     }
 
-    mutating func omit(index: Int, state: String, count: Int = 1) {
+    mutating func omit(index: Int, state: String, count: Int = 1, reason: String = "traceQueueFull") {
         sawLoss = sawLoss || state == "lost" || state == "limit"
         document.omittedSamples += count
-        document.lastOmittedEvent = "sample \(index): traceQueueFull"
+        document.lastOmittedEvent = "sample \(index): \(reason)"
+        var merged: [Range<Int>] = []
+        for range in ((document.omittedRanges ?? []) + [(index - count + 1)..<(index + 1)])
+            .sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let last = merged.last, last.upperBound >= range.lowerBound {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, range.upperBound)
+            } else { merged.append(range) }
+        }
+        document.omittedRanges = merged
     }
 
     mutating func noteTiming(_ timing: ScrollingCaptureSampleTiming) {
-        guard let last = document.records.indices.last else { return }
+        guard let last = document.records.lastIndex(where: { timing.sequence == nil || $0.timing?.sequence == timing.sequence })
+        else { return }
         var current = document.records[last].timing ?? .init()
-        if let sequence = timing.sequence, sequence != current.sequence { return }
         current.stages.merge(timing.stages) { _, new in new }
         document.records[last].timing = current
     }
@@ -349,20 +418,8 @@ nonisolated struct ScrollingCaptureTrace {
     }
 
     private func stalled(at time: TimeInterval) -> Bool {
-        guard time.isFinite, let first = document.records.first else { return false }
-        var progressTime = first.timing?.stages["idleObserved"] ?? first.time
-        var height = document.selectionRows.count
-        var pending = false
-        for record in document.records {
-            if record.state == "appended" || record.height != height {
-                progressTime = record.timing?.stages["idleObserved"] ?? record.time
-                pending = false
-            } else if record.state == "pending" {
-                pending = true
-            }
-            height = record.height
-        }
-        return pending && time - progressTime >= 3
+        guard time.isFinite, let progressTime else { return false }
+        return pendingSinceProgress && time - progressTime >= 3
     }
 
     static func read(_ url: URL) throws -> Document {
