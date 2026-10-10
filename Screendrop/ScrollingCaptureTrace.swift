@@ -291,6 +291,10 @@ nonisolated struct ScrollingCaptureTrace {
     private var retainedBytes: Int
     private var recordSizes: [Int] = []
     private var sawLoss = false
+    /// After the first loss, this many more records are kept; then the history
+    /// freezes, so the lost frames that follow never evict the failure itself.
+    private static let recordsAfterLoss = 6
+    private var keptAfterLoss: Int?
     private var progressTime: TimeInterval?
     private var progressHeight: Int?
     private var pendingSinceProgress = false
@@ -328,8 +332,17 @@ nonisolated struct ScrollingCaptureTrace {
         record.timing?.stages["recordEncodeFinished"] = ScrollingCaptureSampleTiming.now()
         record.timing?.stages["traceFinished"] = ScrollingCaptureSampleTiming.now()
         if document.first.bgraLZFSE.count + size + 8192 < maximumBytes {
-            while !document.records.isEmpty,
-                  document.records.count >= 4096 || retainedBytes + size + 4096 >= maximumBytes {
+            if let kept = keptAfterLoss {
+                guard kept < Self.recordsAfterLoss, document.records.count < 4096,
+                      retainedBytes + size + 4096 < maximumBytes else {
+                    return omit(index: record.index, state: record.state, reason: "traceFrozenAfterLoss")
+                }
+                keptAfterLoss = kept + 1
+            }
+            // Until the first loss, the newest records stay, with room for the few after it.
+            while keptAfterLoss == nil, !document.records.isEmpty,
+                  document.records.count + Self.recordsAfterLoss >= 4096
+                    || retainedBytes + size * (1 + Self.recordsAfterLoss) + 4096 >= maximumBytes {
                 let old = document.records.removeFirst()
                 retainedBytes -= recordSizes.removeFirst()
                 omit(index: old.index, state: old.state, reason: "traceHistoryFull")
@@ -340,10 +353,14 @@ nonisolated struct ScrollingCaptureTrace {
         } else {
             omit(index: record.index, state: record.state, reason: "traceRecordTooLarge")
         }
+        if sawLoss, keptAfterLoss == nil { keptAfterLoss = 0 }
     }
 
     mutating func omit(index: Int, state: String, count: Int = 1, reason: String = "traceQueueFull") {
         sawLoss = sawLoss || state == "lost" || state == "limit"
+        // A loss dropped before it reached the history still freezes it; history
+        // evicted to make room for a recorded loss doesn't.
+        if state == "lost" || state == "limit", keptAfterLoss == nil { keptAfterLoss = 0 }
         document.omittedSamples += count
         document.lastOmittedEvent = "sample \(index): \(reason)"
         var merged: [Range<Int>] = []
