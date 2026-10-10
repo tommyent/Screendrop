@@ -36,10 +36,6 @@ nonisolated struct ScrollingCaptureRaster: Equatable, Sendable {
         blankRows = blanks
     }
 
-    var byteCount: Int {
-        pixels.count * 4 + rowHashes.count * MemoryLayout<Int>.stride + blankRows.count
-            + matchingColumns.count * MemoryLayout<Range<Int>>.stride
-    }
     func row(_ y: Int) -> ArraySlice<UInt32> { pixels[(y * width)..<((y + 1) * width)] }
     func sameRow(_ y: Int, as other: Self, at otherY: Int) -> Bool {
         matchingColumns == other.matchingColumns && rowHashes[y] == other.rowHashes[otherY]

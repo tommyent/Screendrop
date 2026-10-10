@@ -153,25 +153,17 @@ final class ScrollingCapturePresenter {
         }.map(\.windowID))
         let displayBounds = CGDisplayBounds(display.displayID)
         let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, target: Bool, layer: Int, owner: String)? in
+            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, target: Bool)? in
                 guard let id = info[kCGWindowNumber as String] as? UInt32,
                       info[kCGWindowOwnerPID as String] as? Int32 != ProcessInfo.processInfo.processIdentifier,
                       (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                       let bounds = info[kCGWindowBounds as String] as? [String: Any],
                       let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
-                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id),
-                        info[kCGWindowLayer as String] as? Int ?? 0, info[kCGWindowOwnerName as String] as? String ?? "?")
+                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id))
             }
         let matching = ScrollingCaptureRegion.matching(selection: selectionRect, display: filter.contentRect,
             frontToBackWindows: windows.map { (frame: $0.frame, isTarget: $0.target) })
         let sourceRect = matching.rect
-        // Owner names stay in the local trace only.
-        let ignored = matching.ignored.map { "\(windows[$0].owner)@\(windows[$0].layer)" }
-        let traceGeometry = ScrollingCaptureTraceGeometry(displayID: display.displayID, selection: selectionRect,
-            matchingRect: sourceRect, targetWindowFrame: matching.target.map { windows[$0].frame },
-            targetWindowLayer: matching.target.map { windows[$0].layer },
-            reason: matching.reason.rawValue + (ignored.isEmpty ? "" : " ignored=" + ignored.joined(separator: ",")),
-            obstacles: matching.obstacles.map { .init(frame: windows[$0].frame, layer: windows[$0].layer) })
         let scale = max(1, CGFloat(filter.pointPixelScale))
         let output = ScrollingCaptureRegion.output(selection: selectionRect, matching: sourceRect, scale: scale)
         let configuration = SCStreamConfiguration()
@@ -218,7 +210,6 @@ final class ScrollingCapturePresenter {
         defer { endAutoScroll() }
         let stitcher: ScrollingCaptureEngine
         var lastFrame: ScrollingCaptureStream.Frame?
-        var lastSequence = 0
         do {
             try await source.start(filter: filter, configuration: configuration)
             // Cancel, or Done before capturing starts, ends the stream here.
@@ -229,14 +220,13 @@ final class ScrollingCapturePresenter {
             guard let firstFrame = first, session.outcome == nil,
                   let firstStitcher = ScrollingCaptureEngine(
                       firstFrame: firstFrame.image,
+                      at: firstFrame.time,
                       selection: output,
                       ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()),
-                      traceGeometry: traceGeometry,
                       scrollInput: scrollInput
                   ) else { return nil }
             stitcher = firstStitcher
             lastFrame = firstFrame
-            lastSequence = firstFrame.sequence
         } catch {
             FailureAlert.present(message: "Scrolling capture couldn't start", error: error)
             return nil
@@ -267,13 +257,9 @@ final class ScrollingCapturePresenter {
             switch event {
             case .frame(let frame):
                 guard frame.time <= cutoff ?? .infinity else { break events }
-                update = await active.add(frame.image, at: frame.time, timing: ScrollingCaptureSampleTiming(
-                    sequence: frame.sequence, displayTime: frame.time, callbackTime: frame.callbackTime,
-                    engineEnqueued: ScrollingCaptureSampleTiming.now(), droppedSinceLast: frame.sequence - lastSequence - 1,
-                    status: frame.status.rawValue))
+                update = await active.add(frame.image, at: frame.time)
                 heard = await listener?.engine.add(frame.image, at: frame.time)
                 lastFrameTime = frame.time
-                lastSequence = frame.sequence
                 lastFrame = frame
             case .idle(let time):
                 // A still page sends nothing else, so idle ticks let the
@@ -283,7 +269,6 @@ final class ScrollingCapturePresenter {
                 update = await active.noteIdle(at: time)
                 heard = await listener?.engine.noteIdle(at: time)
             }
-            let uiStart = ScrollingCaptureSampleTiming.now()
             heights[parts.count - 1] = update.height
             if let listener, let heard { heights[listener.index] = heard.height }
             // Only a part that got somewhere starts another when it loses
@@ -294,9 +279,8 @@ final class ScrollingCapturePresenter {
             // before parts existed.
             let broke = update.state == .lost && session.outcome == nil && update.height > output.rows.count
             if broke, let frame = lastFrame,
-               let next = ScrollingCaptureEngine(firstFrame: frame.image, selection: output,
-                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()), traceGeometry: traceGeometry,
-                   scrollInput: scrollInput) {
+               let next = ScrollingCaptureEngine(firstFrame: frame.image, at: frame.time, selection: output,
+                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded()), scrollInput: scrollInput) {
                 listener = (active, parts.count - 1)
                 parts.append(next)
                 heights.append(output.rows.count)
@@ -339,10 +323,6 @@ final class ScrollingCapturePresenter {
             } else if wasLost, !hasLostTrack {
                 showRecovered()
             }
-            if case .frame = event {
-                await active.noteTiming(ScrollingCaptureSampleTiming(sequence: lastSequence,
-                    stages: ["uiStart": uiStart, "uiEnd": ScrollingCaptureSampleTiming.now()]))
-            }
         }
         // The stream has ended (Done, Cancel, the height limit or an error):
         // nothing more can be captured, so nothing more may be scrolled.
@@ -353,14 +333,10 @@ final class ScrollingCapturePresenter {
         while session.outcome == nil {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        let endTime = cutoff ?? ScrollingCaptureSampleTiming.now()
-        guard session.outcome != .cancelled else {
-            for part in parts { await part.finishTrace(at: endTime) }
-            return nil
-        }
+        guard session.outcome != .cancelled else { return nil }
         var images: [CGImage] = []
         for part in parts {
-            guard let image = await part.makeImage(at: endTime) else { return nil }
+            guard let image = await part.makeImage() else { return nil }
             images.append(image)
         }
         guard images.count > 1 else {

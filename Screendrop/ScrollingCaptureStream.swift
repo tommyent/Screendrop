@@ -16,12 +16,6 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         /// When WindowServer showed the frame, on the engine's clock
         /// (`ScrollingCaptureSampleTiming.now()`, mach absolute seconds).
         let time: TimeInterval
-        /// When the callback got it.
-        let callbackTime: TimeInterval
-        /// Counts every new frame SCK delivered, so a gap means frames that
-        /// were replaced in the slot before the engine took them.
-        let sequence: Int
-        let status: SCFrameStatus
     }
 
     enum Event: @unchecked Sendable {
@@ -35,8 +29,6 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
     private let continuation: AsyncStream<Event>.Continuation
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "com.screendrop.scrolling-capture.stream", qos: .userInteractive)
-    /// Only touched on `queue`.
-    private var sequence = 0
 
     override init() {
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -82,10 +74,8 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         guard status == .complete || status == .started,
               let pixels = sampleBuffer.imageBuffer,
               let image = Self.copy(pixels) else { return }
-        sequence += 1
         let time = (info[.displayTime] as? UInt64).map(Self.seconds) ?? callbackTime
-        continuation.yield(.frame(Frame(image: image, time: time, callbackTime: callbackTime,
-            sequence: sequence, status: status)))
+        continuation.yield(.frame(Frame(image: image, time: time)))
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

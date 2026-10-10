@@ -3,7 +3,9 @@
 // page with NNNN.png frames and truth.json
 // {source, selection, ignoredTrailingColumns, frames:[{index,time}],
 //  seams:[{from,to,offset|null,truthKind:"scrollY"|"manual"|"unknown"}]}.
-// A seam offset means content moved up: to[y] == from[y + offset].
+// A seam offset means content moved up: to[y] == from[y + offset]. The app's
+// frame dump (ScrollingCaptureTrace.swift) is a page missing only truth.json:
+// its page.json supplies selection and ignoredTrailingColumns.
 //
 // swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-run.swift \
 //   Screendrop/ScrollingCaptureStitcher.swift -o /tmp/scroll-corpus-run
@@ -97,7 +99,7 @@ struct Tally {
         var groups: [String: Tally] = [:]
         for page in pages {
             let folder = corpus.appendingPathComponent(page)
-            let truth = try JSONDecoder().decode(Truth.self, from: Data(contentsOf: folder.appendingPathComponent("truth.json")))
+            let truth = try readTruth(folder)
             let tally = try await score(truth, folder: folder, make: make)
             rows.append([page] + tally.row)
             total += tally
@@ -115,6 +117,16 @@ struct Tally {
                 return column == 0 ? row[column] + pad : pad + row[column]
             }.joined(separator: "  "))
         }
+    }
+
+    /// A frame dump's page.json holds selection and ignoredTrailingColumns, so its truth.json needn't.
+    static func readTruth(_ folder: URL) throws -> Truth {
+        func object(_ name: String) throws -> [String: Any] {
+            try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent(name))) as? [String: Any] ?? [:]
+        }
+        var truth = try object("truth.json")
+        if let page = try? object("page.json") { truth.merge(page) { fromTruth, _ in fromTruth } }
+        return try JSONDecoder().decode(Truth.self, from: JSONSerialization.data(withJSONObject: truth))
     }
 
     static func score(_ truth: Truth, folder: URL, make: (CGImage, Int, Int) -> CorpusMatcher?) async throws -> Tally {

@@ -23,18 +23,13 @@ import Testing
             } }
             return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
         }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
         let first = frame(0, redraw: 0), redrawn = frame(0, redraw: level)
         let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
         #expect(await legacy.add(redrawn) == .unchanged)
         let position = try #require(await legacy.registration)
         #expect(position.offset == 0 && !position.isStatic)
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: first,
-            ignoredTrailingColumns: 0, traceDirectory: directory))
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 0))
         #expect(await engine.add(redrawn, at: 1).state == .pending)
-        let deferred = try #require(await engine.lastTraceRecord())
-        #expect(deferred.state == "pending")
         for time in [1.2, 1.4, 1.8, 2.2, 2.6, 5.0] {
             #expect(await engine.noteIdle(at: time).state == .pending)
             #expect(await engine.makeImage()?.height == F.height)
@@ -43,7 +38,6 @@ import Testing
             let update = await engine.add(frame(offset, redraw: level), at: 6 + Double(index) * 0.05)
             #expect(update.state == .appended && update.height == F.height + offset)
         }
-        _ = await engine.lastTraceRecord()
     }
 
     @Test("Production static dispatch trims to the current box and resumes after a long flick")
@@ -199,7 +193,7 @@ import Testing
         let video = 100..<180
         let first = F.frame(0, video: video).image(in: space)!
         let legacy = try #require(ScrollingCaptureStitcher(firstFrame: first, ignoredTrailingColumns: 0))
-        let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 0, traceDirectory: nil))
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 0))
         for (index, offset) in stride(from: 20, through: 200, by: 20).enumerated() {
             let frame = F.frame(offset, phase: index + 1, video: video).image(in: space)!
             let expected = await legacy.add(frame)
@@ -219,7 +213,7 @@ import Testing
         #expect(await legacy.add(F.frame(0, phase: 1, video: video).image(in: space)!) == .noMatch)
         let input = quietInput()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: first, ignoredTrailingColumns: 0,
-            traceDirectory: nil, scrollInput: input))
+            scrollInput: input))
         var time = 1.0
         for phase in 1...60 {
             #expect(await engine.add(F.frame(0, phase: phase, video: video).image(in: space)!, at: time).state == .pending)
@@ -242,7 +236,7 @@ import Testing
     func jumpAfterScroll(lowContrast: Bool, scrolled: Bool) async throws {
         let input = quietInput()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: jumpPage(0, lowContrast: lowContrast),
-            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
+            ignoredTrailingColumns: 0, scrollInput: input))
         if scrolled { input.noteScroll() }
         let state = await engine.add(jumpPage(1000, lowContrast: lowContrast), at: 1).state
         #expect(state == (scrolled ? .lost : .pending))
@@ -253,7 +247,7 @@ import Testing
     func lateScroll() async throws {
         let input = quietInput()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: jumpPage(0, lowContrast: false),
-            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
+            ignoredTrailingColumns: 0, scrollInput: input))
         #expect(await engine.add(jumpPage(1000, lowContrast: false), at: 1).state == .pending)
         #expect(await engine.noteIdle(at: 1.2).state == .pending)
         input.noteScroll()
@@ -265,7 +259,7 @@ import Testing
         let video = 100..<140
         let input = quietInput()
         let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0, video: video).image(in: space)!,
-            ignoredTrailingColumns: 0, traceDirectory: nil, scrollInput: input))
+            ignoredTrailingColumns: 0, scrollInput: input))
         input.noteScroll()
         #expect(await engine.add(F.frame(20, phase: 1, video: video).image(in: space)!, at: 1).state == .appended)
         for phase in 2...30 {
@@ -276,7 +270,7 @@ import Testing
     @Test("Without a running scroll monitor, a frame R7 can't place is lost", arguments: [false, true])
     func unmonitored(hasInput: Bool) async throws {
         let engine = try #require(ScrollingCaptureEngine(firstFrame: jumpPage(0, lowContrast: false), ignoredTrailingColumns: 0,
-            traceDirectory: nil, scrollInput: hasInput ? ScrollingCaptureScrollInput() : nil))
+            scrollInput: hasInput ? ScrollingCaptureScrollInput() : nil))
         #expect(await engine.add(jumpPage(1000, lowContrast: false), at: 1).state == .lost)
     }
 }

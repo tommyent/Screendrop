@@ -2,11 +2,21 @@ import CoreGraphics
 import Foundation
 import Synchronization
 
+/// The capture clock: mach absolute time in seconds, as ScreenCaptureKit's displayTime.
+nonisolated enum ScrollingCaptureSampleTiming {
+    static func now() -> TimeInterval { Double(mach_absolute_time()) * secondsPerTick }
+    private static let secondsPerTick: Double = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return Double(info.numer) / Double(info.denom) / 1_000_000_000
+    }()
+}
+
 /// The scrolls the session's monitor has heard, by hand or by auto-scroll. The
 /// monitor sets it; every part's engine reads it. It counts that scrolls
 /// happened, never where or how far.
 nonisolated final class ScrollingCaptureScrollInput: Sendable {
-    struct Snapshot: Codable, Equatable, Sendable {
+    struct Snapshot: Equatable, Sendable {
         var monitored = false
         var scrolls = 0
     }
@@ -67,7 +77,7 @@ actor ScrollingCaptureEngine {
     private let frameWidth: Int
     private let frameHeight: Int
     private let scrollInput: ScrollingCaptureScrollInput?
-    /// The scroll input read once per call: its decisions and trace record use this.
+    /// The scroll input read once per call: its decisions use this.
     private var scrollState: ScrollingCaptureScrollInput.Snapshot?
     /// Scrolls heard when this part last placed a frame, or began.
     private var scrollsAtPlacement: Int
@@ -75,19 +85,13 @@ actor ScrollingCaptureEngine {
     private var waiting = false
     private var state: State = .pending
     private var safeImage: ScrollingCaptureRaster
-    private var previous: ScrollingCaptureRaster
     private var sampleIndex = 0
-    private var lastObservationTime: TimeInterval?
-    private var trace: ScrollingCaptureTraceWriter?
-    private var traceInput: ScrollingCaptureRaster?
-    private var stages: [String: TimeInterval] = [:]
-    private var traceEvents: [String] = []
+    private let dump: ScrollingCaptureFrameDump?
     private(set) var outputHeight: Int
 
-    init?(firstFrame: CGImage, selection: ScrollingCaptureOutputRect? = nil,
-          ignoredTrailingColumns: Int, maximumHeight: Int = 16_384,
-          traceDirectory: URL? = ScrollingCaptureTrace.defaultDirectory,
-          traceGeometry: ScrollingCaptureTraceGeometry? = nil, scrollInput: ScrollingCaptureScrollInput? = nil) {
+    init?(firstFrame: CGImage, at time: TimeInterval = ScrollingCaptureSampleTiming.now(),
+          selection: ScrollingCaptureOutputRect? = nil,
+          ignoredTrailingColumns: Int, maximumHeight: Int = 16_384, scrollInput: ScrollingCaptureScrollInput? = nil) {
         let space = firstFrame.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil }
             ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let raster = ScrollingCaptureRaster(image: firstFrame, colorSpace: space) else { return nil }
@@ -107,67 +111,34 @@ actor ScrollingCaptureEngine {
         frameWidth = raster.width
         frameHeight = raster.height
         self.scrollInput = scrollInput
-        let start = scrollInput?.current
-        scrollsAtPlacement = start?.scrolls ?? 0
-        previous = raster
+        scrollsAtPlacement = scrollInput?.current.scrolls ?? 0
         safeImage = output
         outputHeight = safeImage.height
-        if let traceDirectory {
-            trace = ScrollingCaptureTraceWriter(first: raster, selection: rect,
-                ignoredTrailingColumns: ignoredTrailingColumns, maximumHeight: maximumHeight,
-                colorSpace: space, directory: traceDirectory, geometry: traceGeometry, scrollInputAtStart: start)
-        }
+        dump = ScrollingCaptureFrameDump(width: rect.columns.count, height: rect.rows.count,
+                                         ignoredTrailingColumns: ignoredTrailingColumns)
+        dump?.write(index: 0, time: time, frame: cropped, verifiedOffset: 0, action: "first")
     }
 
-    func add(_ image: CGImage, at time: TimeInterval = ScrollingCaptureSampleTiming.now(),
-             timing: ScrollingCaptureSampleTiming = .init()) async -> Update {
+    func add(_ image: CGImage, at time: TimeInterval = ScrollingCaptureSampleTiming.now()) async -> Update {
         scrollState = scrollInput?.current
-        let old = previous
-        traceEvents.removeAll(keepingCapacity: true)
-        traceInput = nil
-        stages = timing.stages
-        stages["r7Started"] = 0; stages["r7Finished"] = 0
-        mark("engineStarted")
-        let result = await process(image)
-        if time.isFinite { lastObservationTime = max(lastObservationTime ?? time, time) }
-        mark("engineFinished")
-        record(result, old: old, time: time, timing: timing)
+        sampleIndex += 1
+        let selected = image.width == frameWidth && image.height == frameHeight
+            ? image.cropping(to: CGRect(x: selection.columns.lowerBound, y: selection.rows.lowerBound,
+                width: selection.columns.count, height: selection.rows.count)) : nil
+        let (result, offset) = await process(selected)
+        dump?.write(index: sampleIndex, time: time, frame: selected, verifiedOffset: offset,
+                    action: String(describing: result.state))
         return result
     }
-
-    func lastTraceRecord() async -> ScrollingCaptureTrace.Record? { await trace?.document()?.records.last }
-    func noteTiming(_ timing: ScrollingCaptureSampleTiming) { trace?.noteTiming(timing) }
 
     /// An idle tick: nothing new on screen. A scroll heard after the newest frame
     /// waited decides that frame: it is lost.
     func noteIdle(at time: TimeInterval) async -> Update {
         scrollState = scrollInput?.current
-        if time.isFinite { lastObservationTime = max(lastObservationTime ?? time, time) }
         guard waiting, scrolledSincePlacement else { return Update(state: state, height: outputHeight) }
         waiting = false
-        sampleIndex += 1
-        traceEvents = ["lost: no match after a scroll"]
-        traceInput = previous
-        stages = ["idleObserved": time]
-        let result = update(.lost)
-        record(result, old: previous, time: time, timing: .init())
-        return result
-    }
-
-    private func mark(_ stage: String) {
-        if trace != nil { stages[stage] = ScrollingCaptureSampleTiming.now() }
-    }
-    private func note(_ event: @autoclosure () -> String) { if trace != nil { traceEvents.append(event()) } }
-
-    private func record(_ result: Update, old: ScrollingCaptureRaster, time: TimeInterval,
-                        timing: ScrollingCaptureSampleTiming) {
-        guard let trace, let frame = traceInput else { return }
-        var timing = timing
-        timing.stages = stages
-        timing.stages["traceEnqueued"] = ScrollingCaptureSampleTiming.now()
-        trace.append(.init(index: sampleIndex, time: time, old: old, frame: frame,
-            state: String(describing: result.state), height: result.height, events: traceEvents,
-            timing: timing, scrollInput: scrollState))
+        dump?.write(index: sampleIndex, time: time, frame: nil, verifiedOffset: nil, action: "lost")
+        return update(.lost)
     }
 
     /// Without a running monitor nothing tells a scroll from a redraw, so every
@@ -177,32 +148,23 @@ actor ScrollingCaptureEngine {
         return scrollState.scrolls > scrollsAtPlacement
     }
 
-    private func process(_ image: CGImage) async -> Update {
-        sampleIndex += 1
-        guard image.width == frameWidth, image.height == frameHeight,
-              let selected = image.cropping(to: CGRect(x: selection.columns.lowerBound, y: selection.rows.lowerBound,
-                width: selection.columns.count, height: selection.rows.count)) else { return update(.lost) }
-        if trace != nil {
-            mark("decodeStarted")
-            traceInput = ScrollingCaptureRaster(image: image, colorSpace: colorSpace)
-            mark("decodeFinished")
-            if let traceInput { previous = traceInput }
-        }
-        mark("r7Started")
+    /// The update, and the output row R7 put the frame's top at.
+    private func process(_ selected: CGImage?) async -> (Update, Int?) {
+        guard let selected else { return (update(.lost), nil) }
         let result = await legacy.add(selected)
-        mark("r7Finished")
-        note("legacy: \(result)")
         waiting = false
         guard result != .noMatch, let position = await legacy.registration else {
             guard scrolledSincePlacement else {
                 waiting = true
-                note("waiting: no scroll heard since the last placement")
-                return update(.pending)
+                return (update(.pending), nil)
             }
-            note("lost: no match after a scroll")
-            return update(.lost)
+            return (update(.lost), nil)
         }
-        note("legacy position: \(position.offset); static: \(position.isStatic)")
+        return (await place(selected, result, position), position.offset)
+    }
+
+    private func place(_ selected: CGImage, _ result: ScrollingCaptureStitcher.Update,
+                       _ position: ScrollingCaptureStitcher.Registration) async -> Update {
         // A redraw in place, such as a video playing at rest, adds nothing.
         guard result == .appended || position.isStatic else { return update(.pending) }
         let oldHeight = outputHeight
@@ -226,12 +188,7 @@ actor ScrollingCaptureEngine {
         return update(outputHeight >= maximumHeight ? .limit : outputHeight > oldHeight ? .appended : .pending)
     }
 
-    func makeImage(at time: TimeInterval? = nil) -> CGImage? {
-        trace?.finish(at: time ?? lastObservationTime ?? ScrollingCaptureSampleTiming.now(), output: safeImage)
-        return safeImage.image(in: colorSpace)
-    }
-
-    func finishTrace(at time: TimeInterval) { trace?.finish(at: time) }
+    func makeImage() -> CGImage? { safeImage.image(in: colorSpace) }
 
     /// The newest rows of the output: where this part left off.
     func recoveryRows(_ count: Int) -> CGImage? {
