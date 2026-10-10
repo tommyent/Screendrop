@@ -18,13 +18,16 @@ actor ScrollingCaptureFrameStitcher {
         case upward(Int)
         /// Moved back down again: the output was cut back to end with it.
         case trimmed(Int)
-        /// Not verified, or would trim past the first frame: the reference
-        /// stays, and the next frame is compared with it.
+        /// Moved back down again, above where the output began: it starts
+        /// over from this frame.
+        case restarted(Int)
+        /// Not verified: the reference stays, and the next frame is compared
+        /// with it.
         case skipped
 
         var offset: Int? {
             switch self {
-            case .appended(let k), .upward(let k), .trimmed(let k): k
+            case .appended(let k), .upward(let k), .trimmed(let k), .restarted(let k): k
             case .redrawn: 0
             case .skipped: nil
             }
@@ -33,7 +36,7 @@ actor ScrollingCaptureFrameStitcher {
         /// The frame became the reference the next one is compared with.
         var isReference: Bool {
             switch self {
-            case .appended, .redrawn, .trimmed: true
+            case .appended, .redrawn, .trimmed, .restarted: true
             case .upward, .skipped: false
             }
         }
@@ -44,7 +47,7 @@ actor ScrollingCaptureFrameStitcher {
     private let ignoredTrailingColumns: Int
     /// Rows above it are appended; rows below it are held back.
     private let cut: Int
-    private let first: [UInt8]
+    private var first: [UInt8]
     private var appended: [UInt8] = []
     private var last: [UInt8]
     private var lastWasUpward = false
@@ -72,9 +75,13 @@ actor ScrollingCaptureFrameStitcher {
         if k < 0 {
             defer { lastWasUpward = true }
             guard lastWasUpward else { return .upward(k) }
-            guard -k * rowBytes <= appended.count else { return .skipped }
-            appended.removeLast(-k * rowBytes)
             last = frame
+            guard -k * rowBytes <= appended.count else {
+                first = frame
+                appended = []
+                return .restarted(k)
+            }
+            appended.removeLast(-k * rowBytes)
             return .trimmed(k)
         }
         // Never true: the verifier only confirms overlap above the cut.
