@@ -8,8 +8,13 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
     /// Side-by-side strips per row, so a narrow column that changes (a hover,
     /// a gutter line) costs one strip of a row rather than the whole row.
     static let strips = 8
-    /// Share of compared strips that must be identical at the offset.
-    static let agreement = 0.7
+    /// Share of compared strips that must be identical at the offset. Low, so
+    /// a hover, overlay or video over part of the frame doesn't refuse it: the
+    /// distinct exact rows and the refusal of ties keep it from guessing
+    /// (corpus sweep 0.7 to 0.3: correct 355 to 390, wrong 0 throughout).
+    // ponytail: video, a hover over most of the frame and inner scrollers still
+    // refuse; step 5's "scroll back a little" hint covers them, not more rules.
+    static let agreement = 0.3
     /// Fewer distinct fully matching rows than this is a coincidence.
     static let minimumMatchedRows = 8
     /// The candidate can be this far off; every offset within it is tried.
