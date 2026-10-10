@@ -174,6 +174,50 @@ import Testing
         #expect(try files.allSatisfy { try $0.resourceValues(forKeys: [.fileSizeKey]).fileSize! <= 150_000 })
     }
 
+    @Test("A legacy jump with repeated divider rows reaches recovery on idle", arguments: [false, true])
+    func legacyIdleJump(slowScroll: Bool) async throws {
+        for sharedDivider in [false, true] {
+            func frame(_ offset: Int) -> CGImage {
+                let pixels = (0..<F.height).flatMap { y in (0..<F.width).map { x -> UInt32 in
+                    let pageY = offset + y
+                    if pageY % 20 >= 12 { return 0xffffffff }
+                    if sharedDivider && pageY % 20 == 0 { return x % 4 == 0 ? 0xff555555 : 0xffeeeeee }
+                    return F.pixel(x: x, pageY: pageY)
+                } }
+                return ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels)!.image(in: space)!
+            }
+            let engine = try #require(ScrollingCaptureEngine(firstFrame: frame(0),
+                ignoredTrailingColumns: 0, traceDirectory: nil))
+            if slowScroll {
+                for (index, offset) in [20, 40].enumerated() {
+                    let update = await engine.add(frame(offset), at: Double(index + 1) * 0.05)
+                    #expect(update.engine == .legacy && update.height == offset + F.height)
+                }
+            }
+            let before = try #require(await engine.makeImage())
+            _ = await engine.add(frame(1000), at: 1)
+            _ = await engine.add(frame(1020), at: 1.05)
+            #expect(await engine.noteIdle(at: 1.2).state == .pending)
+            #expect(await engine.noteIdle(at: 1.3).state == .pending)
+            #expect(await engine.noteIdle(at: 2.31).state == .lost)
+            let after = try #require(await engine.makeImage())
+            #expect(ScrollingCaptureRaster(image: after, colorSpace: space) == ScrollingCaptureRaster(image: before, colorSpace: space))
+            _ = await engine.add(frame(slowScroll ? 40 : 0), at: 3)
+            #expect(await engine.noteIdle(at: 3.2).state != .lost)
+            #expect(await engine.noteIdle(at: 5).state != .lost)
+        }
+    }
+
+    @Test("Idle on an accepted page or no-scroll hover never raises recovery", arguments: [false, true])
+    func acceptedIdle(hover: Bool) async throws {
+        let engine = try #require(ScrollingCaptureEngine(firstFrame: F.frame(0).image(in: space)!,
+            ignoredTrailingColumns: 0, traceDirectory: nil))
+        let offset = hover ? 0 : 20
+        _ = await engine.add(F.frame(offset, phase: 1, video: hover ? 60..<100 : nil).image(in: space)!, at: 1)
+        for time in [1.2, 1.3, 2.4, 5.0] { #expect(await engine.noteIdle(at: time).state != .lost) }
+        #expect(await engine.makeImage()?.height == F.height + offset)
+    }
+
     @Test("Row diagnostics separate translation, redraw and local motion without supplying an offset")
     func rowStats() {
         let old = F.frame(0), new = F.frame(20, phase: 3, video: 80..<120)

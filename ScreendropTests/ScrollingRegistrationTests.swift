@@ -181,6 +181,32 @@ import Testing
         #expect(!buffer.isLost)
     }
 
+    @Test("Weak stray votes and real rivals never place a jump, and idle resolves both", arguments: [1, 7, 8])
+    func idleAmbiguity(witnesses: Int) throws {
+        let first = F.frame(0), unrelated = F.frame(1000)
+        var pixels = unrelated.pixels
+        for start in [50, 90] {
+            for row in 0..<witnesses {
+                pixels.replaceSubrange(((start + row) * F.width)..<((start + row + 1) * F.width),
+                    with: first.row(row))
+            }
+        }
+        let jump = try #require(ScrollingCaptureRaster(width: F.width, height: F.height, pixels: pixels))
+        var buffer = try #require(ScrollingCaptureRegistrationBuffer(first: first, confirmation: first,
+            contentRows: 0..<F.height))
+        #expect(buffer.add(jump, at: 1, time: 1).placements.isEmpty)
+        let rest = buffer.add(jump, at: 2, time: 1.2)
+        #expect(rest.state == .pending && rest.placements.isEmpty)
+        if witnesses == 8 {
+            #expect(rest.pendingReason == .motion && buffer.pendingCount > 0)
+        } else {
+            #expect(rest.pendingReason == .noOverlap)
+        }
+        #expect(buffer.noteIdle(at: 1.3).state == .pending)
+        #expect(buffer.noteIdle(at: 2.31).failure == .noOverlap)
+        #expect(buffer.frontier == 0 && buffer.lastVerifiedOffset == 0 && buffer.pendingCount == 0)
+    }
+
     @Test("Continuous placements classify aligned page rows; incoming rows remain provisional")
     func movingPageRows() throws {
         let video = 100..<220
