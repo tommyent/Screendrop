@@ -242,9 +242,13 @@ final class ScrollingCapturePresenter {
             let uiStart = ScrollingCaptureSampleTiming.now()
             heights[parts.count - 1] = update.height
             if let listener, let heard { heights[listener.index] = heard.height }
-            // ponytail: a part that can't start (no frame yet, or the engine
-            // refuses it) leaves the capture lost, as before parts existed.
-            let broke = update.state == .lost && session.outcome == nil
+            // Only a part that got somewhere starts another when it loses
+            // track. Scrolling back to join the parts takes the view above
+            // the newest part's first frame, and that part losing track then
+            // must not start yet another. A part that can't start (no frame
+            // yet, or the engine refuses it) leaves the capture lost, as
+            // before parts existed.
+            let broke = update.state == .lost && session.outcome == nil && update.height > output.rows.count
             if broke, let frame = lastFrame,
                let next = ScrollingCaptureEngine(firstFrame: frame.image, selection: output,
                    ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())) {

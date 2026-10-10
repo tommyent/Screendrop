@@ -9,32 +9,35 @@ nonisolated enum ScrollingCaptureBreakMark {
     static let bandPoints: CGFloat = 20
 
     /// The parts, top to bottom and of equal width, joined and cut at
-    /// `maximumHeight`. `bands` are the rows each remaining band occupies.
+    /// `maximumHeight`. Each part continues the capture so far seamlessly,
+    /// lies wholly inside it (a scroll-back repeat, dropped), or follows a
+    /// band. `bands` are the rows each remaining band occupies.
     static func join(_ parts: [ScrollingCaptureRaster], scale: CGFloat, colorSpace: CGColorSpace,
                      maximumHeight: Int) -> (raster: ScrollingCaptureRaster, bands: [Range<Int>])? {
-        guard var above = parts.first, parts.allSatisfy({ $0.width == above.width }) else { return nil }
-        var pixels = above.pixels
+        guard var joined = parts.first, parts.allSatisfy({ $0.width == joined.width }) else { return nil }
+        let width = joined.width
         var bands: [Range<Int>] = []
-        for below in parts.dropFirst() {
-            if let start = continuation(of: above, by: below) {
-                // The part above already holds rows start..<above.height of this one.
-                let extra = below.height - (above.height - start)
+        for part in parts.dropFirst() where joined.height < maximumHeight {
+            var pixels = joined.pixels
+            if let start = continuation(of: joined, by: part) {
+                // The capture so far already holds rows start..<joined.height of this part.
+                let extra = part.height - (joined.height - start)
                 guard extra > 0 else { continue }
-                pixels += below.pixels.suffix(extra * below.width)
+                pixels += part.pixels.suffix(extra * width)
             } else {
                 let height = max(1, Int((bandPoints * scale).rounded()))
-                let top = pixels.count / above.width
-                pixels += band(width: above.width, height: height, above: above, below: below,
+                pixels += band(width: width, height: height, above: joined, below: part,
                                scale: scale, colorSpace: colorSpace)
-                bands.append(top..<(top + height))
-                pixels += below.pixels
+                bands.append(joined.height..<(joined.height + height))
+                pixels += part.pixels
             }
-            above = below
+            let rows = min(pixels.count / width, maximumHeight)
+            guard let next = ScrollingCaptureRaster(width: width, height: rows,
+                                                    pixels: Array(pixels.prefix(rows * width))) else { return nil }
+            joined = next
         }
-        let height = min(pixels.count / parts[0].width, maximumHeight)
-        guard let raster = ScrollingCaptureRaster(width: parts[0].width, height: height,
-                                                  pixels: Array(pixels.prefix(height * parts[0].width))) else { return nil }
-        return (raster, bands.filter { $0.lowerBound < height }.map { $0.lowerBound..<min($0.upperBound, height) })
+        return (joined, bands.filter { $0.lowerBound < joined.height }
+            .map { $0.lowerBound..<min($0.upperBound, joined.height) })
     }
 
     /// Where `below` starts in `above`: the one offset at which every row the

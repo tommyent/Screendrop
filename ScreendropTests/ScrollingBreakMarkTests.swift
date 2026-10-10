@@ -34,6 +34,15 @@ import Testing
         #expect(Array(joined.raster.pixels.suffix(200 * F.width)) == below.pixels)
     }
 
+    @Test("A later part already inside the capture, as after a scroll-back, is dropped")
+    func repeatDropped() throws {
+        let inside = try #require(ScrollingCaptureRaster(width: F.width, height: 50, pixels: page(100..<150)))
+        let joined = try #require(ScrollingCaptureBreakMark.join([F.frame(0), F.frame(1000), inside], scale: 2,
+            colorSpace: space, maximumHeight: 16_384))
+        #expect(joined.bands == [200..<240] && joined.raster.height == 440)
+        #expect(Array(joined.raster.pixels.suffix(200 * F.width)) == F.frame(1000).pixels)
+    }
+
     @Test("Repeats that fit two places, or too few distinct rows, prove nothing")
     func ambiguous() throws {
         let rows = page(0..<20)
