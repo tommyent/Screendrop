@@ -72,6 +72,9 @@ final class ScrollingCapturePresenter {
     private(set) var isActivePartLost = false
     /// Screendrop is scrolling the region itself, a step at a time.
     private(set) var isAutoScrolling = false
+    /// Frames are coming in, so auto-scroll has something to follow. False
+    /// before capture starts and once the stream ends, even before Done.
+    private(set) var canAutoScroll = false
     /// Auto-scroll was asked for without the Accessibility permission it
     /// needs to post scroll events; the user scrolls by hand.
     private(set) var needsScrollPermission = false
@@ -238,7 +241,8 @@ final class ScrollingCapturePresenter {
             .init(height: stitchedHeight, lastFrameTime: lastFrameTime, partCount: partCount,
                   canContinue: session.outcome == nil && !hasReachedLimit && !isActivePartLost)
         }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
-        defer { autoScroller?.stop(); autoScroller = nil }
+        canAutoScroll = true
+        defer { endAutoScroll() }
         // Frames and idle ticks arrive until Done, Cancel, the height limit
         // or a stream error stops the stream.
         events: while let event = await events.next() {
@@ -335,6 +339,9 @@ final class ScrollingCapturePresenter {
                     stages: ["uiStart": uiStart, "uiEnd": ScrollingCaptureSampleTiming.now()]))
             }
         }
+        // The stream has ended (Done, Cancel, the height limit or an error):
+        // nothing more can be captured, so nothing more may be scrolled.
+        endAutoScroll()
 
         // ponytail: after a stream error the bar doesn't say capture stopped;
         // it waits for Done, which keeps what's captured, or Cancel.
@@ -411,6 +418,12 @@ final class ScrollingCapturePresenter {
         needsScrollPermission = false
         autoScroller.start()
         isAutoScrolling = autoScroller.isRunning
+    }
+
+    private func endAutoScroll() {
+        autoScroller?.stop()
+        autoScroller = nil
+        canAutoScroll = false
     }
 
     func openScrollPermissionSettings() {
@@ -624,10 +637,11 @@ private struct ScrollingCaptureBar: View {
     /// A lost track in the part being captured, or the height limit, stops
     /// auto-scroll, and it can't start again until the user has dealt with
     /// either; pausing always works. An earlier part waiting for a join
-    /// doesn't block it.
+    /// doesn't block it. Once the stream has ended there is nothing to follow.
     private var canToggleAutoScroll: Bool {
         presenter.isAutoScrolling
-            || (!presenter.isActivePartLost && !presenter.hasReachedLimit && !presenter.isPausedForVideo)
+            || (presenter.canAutoScroll && !presenter.isActivePartLost && !presenter.hasReachedLimit
+                && !presenter.isPausedForVideo)
     }
 
     private var autoScrollHelp: String {
