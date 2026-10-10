@@ -40,9 +40,8 @@ final class ScrollingCapturePresenter {
     private(set) var isWaiting = false
     /// The capture is as tall as it can get; only Done or Cancel are left.
     private(set) var hasReachedLimit = false
-    /// At rest, a video plays over most of the region: frames can't be placed
-    /// past it, so the bar asks for it to be paused.
-    private(set) var isVideoPlaying = false
+    /// Waiting, and the page keeps changing: the bar asks for it to be paused.
+    private(set) var keepsChanging = false
     /// Screendrop is scrolling the region itself, a step at a time.
     private(set) var isAutoScrolling = false
     /// Frames are coming in, so auto-scroll has something to follow.
@@ -110,7 +109,7 @@ final class ScrollingCapturePresenter {
         stitchedHeight = output.rows.count
         isWaiting = false
         hasReachedLimit = false
-        isVideoPlaying = false
+        keepsChanging = false
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
         panel = ScrollingCaptureBar.makePanel(below: rect, on: screen)
         panel?.orderFrontRegardless()
@@ -163,7 +162,7 @@ final class ScrollingCapturePresenter {
             lastFrameTime = frame.time
             stitchedHeight = update.height
             isWaiting = update.placement == .skipped
-            isVideoPlaying = update.isVideoPlaying
+            keepsChanging = update.keepsChanging
             hasReachedLimit = stitchedHeight >= Self.maximumHeight
             if hasReachedLimit { source.stop() }
         }

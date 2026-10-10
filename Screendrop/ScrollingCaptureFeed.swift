@@ -11,14 +11,17 @@ actor ScrollingCaptureFeed {
         let placement: ScrollingCaptureFrameStitcher.Placement
         /// The stitched height so far, in pixels.
         let height: Int
-        /// At rest, pixels changed over most of the selection: a video is
-        /// playing, and no pixel method can place frames past it.
-        let isVideoPlaying: Bool
+        /// The frame was skipped and changed over much of the selection since
+        /// the one before: a video, an animation, a hover or still scrolling,
+        /// which pixels alone can't tell apart.
+        let keepsChanging: Bool
     }
 
-    /// Changed pixels at rest whose bounding box covers more than this share
-    /// of the selection are a video, not a hover or a caret (the plan's hint).
-    static let videoCoverage = 0.5
+    /// While frames are skipped, a change since the previous frame whose
+    /// bounding box covers more than this share of the selection keeps
+    /// changing. On the corpus the video pages' changing waits measure 0.49
+    /// (X: its timeline column) to 0.60 (Linear); so do most waits elsewhere.
+    static let changingCoverage = 0.45
 
     private let stitcher: ScrollingCaptureFrameStitcher
     private let dump: ScrollingCaptureFrameDump?
@@ -28,8 +31,8 @@ actor ScrollingCaptureFeed {
     private let ignoredTrailingColumns: Int
     private var index = 0
     private var reference = 0
-    /// The reference frame's pixels, which a frame at rest is compared with.
-    private var referencePixels: [UInt8]
+    /// The previous frame's pixels, which a skipped frame is compared with.
+    private var previousPixels: [UInt8]
 
     init?(firstFrame: CGImage, at time: TimeInterval = ScrollingCaptureSampleTiming.now(),
           selection rect: ScrollingCaptureOutputRect, ignoredTrailingColumns: Int) {
@@ -45,7 +48,7 @@ actor ScrollingCaptureFeed {
         frameSize = CGSize(width: firstFrame.width, height: firstFrame.height)
         colorSpace = space
         self.ignoredTrailingColumns = ignoredTrailingColumns
-        referencePixels = pixels
+        previousPixels = pixels
         dump = ScrollingCaptureFrameDump(width: cropped.width, height: cropped.height,
                                          ignoredTrailingColumns: ignoredTrailingColumns)
         dump?.write(index: 0, time: time, frame: cropped, verifiedOffset: 0, action: "first")
@@ -57,20 +60,17 @@ actor ScrollingCaptureFeed {
               let cropped = Self.crop(frame, to: selection),
               let pixels = ScrollingCapturePixels.bytes(of: cropped, in: colorSpace) else {
             dump?.write(index: index, time: time, frame: nil, reference: reference, verifiedOffset: nil, action: "skipped")
-            return Update(placement: .skipped, height: await stitcher.stitchedHeight, isVideoPlaying: false)
+            return Update(placement: .skipped, height: await stitcher.stitchedHeight, keepsChanging: false)
         }
         let (placement, candidate) = await stitcher.add(pixels)
-        let atRest = placement == .redrawn || placement == .skipped && candidate == 0
-        let isVideoPlaying = atRest && Self.changedShare(referencePixels, pixels, width: cropped.width,
+        let keepsChanging = placement == .skipped && Self.changedShare(previousPixels, pixels, width: cropped.width,
             usableWidth: ScrollingCaptureOffsetVerifier.hashedWidth(width: cropped.width,
-                ignoredTrailingColumns: ignoredTrailingColumns)) > Self.videoCoverage
+                ignoredTrailingColumns: ignoredTrailingColumns)) > Self.changingCoverage
+        previousPixels = pixels
         dump?.write(index: index, time: time, frame: cropped, reference: reference, candidateOffset: candidate,
                     verifiedOffset: placement.offset, action: String(String(describing: placement).prefix { $0 != "(" }))
-        if placement.isReference {
-            reference = index
-            referencePixels = pixels
-        }
-        return Update(placement: placement, height: await stitcher.stitchedHeight, isVideoPlaying: isVideoPlaying)
+        if placement.isReference { reference = index }
+        return Update(placement: placement, height: await stitcher.stitchedHeight, keepsChanging: keepsChanging)
     }
 
     /// The bounding box of the pixels that differ, as a share of the frame;

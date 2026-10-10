@@ -11,8 +11,8 @@ private final class ScrollingCapturePanel: NSPanel {
 }
 
 struct ScrollingCaptureBar: View {
-    /// Wide enough for the auto-scroll button beside the longest titles.
-    static let barSize = CGSize(width: 430, height: 52)
+    /// Wide enough for the auto-scroll button beside the longest message.
+    static let barSize = CGSize(width: 500, height: 52)
     /// Room around the bar for the glass shadow.
     static let margin: CGFloat = 12
     static let panelSize = CGSize(width: barSize.width + margin * 2, height: barSize.height + margin * 2)
@@ -34,13 +34,12 @@ struct ScrollingCaptureBar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.isWaiting || presenter.isVideoPlaying
-                        ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
+                    .foregroundStyle(presenter.isWaiting ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .lineLimit(1)
+                    .lineLimit(presenter.keepsChanging ? 2 : 1)
                     .minimumScaleFactor(0.85)
             }
             Spacer(minLength: 8)
@@ -99,13 +98,15 @@ struct ScrollingCaptureBar: View {
 
     private var title: String {
         presenter.hasReachedLimit ? "Maximum height reached"
-            : presenter.isVideoPlaying ? "A video is playing."
+            : presenter.keepsChanging ? "Something on the page keeps changing"
             : presenter.isWaiting ? "Scroll back a little" : "Scroll to capture"
     }
 
     private var detail: String {
         guard !presenter.hasReachedLimit else { return "\(presenter.stitchedHeight.formatted()) px tall" }
-        if presenter.isVideoPlaying { return "Pause it to capture." }
+        if presenter.keepsChanging {
+            return "Video, animation or hover: pause it or move the pointer away, then scroll back a little."
+        }
         if presenter.isWaiting { return "This view doesn’t line up yet" }
         let height = "\(presenter.stitchedHeight.formatted()) px tall"
         guard let finishShortcut else { return height }

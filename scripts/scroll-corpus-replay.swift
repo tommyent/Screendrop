@@ -1,6 +1,6 @@
 // Replays corpus pages through the app's wired path, ScrollingCaptureFeed
 // (crop, Vision, verifier, stitcher, frame dump), and prints each frame's
-// placement and video hint. With the frame dump on, each run's dump plus the
+// placement and the keeps-changing hint. With the frame dump on, each run's dump plus the
 // page's truth.json scores in scroll-corpus-run.swift as the page itself does.
 //
 // swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-replay.swift \
@@ -35,7 +35,7 @@ import ImageIO
                 continue
             }
             let update = await running.add(image, at: Double(index))
-            print(index, update.placement, "height", update.height, update.isVideoPlaying ? "video" : "")
+            print(index, update.placement, "height", update.height, update.keepsChanging ? "keeps-changing" : "")
         }
         try await Task.sleep(for: .seconds(2)) // the dump writes on its own queue
     }
