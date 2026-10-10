@@ -330,7 +330,7 @@ nonisolated struct ScrollingCaptureRegistrationBuffer {
         let forward = candidates.filter {
             direction == 0 || ($0.key - lastVerifiedOffset).signum() == direction || $0.key == lastVerifiedOffset
         }
-        guard forward.count == 1, let candidate = forward.first else { return nil }
+        guard let candidate = forward.max(by: { $0.value.count < $1.value.count }) else { return nil }
         let offset = candidate.key
         // Prior travel is only a hint: repeated rows need a clear margin over reverse evidence.
         guard !candidates.contains(where: { $0.key != offset && $0.value.count * 2 > candidate.value.count }),
