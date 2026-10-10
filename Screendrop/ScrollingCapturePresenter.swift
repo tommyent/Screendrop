@@ -27,6 +27,9 @@ final class ScrollingCapturePresenter {
         let displayID: CGDirectDisplayID
         /// Pixels per point of the captured display.
         let scale: CGFloat
+        /// The rows of each break band in `image`, where parts that couldn't
+        /// be lined up meet.
+        let breaks: [Range<Int>]
     }
 
     /// ponytail: stops growing at 16,384 px, the GPU texture limit on Apple
@@ -52,6 +55,13 @@ final class ScrollingCapturePresenter {
     private(set) var recoveryTarget: CGImage?
     /// Frames line up again after track was lost; the strip says so briefly.
     private(set) var hasRecovered = false
+    /// How many parts the capture has: a lost track starts a new one.
+    private(set) var partCount = 1
+    /// A new part just started; the bar says so for a moment.
+    private(set) var hasNewPart = false
+    /// The part before the latest break is back on track, so Done can join
+    /// the parts once its rows reach the next part's.
+    private(set) var isJoiningParts = false
 
     private(set) var session = ScrollingCaptureSession()
     @ObservationIgnored private var isSelectingArea = false
@@ -59,6 +69,7 @@ final class ScrollingCapturePresenter {
     @ObservationIgnored private var panel: NSPanel?
     @ObservationIgnored private var recoveryPanel: NSPanel?
     @ObservationIgnored private var recoveryHideTask: Task<Void, Never>?
+    @ObservationIgnored private var newPartTask: Task<Void, Never>?
     @ObservationIgnored private var region: CGRect = .zero
     @ObservationIgnored private var stream: ScrollingCaptureStream?
     /// Done's or Cancel's click, on the engine's clock: frames shown after
@@ -67,6 +78,8 @@ final class ScrollingCapturePresenter {
 
     /// How long the strip shows that frames line up again before it goes.
     private static let recoveredDisplayTime: Duration = .milliseconds(1500)
+    /// How long the bar says a new part started.
+    private static let newPartDisplayTime: Duration = .seconds(2)
 
     var isPausedForVideo: Bool { session.isPausedForVideo }
 
@@ -165,6 +178,7 @@ final class ScrollingCapturePresenter {
         }
         var events = source.events.makeAsyncIterator()
         let stitcher: ScrollingCaptureEngine
+        var lastFrame: ScrollingCaptureStream.Frame?
         var lastSequence = 0
         do {
             try await source.start(filter: filter, configuration: configuration)
@@ -180,6 +194,7 @@ final class ScrollingCapturePresenter {
                       ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())
                   ) else { return nil }
             stitcher = firstStitcher
+            lastFrame = firstFrame
             lastSequence = firstFrame.sequence
         } catch {
             FailureAlert.present(message: "Scrolling capture couldn't start", error: error)
@@ -188,33 +203,68 @@ final class ScrollingCapturePresenter {
 
         isCapturing = true
         defer { isCapturing = false }
+        // A lost track starts a new part from the current view, so capture
+        // keeps going. The part that lost track listens on: scrolling back to
+        // where it left off lets it catch up, and Done joins the parts
+        // seamlessly where the pixels prove they meet, with a band elsewhere.
+        var parts = [stitcher]
+        var heights = [stitchedHeight]
+        var listener: (engine: ScrollingCaptureEngine, index: Int)?
+        partCount = 1
+        isJoiningParts = false
+        let bandRows = Int((ScrollingCaptureBreakMark.bandPoints * scale).rounded())
         // Frames and idle ticks arrive until Done, Cancel, the height limit
         // or a stream error stops the stream.
         events: while let event = await events.next() {
             guard session.outcome != .cancelled, !hasReachedLimit else { break }
             let wasLost = hasLostTrack
+            let active = parts[parts.count - 1]
             let update: ScrollingCaptureEngine.Update
+            let heard: ScrollingCaptureEngine.Update?
             switch event {
             case .frame(let frame):
                 guard frame.time <= cutoff ?? .infinity else { break events }
-                update = await stitcher.add(frame.image, at: frame.time, timing: ScrollingCaptureSampleTiming(
+                update = await active.add(frame.image, at: frame.time, timing: ScrollingCaptureSampleTiming(
                     sequence: frame.sequence, displayTime: frame.time, callbackTime: frame.callbackTime,
                     engineEnqueued: ScrollingCaptureSampleTiming.now(), droppedSinceLast: frame.sequence - lastSequence - 1,
                     status: frame.status.rawValue))
+                heard = await listener?.engine.add(frame.image, at: frame.time)
                 lastSequence = frame.sequence
+                lastFrame = frame
             case .idle(let time):
                 // A still page sends nothing else, so idle ticks let the
                 // engine decide a jump it couldn't place is lost. After Done,
                 // only frames shown before the click count.
                 guard cutoff == nil else { continue }
-                update = await stitcher.noteIdle(at: time)
+                update = await active.noteIdle(at: time)
+                heard = await listener?.engine.noteIdle(at: time)
             }
             let uiStart = ScrollingCaptureSampleTiming.now()
-            hasLostTrack = update.state == .lost
-            stitchedHeight = update.height
-            hasReachedLimit = update.state == .limit || stitchedHeight >= Self.maximumHeight
-            if hasReachedLimit { source.stop() }
-            if hasLostTrack, !wasLost, session.outcome == nil {
+            heights[parts.count - 1] = update.height
+            if let listener, let heard { heights[listener.index] = heard.height }
+            // ponytail: a part that can't start (no frame yet, or the engine
+            // refuses it) leaves the capture lost, as before parts existed.
+            let broke = update.state == .lost && session.outcome == nil
+            if broke, let frame = lastFrame,
+               let next = ScrollingCaptureEngine(firstFrame: frame.image, selection: output,
+                   ignoredTrailingColumns: Int((Self.scrollBarWidth * scale).rounded())) {
+                listener = (active, parts.count - 1)
+                parts.append(next)
+                heights.append(output.rows.count)
+                partCount = parts.count
+                showNewPart()
+            }
+            let started = broke && listener?.engine === active
+            if started {
+                hasLostTrack = true
+            } else if let heard {
+                hasLostTrack = heard.state == .lost
+            } else {
+                hasLostTrack = update.state == .lost
+            }
+            isJoiningParts = listener != nil && !hasLostTrack
+            if hasLostTrack, !wasLost || started, session.outcome == nil {
+                let recovering = listener?.engine ?? active
                 // The strip shows a few hundred points of the rows; a full-resolution
                 // copy would hold megabytes for as long as track stays lost.
                 func fitted(_ rows: CGImage?) -> CGImage? {
@@ -226,17 +276,19 @@ final class ScrollingCapturePresenter {
                 // The newest rows are the closest match, but a run of still rows
                 // between moving media can be a few pixels tall: unreadable. The
                 // last confirmed rows, which recovery also matches, stand in then.
-                let newest = fitted(await stitcher.recoveryRows(recoveryRows))
+                let newest = fitted(await recovering.recoveryRows(recoveryRows))
                 if let newest, CGFloat(newest.height) >= ScrollingCaptureRecoveryStrip.imageSize.height * scale / 3 {
                     recoveryTarget = newest
                 } else {
-                    let confirmed = fitted(await stitcher.recoveryRows(recoveryRows, newest: false))
+                    let confirmed = fitted(await recovering.recoveryRows(recoveryRows, newest: false))
                     recoveryTarget = (confirmed?.height ?? 0) > (newest?.height ?? 0) ? confirmed : newest
                 }
                 showRecoveryStrip()
                 if let recoveryPanel {
                     NSAccessibility.post(element: recoveryPanel, notification: .announcementRequested, userInfo: [
-                        .announcement: "Scroll back to where you left off. Done keeps what’s captured.",
+                        .announcement: partCount > 1
+                            ? "Couldn’t line up, so a new part started. Scroll back to join the parts, or keep going. Done keeps both."
+                            : "Scroll back to where you left off. Done keeps what’s captured.",
                         .priority: NSAccessibilityPriorityLevel.high.rawValue
                     ])
                 }
@@ -244,7 +296,7 @@ final class ScrollingCapturePresenter {
                 showRecovered()
             }
             if case .frame = event {
-                await stitcher.noteTiming(ScrollingCaptureSampleTiming(sequence: lastSequence,
+                await active.noteTiming(ScrollingCaptureSampleTiming(sequence: lastSequence,
                     stages: ["uiStart": uiStart, "uiEnd": ScrollingCaptureSampleTiming.now()]))
             }
         }
@@ -256,14 +308,27 @@ final class ScrollingCapturePresenter {
         }
         let endTime = cutoff ?? ScrollingCaptureSampleTiming.now()
         guard session.outcome != .cancelled else {
-            await stitcher.finishTrace(at: endTime)
+            for part in parts { await part.finishTrace(at: endTime) }
             return nil
         }
-        guard let image = await stitcher.makeImage(at: endTime) else { return nil }
-        let capped = image.height > Self.maximumHeight
-            ? image.cropping(to: CGRect(x: 0, y: 0, width: image.width, height: Self.maximumHeight))
-            : image
-        return capped.map { Capture(image: $0, displayID: display.displayID, scale: scale) }
+        var images: [CGImage] = []
+        for part in parts {
+            guard let image = await part.makeImage(at: endTime) else { return nil }
+            images.append(image)
+        }
+        guard images.count > 1 else {
+            let capped = images[0].height > Self.maximumHeight
+                ? images[0].cropping(to: CGRect(x: 0, y: 0, width: images[0].width, height: Self.maximumHeight))
+                : images[0]
+            return capped.map { Capture(image: $0, displayID: display.displayID, scale: scale, breaks: []) }
+        }
+        let space = images[0].colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let rasters = images.compactMap { ScrollingCaptureRaster(image: $0, colorSpace: space) }
+        guard rasters.count == images.count,
+              let joined = ScrollingCaptureBreakMark.join(rasters, scale: scale, colorSpace: space,
+                  maximumHeight: Self.maximumHeight),
+              let image = joined.raster.image(in: space) else { return nil }
+        return Capture(image: image, displayID: display.displayID, scale: scale, breaks: joined.bands)
     }
 
     /// Ends the session, keeping what was captured. Until frames are being
@@ -309,6 +374,8 @@ final class ScrollingCapturePresenter {
     }
 
     private func hidePanel() {
+        newPartTask?.cancel()
+        hasNewPart = false
         hideRecoveryStrip()
         recoveryPanel = nil
         recoveryTarget = nil
@@ -360,6 +427,16 @@ final class ScrollingCapturePresenter {
             visible: panel.screen?.visibleFrame ?? panel.frame, margin: ScrollingCaptureBar.margin))
         strip.orderFrontRegardless()
         recoveryPanel = strip
+    }
+
+    private func showNewPart() {
+        hasNewPart = true
+        newPartTask?.cancel()
+        newPartTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.newPartDisplayTime)
+            guard !Task.isCancelled else { return }
+            self?.hasNewPart = false
+        }
     }
 
     private func showRecovered() {
@@ -426,7 +503,8 @@ private struct ScrollingCaptureBar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.hasLostTrack ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
+                    .foregroundStyle(presenter.hasNewPart || presenter.hasLostTrack && presenter.partCount == 1
+                        ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.monospacedDigit())
@@ -468,7 +546,9 @@ private struct ScrollingCaptureBar: View {
             "Maximum height reached"
         } else if presenter.isPausedForVideo {
             "Capture paused"
-        } else if presenter.hasLostTrack {
+        } else if presenter.hasNewPart {
+            "New part started"
+        } else if presenter.hasLostTrack && presenter.partCount == 1 {
             "Scroll back to where you left off"
         } else {
             "Scroll to capture"
@@ -477,10 +557,13 @@ private struct ScrollingCaptureBar: View {
 
     private var detail: String {
         if presenter.isPausedForVideo { return "Done keeps what’s captured" }
-        if presenter.hasLostTrack && !presenter.hasReachedLimit {
+        if presenter.hasNewPart { return presenter.partCount == 2 ? "Done keeps both parts" : "Done keeps every part" }
+        if presenter.hasLostTrack && presenter.partCount == 1 && !presenter.hasReachedLimit {
             return "Couldn't line this view up"
         }
-        let height = "\(presenter.stitchedHeight.formatted()) px tall"
+        let height = presenter.partCount == 1 ? "\(presenter.stitchedHeight.formatted()) px tall"
+            : presenter.isJoiningParts ? "Joining the parts"
+            : "Part \(presenter.partCount) · \(presenter.stitchedHeight.formatted()) px tall"
         guard let finishShortcut else { return height }
         return "\(height) · \(finishShortcut) to finish"
     }
@@ -494,7 +577,8 @@ private struct ScrollingCaptureRecoveryContent: View {
             target: presenter.recoveryTarget,
             hasRecovered: presenter.hasRecovered,
             isPausedForVideo: false,
-            onContinue: {}
+            onContinue: {},
+            joinsParts: presenter.partCount > 1
         )
     }
 }

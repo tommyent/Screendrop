@@ -152,16 +152,18 @@ final class ScreenshotManager {
     /// scrolling capture, to a temp PNG alongside the `screencapture` ones.
     /// Records the display scale as DPI, as `screencapture` does, so a Retina
     /// capture keeps its real size.
-    func writeCapture(_ image: CGImage, scale: CGFloat) async -> URL? {
+    /// `breaks` are a scrolling capture's break bands, recorded in the PNG.
+    func writeCapture(_ image: CGImage, scale: CGFloat, breaks: [Range<Int>] = []) async -> URL? {
         // Encoding suspends the caller, so reserve a unique name before another capture starts.
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("Screendrop_\(UUID()).png")
         return await Task.detached(priority: .userInitiated) {
-            autoreleasepool { Self.writePNG(image, to: url, scale: scale) }
+            autoreleasepool { Self.writePNG(image, to: url, scale: scale, breaks: breaks) }
         }.value
     }
 
-    nonisolated private static func writePNG(_ image: CGImage, to url: URL, scale: CGFloat) -> URL? {
+    nonisolated private static func writePNG(_ image: CGImage, to url: URL, scale: CGFloat,
+                                             breaks: [Range<Int>]) -> URL? {
         guard let destination = CGImageDestinationCreateWithURL(
             url as CFURL,
             "public.png" as CFString,
@@ -172,8 +174,12 @@ final class ScreenshotManager {
         }
 
         let dpi = 72 * scale
-        let properties = [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi] as CFDictionary
-        CGImageDestinationAddImage(destination, image, properties)
+        var properties: [CFString: Any] = [kCGImagePropertyDPIWidth: dpi, kCGImagePropertyDPIHeight: dpi]
+        if !breaks.isEmpty {
+            properties[kCGImagePropertyPNGDictionary] = [kCGImagePropertyPNGComment: "Scrolling Capture break rows: "
+                + breaks.map { "\($0.lowerBound)-\($0.upperBound - 1)" }.joined(separator: ", ")]
+        }
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         return CGImageDestinationFinalize(destination) ? url : nil
     }
 
