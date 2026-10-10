@@ -16,22 +16,16 @@ nonisolated enum ScrollingCaptureOffsetEstimator {
     /// How far apart agreeing bands may be: Vision's registration is subpixel
     /// but drifts a few pixels on text.
     static let consensusSpread = 3.0
-    /// The whole-frame fallback must be this sure, without bands to agree.
-    static let fallbackConfidence: Float = 0.9
 
-    /// The candidate offset, or nil when the bands don't agree and the whole
-    /// frame isn't sure either.
+    /// The candidate offset: the bands' consensus, else the whole frame's
+    /// shift. Vision's confidence is no gate (1.0 for all 63 whole-frame
+    /// results on the corpus, unrelated frames included); the verifier is.
     static func candidateOffset(from last: [UInt8], to new: [UInt8], width: Int, height: Int,
                                 ignoredTrailingColumns: Int) -> Int? {
         guard let images = images(last, new, width: width, height: height) else { return nil }
         let usable = ScrollingCaptureOffsetVerifier.hashedWidth(width: width, ignoredTrailingColumns: ignoredTrailingColumns)
         if let agreed = consensus(bandShifts(images, usable: usable)) { return agreed }
-        // ponytail: Vision reported confidence 1.0 for all 63 whole-frame
-        // fallbacks on the corpus, unrelated frames included, so this gate
-        // never refuses; the verifier rejects the wrong ones.
-        guard let whole = translation(images, in: CGRect(x: 0, y: 0, width: usable, height: height)),
-              whole.confidence >= fallbackConfidence else { return nil }
-        return Int(whole.shift.rounded())
+        return translation(images, in: CGRect(x: 0, y: 0, width: usable, height: height)).map { Int($0.rounded()) }
     }
 
     /// Each band's shift, nil-free, for the consensus.
@@ -56,19 +50,18 @@ nonisolated enum ScrollingCaptureOffsetEstimator {
     private static func bandShifts(_ images: (last: CGImage, new: CGImage), usable: Int) -> [Double] {
         (0..<bands).compactMap { band in
             translation(images, in: CGRect(x: band * usable / bands, y: 0, width: usable / bands,
-                                           height: images.new.height))?.shift
+                                           height: images.new.height))
         }
     }
 
     /// Vision's vertical translation from `last` to `new`, as an upward content
     /// offset: Vision's y axis points up, so content moving up reads negative.
-    private static func translation(_ images: (last: CGImage, new: CGImage), in rect: CGRect)
-        -> (shift: Double, confidence: Float)? {
+    private static func translation(_ images: (last: CGImage, new: CGImage), in rect: CGRect) -> Double? {
         guard let last = images.last.cropping(to: rect), let new = images.new.cropping(to: rect) else { return nil }
         let request = VNTranslationalImageRegistrationRequest(targetedCGImage: new)
         guard (try? VNImageRequestHandler(cgImage: last).perform([request])) != nil,
               let result = request.results?.first else { return nil }
-        return (-Double(result.alignmentTransform.ty), result.confidence)
+        return -Double(result.alignmentTransform.ty)
     }
 
     /// The edge to Vision: CGImages of the packed bytes.
