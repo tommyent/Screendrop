@@ -8,8 +8,9 @@
 // its page.json supplies selection and ignoredTrailingColumns.
 //
 // swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-run.swift \
-//   Screendrop/ScrollingCaptureStitcher.swift -o /tmp/scroll-corpus-run
-// /tmp/scroll-corpus-run <corpus dir> --matcher r7
+//   Screendrop/ScrollingCaptureStitcher.swift Screendrop/ScrollingCaptureOffset{Estimator,Verifier}.swift \
+//   -o /tmp/scroll-corpus-run
+// /tmp/scroll-corpus-run <corpus dir> --matcher r7|estimator|vision-verify
 //
 // Each frame with a seam from its predecessor is one seam to score. A frame
 // without one starts a new run with a fresh matcher. A matcher's claim is
@@ -18,6 +19,7 @@
 // where truth says nothing fits (a known seam with a null offset, or a total
 // at least the frame height) is wrong; returning nil there is correct.
 // Pages are also totalled by name prefix (user-, fresh-) when there are several.
+// Each unscored seam's claim is printed above the table, for reading only.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -52,8 +54,44 @@ final class R7Matcher: CorpusMatcher {
     }
 }
 
+/// Vision's candidate against the frame before, alone or confirmed by the
+/// verifier. Every frame becomes the next reference, placed or not.
+final class VisionMatcher: CorpusMatcher {
+    let verify: Bool
+    let ignoredTrailingColumns: Int
+    var last: [UInt8]
+    var reference: Int
+
+    init?(first: CGImage, index: Int, ignoredTrailingColumns: Int, verify: Bool) {
+        guard let pixels = Self.pixels(first) else { return nil }
+        self.verify = verify
+        self.ignoredTrailingColumns = ignoredTrailingColumns
+        last = pixels
+        reference = index
+    }
+
+    func place(_ frame: CGImage, index: Int) async -> Claim? {
+        guard let new = Self.pixels(frame) else { return nil }
+        defer { last = new; reference = index }
+        guard let candidate = ScrollingCaptureOffsetEstimator.candidateOffset(from: last, to: new,
+            width: frame.width, height: frame.height, ignoredTrailingColumns: ignoredTrailingColumns) else { return nil }
+        guard verify else { return Claim(against: reference, offset: candidate) }
+        return ScrollingCaptureOffsetVerifier.verifiedOffset(candidate: candidate, from: last, to: new,
+            width: frame.width, height: frame.height, ignoredTrailingColumns: ignoredTrailingColumns)
+            .map { Claim(against: reference, offset: $0.offset) }
+    }
+
+    /// Packed BGRA, drawn as R7 draws it.
+    static func pixels(_ image: CGImage) -> [UInt8]? {
+        ScrollingCaptureStitcher.pixels(of: image, colorSpace: image.colorSpace.flatMap {
+            $0.model == .rgb && $0.supportsOutput ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!)
+    }
+}
+
 let matchers: [String: (_ first: CGImage, _ index: Int, _ ignoredTrailingColumns: Int) -> CorpusMatcher?] = [
     "r7": { R7Matcher(first: $0, index: $1, ignoredTrailingColumns: $2) },
+    "estimator": { VisionMatcher(first: $0, index: $1, ignoredTrailingColumns: $2, verify: false) },
+    "vision-verify": { VisionMatcher(first: $0, index: $1, ignoredTrailingColumns: $2, verify: true) },
 ]
 
 struct Truth: Decodable {
@@ -146,8 +184,9 @@ struct Tally {
                 continue
             }
             tally.seams += 1
+            let page = folder.lastPathComponent
             guard let claim = await matcher?.place(frame, index: index) else {
-                if seam.truthKind == "unknown" { tally.unscored += 1; continue }
+                if seam.truthKind == "unknown" { tally.unscored += 1; print("unscored \(page) \(seam.from)->\(index): claim nil"); continue }
                 tally.scored += 1
                 // Where nothing fits, refusing is the right answer.
                 if seam.offset.map({ abs($0) >= frame.height }) ?? true { tally.correct += 1 } else { tally.skipped += 1 }
@@ -161,7 +200,11 @@ struct Tally {
                 path.append(step)
                 at = step.from
             }
-            if path.contains(where: { $0.truthKind == "unknown" }) { tally.unscored += 1; continue }
+            if path.contains(where: { $0.truthKind == "unknown" }) {
+                tally.unscored += 1
+                print("unscored \(page) \(seam.from)->\(index): claim \(claim.offset) against \(claim.against)")
+                continue
+            }
             tally.scored += 1
             let offsets = path.map(\.offset)
             let total: Int? = offsets.contains(nil) ? nil : offsets.reduce(0) { $0 + $1! }

@@ -2,6 +2,8 @@
 
 Scrolling Capture frame dumps are opt-in (`ScrollingCaptureTrace` in the app's defaults) and local only: each part writes its selection crops as PNGs plus `frames.jsonl` and `page.json` under the app's Caches folder in `Screendrop/ScrollingCaptureFrames`, laid out as a corpus page for `scripts/scroll-corpus-run.swift`. They contain screen content.
 
+`ScrollingOffsetTests` uses three 600x400 PNG crops of Wikipedia's "Scroll" article (CC BY-SA 4.0) from the scrolling corpus, in `Fixtures/wikipedia-scroll-*.png`. Never commit frames of private captures.
+
 `ScrollingSettleTests` checks three fresh registered observations before media can corroborate a position, immediate revocation on change, and refusal when media is the sole evidence. At least eight distinct non-blank page rows remain required; settled rows never enter the idle witness. Moving unresolved samples are kept within the registration byte budget and a 40-changing-input window, then either registered exactly against verified keys or discarded on recovery. Repeats and ignored-column changes neither spend nor renew that window. One idle observation after 100 ms supplies rest/recovery evidence without settling media; a static view with no overlap reaches recovery after one second even if no further fresh frames arrive.
 
 Run the shared `Screendrop` or `Screendrop Dev` scheme's Test action. On this fork's build Mac:

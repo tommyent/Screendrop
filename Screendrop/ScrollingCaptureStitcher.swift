@@ -70,12 +70,6 @@ actor ScrollingCaptureStitcher {
     /// pixels. A wider run of line-like columns is two-tone content - a dense
     /// grid, say - and holds the very positions matching needs.
     private static let maximumChromeWidth = 6
-    /// The bottom quarter of the band is held back rather than appended, so a
-    /// floating button or chat bubble that sits there - covering the content
-    /// scrolling under it - isn't copied into every slice. That content is
-    /// taken from higher up the frame once it has scrolled clear, and the held
-    /// rows are added once, from the last frame, at the end.
-    private static let heldBackFraction = 4
     private static let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue
         | CGBitmapInfo.byteOrder32Little.rawValue
 
@@ -118,7 +112,7 @@ actor ScrollingCaptureStitcher {
         self.width = width
         self.height = height
         self.colorSpace = colorSpace
-        hashedWidth = max(1, width - min(max(ignoredTrailingColumns, 0), width / 4))
+        hashedWidth = ScrollingCaptureOffsetVerifier.hashedWidth(width: width, ignoredTrailingColumns: ignoredTrailingColumns)
         first = pixels
         last = pixels
         lastColumns = Self.columnProfile(of: pixels, width: width, height: height, hashedWidth: hashedWidth)
@@ -224,7 +218,7 @@ actor ScrollingCaptureStitcher {
         // R7 replaces the held tail from one frame. Changes there cannot mix
         // committed moments; handoff re-owns that whole still-visible tail.
         let checkedColumns = (0..<hashedWidth).filter { !isChrome[$0] }
-        let committed = band.lowerBound..<Self.cut(in: band)
+        let committed = band.lowerBound..<ScrollingCaptureOffsetVerifier.cut(in: band)
         let isStatic = band.allSatisfy { y in
             guard band.contains(y + shift) else { return true }
             guard shift <= 0 || (committed.contains(y) && committed.contains(y + shift)) else { return true }
@@ -253,7 +247,7 @@ actor ScrollingCaptureStitcher {
         // band above the cut leaves a gap only the held-back rows of the last
         // frame could fill - where an overlay may have covered them - so it's
         // treated like any other lost frame: scrolling back picks it up again.
-        let cut = Self.cut(in: band)
+        let cut = ScrollingCaptureOffsetVerifier.cut(in: band)
         let start = cut - shift
         guard start >= band.lowerBound else {
             refused = true
@@ -315,7 +309,7 @@ actor ScrollingCaptureStitcher {
     /// held-back rows and the footer as they look in the last accepted frame.
     func makeImage() -> CGImage? {
         let bytesPerRow = width * 4
-        let cutStart = (fixedEdges.map { Self.cut(in: $0.top..<(height - $0.bottom)) } ?? height) * bytesPerRow
+        let cutStart = (fixedEdges.map { ScrollingCaptureOffsetVerifier.cut(in: $0.top..<(height - $0.bottom)) } ?? height) * bytesPerRow
         var data = Data(capacity: stitchedHeight * bytesPerRow)
         data.append(contentsOf: first[0..<cutStart])
         data.append(contentsOf: appended)
@@ -337,11 +331,6 @@ actor ScrollingCaptureStitcher {
         )
     }
 
-    /// The row the band is appended up to; the rows below it are held back.
-    private static func cut(in band: Range<Int>) -> Int {
-        band.upperBound - band.count / heldBackFraction
-    }
-
     // MARK: - Matching
 
     private enum LineUp {
@@ -356,7 +345,7 @@ actor ScrollingCaptureStitcher {
         let lastRows = Self.rows(of: last, width: width, height: height, strips: strips)
         let rows = Self.rows(of: pixels, width: width, height: height, strips: strips)
         guard rows != lastRows else { return .identical }
-        let edges = fixedEdges ?? unmovedEdges(from: lastRows, to: rows)
+        let edges = fixedEdges ?? ScrollingCaptureOffsetVerifier.unmovedEdges(height: height) { lastRows[$0] == rows[$0] }
         let band = edges.top..<(height - edges.bottom)
         proposedViewport = band
         guard band.count > Self.minimumMatchedRows else { return .unmatched }
@@ -416,23 +405,6 @@ actor ScrollingCaptureStitcher {
 
     private struct Row: Hashable {
         let strips: [Strip]
-    }
-
-    /// Runs of rows at the top and bottom that are identical in both frames.
-    /// Capped at a third of the frame each, so a mostly blank page can't
-    /// shrink the band that scrolling is matched in. Overcounting is harmless:
-    /// the content passing through those rows is still kept, just later.
-    private func unmovedEdges(from old: [Row], to new: [Row]) -> (top: Int, bottom: Int) {
-        let limit = height / 3
-        var top = 0
-        while top < limit, old[top] == new[top] {
-            top += 1
-        }
-        var bottom = 0
-        while bottom < limit, old[height - 1 - bottom] == new[height - 1 - bottom] {
-            bottom += 1
-        }
-        return (top, bottom)
     }
 
     /// Retry using columns whose strips independently line up unambiguously.
@@ -606,7 +578,7 @@ actor ScrollingCaptureStitcher {
 
     /// Redraws the frame as tightly packed BGRA in the stitch's color space,
     /// so rows can be hashed and copied byte for byte.
-    private static func pixels(of image: CGImage, colorSpace: CGColorSpace) -> [UInt8]? {
+    static func pixels(of image: CGImage, colorSpace: CGColorSpace) -> [UInt8]? {
         let width = image.width
         let height = image.height
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
