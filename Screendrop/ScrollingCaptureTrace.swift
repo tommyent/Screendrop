@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Opt-in frame dump (`defaults write com.fayazahmed.Screendrop ScrollingCaptureTrace -bool YES`).
+/// Opt-in frame dump (`defaults write com.tommyent.Sukusho ScrollingCaptureTrace -bool YES`).
 /// Each capture writes a new folder in Caches/Screendrop/ScrollingCaptureFrames, laid out as a
 /// corpus page (scripts/scroll-corpus-run.swift): NNNN.png, the selection crop the stitcher sees
 /// at full resolution; page.json with the selection and ignored trailing columns; and
