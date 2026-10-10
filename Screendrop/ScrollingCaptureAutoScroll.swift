@@ -29,8 +29,11 @@ final class ScrollingCaptureAutoScroller {
         let canContinue: Bool
     }
 
-    /// A step as a share of the region's height, in points: well inside one
-    /// region, so frames on either side of a step always overlap.
+    /// A step is a quarter of the region's height, 40-240 pt. For regions
+    /// 160 pt and taller that's at most a quarter, so the pacer's two steps
+    /// without progress stay within half a region; smaller regions step 40 pt,
+    /// a bigger share, so fewer steps fit before frames stop overlapping. The
+    /// floor keeps a small region from crawling.
     private static let stepFraction: CGFloat = 0.25
     private static let stepRange: ClosedRange<CGFloat> = 40...240
     /// Marks auto-scroll's own scroll events.
