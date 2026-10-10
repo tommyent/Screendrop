@@ -10,7 +10,7 @@
 // swiftc -parse-as-library -default-isolation MainActor scripts/scroll-corpus-run.swift \
 //   Screendrop/ScrollingCapture{Stitcher,FrameStitcher}.swift Screendrop/ScrollingCaptureOffset{Estimator,Verifier}.swift \
 //   -o /tmp/scroll-corpus-run
-// /tmp/scroll-corpus-run <corpus dir> --matcher r7|estimator|vision-verify|stitcher
+// /tmp/scroll-corpus-run <corpus dir> --matcher r7|estimator|vision-verify|stitcher [--compare <matcher>]
 //
 // Each frame with a seam from its predecessor is one seam to score. A frame
 // without one starts a new run with a fresh matcher. A matcher's claim is
@@ -27,6 +27,9 @@
 // minus the truth (frame height plus the run's summed offsets), "-" when a
 // seam is unknown or the matcher doesn't stitch; totals sum |page heightErr|
 // over the pages with one, "/Np".
+// --compare runs a second matcher too and prints, for both, the correct seams
+// among those both score, and |heightErr| summed over the jump-free pages
+// (no known seam with nothing fitting) where both have a height.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -153,6 +156,9 @@ struct Tally {
     /// A page's signed height error; totals keep only the two sums below.
     var heightErr: Int?
     var heightAbs = 0, heightPages = 0
+    /// A page's seams (by frame index) for --compare, and whether any known seam has nothing fitting.
+    var scoredSeams = Set<Int>(), correctSeams = Set<Int>()
+    var jumpFree = true
 
     static func += (lhs: inout Tally, rhs: Tally) {
         lhs.pages += rhs.pages; lhs.seams += rhs.seams; lhs.scored += rhs.scored; lhs.correct += rhs.correct
@@ -173,10 +179,14 @@ struct Tally {
 @main struct ScrollCorpusRun {
     static func main() async throws {
         let arguments = CommandLine.arguments
-        guard arguments.count == 4, arguments[2] == "--matcher", let make = matchers[arguments[3]] else {
-            print("usage: scroll-corpus-run <corpus dir> --matcher <\(matchers.keys.sorted().joined(separator: "|"))>")
+        let names = matchers.keys.sorted().joined(separator: "|")
+        guard arguments.count == 4 || arguments.count == 6, arguments[2] == "--matcher", let make = matchers[arguments[3]],
+              arguments.count == 4 || arguments[4] == "--compare" && matchers[arguments[5]] != nil else {
+            print("usage: scroll-corpus-run <corpus dir> --matcher <\(names)> [--compare <\(names)>]")
             exit(2)
         }
+        let other = arguments.count == 6 ? matchers[arguments[5]] : nil
+        var common = 0, commonCorrect = (0, 0), jumpFreePages = 0, jumpFreeHeight = (0, 0)
         let corpus = URL(fileURLWithPath: arguments[1])
         let pages = try FileManager.default.contentsOfDirectory(atPath: corpus.path).sorted()
             .filter { FileManager.default.fileExists(atPath: corpus.appendingPathComponent("\($0)/truth.json").path) }
@@ -187,6 +197,17 @@ struct Tally {
             let folder = corpus.appendingPathComponent(page)
             let truth = try readTruth(folder)
             let tally = try await score(truth, folder: folder, make: make)
+            if let other {
+                let rival = try await score(truth, folder: folder, make: other, verbose: false)
+                let both = tally.scoredSeams.intersection(rival.scoredSeams)
+                common += both.count
+                commonCorrect.0 += tally.correctSeams.intersection(both).count
+                commonCorrect.1 += rival.correctSeams.intersection(both).count
+                if tally.jumpFree, let a = tally.heightErr, let b = rival.heightErr {
+                    jumpFreePages += 1
+                    jumpFreeHeight.0 += abs(a); jumpFreeHeight.1 += abs(b)
+                }
+            }
             rows.append([page] + tally.row)
             total += tally
             groups[String(page.prefix { $0 != "-" }), default: Tally()] += tally
@@ -194,6 +215,12 @@ struct Tally {
         if groups.count > 1 { rows += groups.keys.sorted().map { ["TOTAL \($0)"] + groups[$0]!.row } }
         rows.append(["TOTAL"] + total.row)
         print("matcher \(arguments[3]), corpus \(corpus.path)")
+        defer {
+            if other != nil {
+                print("compare \(arguments[3]) vs \(arguments[5]): seams both score \(common), correct \(commonCorrect.0) vs \(commonCorrect.1); "
+                    + "jump-free pages with heights \(jumpFreePages), sum |heightErr| \(jumpFreeHeight.0) vs \(jumpFreeHeight.1)")
+            }
+        }
         let header = ["page", "pages", "seams", "scored", "correct", "off-by-N (N:count)", "wrong", "skipped", "unscored", "stuck", "heightErr"]
         let table = [header] + rows
         let widths = header.indices.map { column in table.map { $0[column].count }.max()! }
@@ -215,7 +242,8 @@ struct Tally {
         return try JSONDecoder().decode(Truth.self, from: JSONSerialization.data(withJSONObject: truth))
     }
 
-    static func score(_ truth: Truth, folder: URL, make: (CGImage, Int, Int) -> CorpusMatcher?) async throws -> Tally {
+    static func score(_ truth: Truth, folder: URL, make: (CGImage, Int, Int) -> CorpusMatcher?,
+                      verbose: Bool = true) async throws -> Tally {
         var tally = Tally(pages: 1)
         let seamInto = Dictionary(uniqueKeysWithValues: truth.seams.map { ($0.to, $0) })
         let crop = CGRect(x: truth.selection.columns[0], y: truth.selection.rows[0],
@@ -258,25 +286,27 @@ struct Tally {
             }
             if path.contains(where: { $0.truthKind == "unknown" }) {
                 tally.unscored += 1
-                print("unscored \(page) \(seam.from)->\(index): claim \(claim.offset.map(String.init) ?? "nil") against \(claim.against)")
+                if verbose { print("unscored \(page) \(seam.from)->\(index): claim \(claim.offset.map(String.init) ?? "nil") against \(claim.against)") }
                 continue
             }
             tally.scored += 1
+            tally.scoredSeams.insert(index)
             let offsets = path.map(\.offset)
             let total: Int? = offsets.contains(nil) ? nil : offsets.reduce(0) { $0 + $1! }
             let nothingFits = total.map { abs($0) >= frame.height } ?? true
             guard let offset = claim.offset else {
-                if nothingFits { tally.correct += 1 } else { tally.skipped += 1 }
+                if nothingFits { tally.correct += 1; tally.correctSeams.insert(index) } else { tally.skipped += 1 }
                 continue
             }
             guard let expected = total, !nothingFits else { tally.wrong += 1; continue }
             let error = abs(offset - expected)
             let wrongSign = offset != 0 && expected != 0 && (offset > 0) != (expected > 0)
-            if error == 0 { tally.correct += 1 }
+            if error == 0 { tally.correct += 1; tally.correctSeams.insert(index) }
             else if error <= 3 && !wrongSign { tally.offBy[error, default: 0] += 1 }
             else { tally.wrong += 1 }
         }
         await finishRun()
+        tally.jumpFree = !truth.seams.contains { $0.truthKind != "unknown" && ($0.offset.map { abs($0) >= Int(crop.height) } ?? true) }
         if pageKnown { tally.heightErr = pageErr; tally.heightAbs = abs(pageErr); tally.heightPages = 1 }
         return tally
     }
