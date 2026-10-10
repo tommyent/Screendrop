@@ -45,6 +45,23 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         super.init()
     }
 
+    /// Scrolling further than the region's height between two samples leaves
+    /// no overlap to line frames up with, so sample often.
+    static let frameInterval = CMTime(value: 1, timescale: 20)
+
+    /// The region at the display's full pixel scale, without the cursor, in BGRA.
+    static func configuration(sourceRect: CGRect, scale: CGFloat) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.sourceRect = sourceRect
+        configuration.width = max(1, Int((sourceRect.width * scale).rounded()))
+        configuration.height = max(1, Int((sourceRect.height * scale).rounded()))
+        configuration.showsCursor = false
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.minimumFrameInterval = frameInterval
+        configuration.queueDepth = 3
+        return configuration
+    }
+
     func start(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws {
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)

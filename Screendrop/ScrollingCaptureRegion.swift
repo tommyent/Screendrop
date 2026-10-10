@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// All rectangles use the display filter's top-left point coordinates.
 nonisolated enum ScrollingCaptureRegion {
@@ -79,6 +80,25 @@ nonisolated enum ScrollingCaptureRegion {
         let top = Int(((selection.minY - matching.minY) * scale).rounded())
         return ScrollingCaptureOutputRect(columns: left..<(left + Int((selection.width * scale).rounded())),
             rows: top..<(top + Int((selection.height * scale).rounded())))
+    }
+}
+
+extension ScrollingCaptureRegion {
+    /// The windows on screen other than this app's, front to back, in the
+    /// display's top-left points; `targets` are the ones a region may snap to.
+    static func frontToBackWindows(on displayID: CGDirectDisplayID, targets: Set<CGWindowID>)
+        -> [(frame: CGRect, isTarget: Bool)] {
+        let displayBounds = CGDisplayBounds(displayID)
+        let pid = ProcessInfo.processInfo.processIdentifier
+        return (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []).compactMap { info in
+                guard let id = info[kCGWindowNumber as String] as? UInt32,
+                      info[kCGWindowOwnerPID as String] as? Int32 != pid,
+                      (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                      let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                      let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), targets.contains(id))
+            }
     }
 }
 

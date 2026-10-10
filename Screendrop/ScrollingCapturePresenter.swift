@@ -5,22 +5,14 @@
 
 import AppKit
 import CoreGraphics
-import CoreMedia
-import CoreVideo
 import ScreenCaptureKit
 import SwiftUI
 
-/// Runs a scrolling capture: the user draws a region, scrolls the content
-/// under it, and clicks Done. Frames are sampled while they scroll and handed
-/// to `ScrollingCaptureFeed`: Vision proposes each frame's offset, exact
-/// pixels confirm it, and a frame that doesn't fit is skipped until one does.
-///
-/// The region stays highlighted for the whole session, with a small bar below
-/// it: capturing (the stitched height), waiting ("Scroll back a little", the
-/// latest frame didn't fit) or at the height limit, and Done/Cancel. The app
-/// being scrolled keeps the keyboard throughout, so the bar's buttons - or
-/// pressing the shortcut again - are how a session ends. The bar's auto-scroll
-/// button scrolls the region a step at a time instead (`ScrollingCaptureAutoScroller`).
+/// Runs a scrolling capture: the user draws a region, scrolls under it, and
+/// clicks Done. Frames go to `ScrollingCaptureFeed`: Vision proposes, exact
+/// pixels confirm, and a frame that doesn't fit is skipped until one does.
+/// The region stays highlighted, with `ScrollingCaptureBar` below it; the
+/// scrolled app keeps the keyboard, so the bar or the shortcut ends a session.
 @Observable
 final class ScrollingCapturePresenter {
     static let shared = ScrollingCapturePresenter()
@@ -34,13 +26,9 @@ final class ScrollingCapturePresenter {
 
     private enum Outcome { case done, cancelled }
 
-    /// ponytail: stops growing at 16,384 px, the GPU texture limit on Apple
-    /// silicon, because the editor isn't verified with taller images. Raise
-    /// once it is.
+    /// ponytail: stops at 16,384 px, the GPU texture limit on Apple silicon:
+    /// the editor isn't verified with taller images. Raise once it is.
     private static let maximumHeight = 16_384
-    /// Scrolling further than the region's height between two samples leaves
-    /// no overlap to line frames up with, so sample often.
-    private static let frameInterval = CMTime(value: 1, timescale: 20)
     /// Right-edge strip left out of matching, where the overlay scroll bar
     /// appears while scrolling.
     private static let scrollBarWidth: CGFloat = 20
@@ -111,38 +99,21 @@ final class ScrollingCapturePresenter {
         // resampling. Stitching relies on rows matching exactly.
         let selectionRect = ScreenRecordingManager.sourceRect(forAppKitSelectionRect: rect, screenFrame: screen?.frame,
             contentRect: filter.contentRect).integral.intersection(filter.contentRect)
-        let allowed = Set(content.windows.filter {
+        let targets = Set(content.windows.filter {
             $0.windowLayer == 0 && $0.owningApplication?.processID != ProcessInfo.processInfo.processIdentifier
         }.map(\.windowID))
-        let displayBounds = CGDisplayBounds(display.displayID)
-        let windows = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] ?? []).compactMap { info -> (frame: CGRect, isTarget: Bool)? in
-                guard let id = info[kCGWindowNumber as String] as? UInt32,
-                      info[kCGWindowOwnerPID as String] as? Int32 != ProcessInfo.processInfo.processIdentifier,
-                      (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-                      let bounds = info[kCGWindowBounds as String] as? [String: Any],
-                      let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
-                return (frame.offsetBy(dx: -displayBounds.minX, dy: -displayBounds.minY), allowed.contains(id))
-            }
         let sourceRect = ScrollingCaptureRegion.matching(selection: selectionRect, display: filter.contentRect,
-            frontToBackWindows: windows).rect
+            frontToBackWindows: ScrollingCaptureRegion.frontToBackWindows(on: display.displayID, targets: targets)).rect
         let scale = max(1, CGFloat(filter.pointPixelScale))
         let output = ScrollingCaptureRegion.output(selection: selectionRect, matching: sourceRect, scale: scale)
-        let configuration = SCStreamConfiguration()
-        configuration.sourceRect = sourceRect
-        configuration.width = max(1, Int((sourceRect.width * scale).rounded()))
-        configuration.height = max(1, Int((sourceRect.height * scale).rounded()))
-        configuration.showsCursor = false
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.minimumFrameInterval = Self.frameInterval
-        configuration.queueDepth = 3
 
         stitchedHeight = output.rows.count
         isWaiting = false
         hasReachedLimit = false
         isVideoPlaying = false
         RecordingAreaHighlightPresenter.shared.show(display: display, rect: rect)
-        showPanel(below: rect, on: screen)
+        panel = ScrollingCaptureBar.makePanel(below: rect, on: screen)
+        panel?.orderFrontRegardless()
         defer {
             panel?.orderOut(nil)
             panel = nil
@@ -152,10 +123,7 @@ final class ScrollingCapturePresenter {
         let source = ScrollingCaptureStream()
         stream = source
         cutoff = nil
-        defer {
-            source.stop()
-            stream = nil
-        }
+        defer { source.stop(); stream = nil }
         var events = source.events.makeAsyncIterator()
         // Its monitors start before the stream; leaving by any path, a failed
         // start or Cancel included, removes them.
@@ -166,7 +134,8 @@ final class ScrollingCapturePresenter {
         defer { endAutoScroll() }
         let feed: ScrollingCaptureFeed
         do {
-            try await source.start(filter: filter, configuration: configuration)
+            try await source.start(filter: filter, configuration: ScrollingCaptureStream.configuration(
+                sourceRect: sourceRect, scale: scale))
             // Cancel, or Done before capturing starts, ends the stream here.
             var first: ScrollingCaptureStream.Frame?
             while first == nil, let event = await events.next() {
@@ -244,8 +213,9 @@ final class ScrollingCapturePresenter {
         guard let autoScroller else { return }
         if isAutoScrolling { return autoScroller.stop() }
         guard AXIsProcessTrusted() else {
-            if didRequestScrollPermission {
-                openScrollPermissionSettings()
+            if didRequestScrollPermission, let url = URL(
+                string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
             } else {
                 didRequestScrollPermission = true
                 // kAXTrustedCheckOptionPrompt's value, spelled out: the imported
@@ -266,12 +236,6 @@ final class ScrollingCapturePresenter {
         canAutoScroll = false
     }
 
-    func openScrollPermissionSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
     private func selectArea(on display: SCDisplay) async -> CGRect? {
         isSelectingArea = true
         defer { isSelectingArea = false }
@@ -280,150 +244,5 @@ final class ScrollingCapturePresenter {
                 continuation.resume(returning: rect)
             }
         }
-    }
-
-    // MARK: - Bar
-
-    private func showPanel(below rect: CGRect, on screen: NSScreen?) {
-        let size = ScrollingCaptureBar.panelSize
-        let panel = ScrollingCapturePanel(contentRect: CGRect(origin: Self.panelOrigin(size: size, below: rect, on: screen),
-            size: size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        PreviewWindowCaptureExclusion.shared.register(window: panel)
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = false
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-        panel.level = .screenSaver
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let hostingView = NSHostingView(rootView: ScrollingCaptureBar())
-        // Sized like the recording bar's panel: the panel sets the size and
-        // the hosting view follows it, so the two never negotiate sizes
-        // through constraints. That negotiation is what AppKit's constraint
-        // watchdog once killed the app over in the recording bar.
-        hostingView.sizingOptions = []
-        hostingView.translatesAutoresizingMaskIntoConstraints = true
-        hostingView.autoresizingMask = [.width, .height]
-        hostingView.frame = CGRect(origin: .zero, size: size)
-        panel.contentView = hostingView
-        panel.orderFrontRegardless()
-        self.panel = panel
-    }
-
-    /// Centered under the region, else above it, else inside its bottom edge.
-    private static func panelOrigin(size: CGSize, below rect: CGRect, on screen: NSScreen?) -> CGPoint {
-        let visible = screen?.visibleFrame ?? rect
-        let x = min(max(rect.midX - size.width / 2, visible.minX), visible.maxX - size.width)
-        let below = rect.minY - size.height
-        let above = rect.maxY
-        let y = if below >= visible.minY { below } else if above + size.height <= visible.maxY { above } else { rect.minY }
-        return CGPoint(x: x, y: y)
-    }
-}
-
-private final class ScrollingCapturePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
-
-private struct ScrollingCaptureBar: View {
-    /// Wide enough for the auto-scroll button beside the longest titles.
-    static let barSize = CGSize(width: 430, height: 52)
-    /// Room around the bar for the glass shadow.
-    static let margin: CGFloat = 12
-    static let panelSize = CGSize(width: barSize.width + margin * 2, height: barSize.height + margin * 2)
-
-    @State private var presenter = ScrollingCapturePresenter.shared
-
-    /// The finish shortcut, when it registered, so the keyboard exit is
-    /// discoverable while another app has the keyboard.
-    private let finishShortcut: String? = HotkeyManager.shared.registrationErrors[.scrollingCapture] == nil
-        ? CaptureHotkeyPreferences.shortcut(for: .scrollingCapture)?.displayString
-        : nil
-
-    var body: some View {
-        // Drawn with the bar's own button style and AppKit colors, like the
-        // recording bar: the panel isn't key while the scrolled app has the
-        // keyboard, and the system button styles then draw for an inactive
-        // window, so Done lost its accent color and looked like Cancel.
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.isWaiting || presenter.isVideoPlaying
-                        ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
-                    .lineLimit(1)
-                Text(detail)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            Spacer(minLength: 8)
-            Button {
-                presenter.toggleAutoScroll()
-            } label: {
-                Image(systemName: presenter.isAutoScrolling ? "pause.circle" : "arrow.down.circle")
-                    .font(.system(size: 17))
-                    .foregroundStyle(BarMetrics.activeTint.opacity(canToggleAutoScroll ? 1 : 0.3))
-                    .frame(width: 28, height: 28)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(BarButtonStyle())
-            .disabled(!canToggleAutoScroll)
-            .help(autoScrollHelp)
-            .accessibilityLabel(presenter.isAutoScrolling ? "Pause auto-scroll" : "Auto-scroll")
-            Button {
-                presenter.cancel()
-            } label: {
-                Text("Cancel")
-                    .foregroundStyle(BarMetrics.activeTint)
-                    .padding(.horizontal, 12)
-                    .frame(height: 24)
-                    .background(Color(nsColor: .labelColor).opacity(0.1), in: .capsule)
-            }
-            .buttonStyle(BarButtonStyle())
-            Button {
-                presenter.finish()
-            } label: {
-                Text("Done")
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .frame(height: 24)
-                    .background(Color(nsColor: .controlAccentColor), in: .capsule)
-            }
-            .buttonStyle(BarButtonStyle())
-        }
-        .padding(.leading, 18)
-        .padding(.trailing, 10)
-        .frame(width: Self.barSize.width, height: Self.barSize.height)
-        .glassEffect(.regular, in: .capsule)
-        .padding(Self.margin)
-    }
-
-    /// Waiting or the height limit stops auto-scroll, and it can't start again
-    /// until the user has dealt with either; pausing always works.
-    private var canToggleAutoScroll: Bool {
-        presenter.isAutoScrolling || presenter.canAutoScroll && !presenter.isWaiting && !presenter.hasReachedLimit
-    }
-
-    private var autoScrollHelp: String {
-        if presenter.isAutoScrolling { return "Pause auto-scroll" }
-        if presenter.needsScrollPermission { return "Auto-scroll needs Accessibility. Click to open Privacy & Security." }
-        return "Auto-scroll"
-    }
-
-    private var title: String {
-        presenter.hasReachedLimit ? "Maximum height reached"
-            : presenter.isVideoPlaying ? "A video is playing."
-            : presenter.isWaiting ? "Scroll back a little" : "Scroll to capture"
-    }
-
-    private var detail: String {
-        guard !presenter.hasReachedLimit else { return "\(presenter.stitchedHeight.formatted()) px tall" }
-        if presenter.isVideoPlaying { return "Pause it to capture." }
-        if presenter.isWaiting { return "This view doesn’t line up yet" }
-        let height = "\(presenter.stitchedHeight.formatted()) px tall"
-        guard let finishShortcut else { return height }
-        return "\(height) · \(finishShortcut) to finish"
     }
 }
