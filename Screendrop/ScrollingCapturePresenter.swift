@@ -12,7 +12,8 @@ import SwiftUI
 /// clicks Done. Frames go to `ScrollingCaptureFeed`: Vision proposes, exact
 /// pixels confirm, and a frame that doesn't fit is skipped until one does.
 /// The region stays highlighted, with `ScrollingCaptureBar` below it; the
-/// scrolled app keeps the keyboard, so the bar or the shortcut ends a session.
+/// scrolled app keeps the keyboard, so the bar or the shortcut ends a session,
+/// or auto-scroll reaching the end of the page.
 @Observable
 final class ScrollingCapturePresenter {
     static let shared = ScrollingCapturePresenter()
@@ -129,7 +130,8 @@ final class ScrollingCapturePresenter {
         autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, state: { [unowned self] in
             .init(height: stitchedHeight, lastFrameTime: lastFrameTime,
                   canContinue: outcome == nil && !hasReachedLimit && !isWaiting)
-        }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false })
+        }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false },
+           onEndOfPage: { [weak self] in self?.finish() })
         defer { endAutoScroll() }
         let feed: ScrollingCaptureFeed
         do {

@@ -11,8 +11,9 @@ import AppKit
 /// Steps are posted as pixel scroll events at the region's center, tagged so
 /// the monitors here can tell them from the user's own scrolling. The
 /// pointer is never moved. Scrolling by hand or moving the pointer off the
-/// bar hands the session back, and so do a frame that doesn't fit, the height
-/// limit and the end of the page; only Done finishes. No key is watched.
+/// bar hands the session back, and so do a frame that doesn't fit and the
+/// height limit; the end of the page finishes the capture, as Done does. No
+/// key is watched.
 /// Watching scrolling needs no permission; only posting does.
 final class ScrollingCaptureAutoScroller {
     struct State {
@@ -45,15 +46,17 @@ final class ScrollingCaptureAutoScroller {
     private let state: () -> State
     private let bar: () -> CGRect?
     private let onStop: () -> Void
+    private let onEndOfPage: () -> Void
     private var pacer: AutoScrollPacer?
     private var monitors: [Any] = []
     private var poller: Task<Void, Never>?
     private var pointerAtStart: CGPoint = .zero
     private(set) var isRunning = false
 
-    /// `region` is the selection in AppKit screen coordinates.
+    /// `region` is the selection in AppKit screen coordinates. `onEndOfPage`
+    /// runs after the session is handed back, to finish the capture.
     init(region: CGRect, scale: CGFloat, state: @escaping () -> State,
-         bar: @escaping () -> CGRect?, onStop: @escaping () -> Void) {
+         bar: @escaping () -> CGRect?, onStop: @escaping () -> Void, onEndOfPage: @escaping () -> Void) {
         // Quartz flips AppKit's y about the main display's height.
         point = CGPoint(x: region.midX, y: CGDisplayBounds(CGMainDisplayID()).height - region.midY)
         let step = min(max((region.height * Self.stepFraction).rounded(), Self.stepRange.lowerBound), Self.stepRange.upperBound)
@@ -62,6 +65,7 @@ final class ScrollingCaptureAutoScroller {
         self.state = state
         self.bar = bar
         self.onStop = onStop
+        self.onEndOfPage = onEndOfPage
         installMonitors()
     }
 
@@ -108,7 +112,9 @@ final class ScrollingCaptureAutoScroller {
         self.pacer = pacer
         switch action {
         case .step: post()
-        case .endOfPage: stop()
+        case .endOfPage:
+            stop()
+            onEndOfPage()
         case .wait: break
         }
     }

@@ -15,15 +15,16 @@ import Foundation
 ///
 /// - A full step stitched: post the next one.
 /// - The view went still (no new frame for `settleTime`), or the step ran
-///   out of time: most of a step stitched is an app scrolling a little less
-///   than asked, so carry on; a smaller remainder is the end of the page.
+///   out of time: anything stitched is progress (an app scrolling less than
+///   asked, or the last of the page), so carry on. The end of the page ends
+///   the capture, so a step that moved, however little, never counts as it.
 /// - Nothing on screen changed since the step (the page didn't move), or the
-///   view changed but nothing new was stitched (rows already captured after
-///   scrolling back, a playing video at the end of the page, or a view the
-///   engine can't line up yet): these can't be told apart, and they share
-///   one budget. At most `maximumStepsWithoutProgress` steps are ever posted
-///   since the last stitched progress, then auto-scroll hands back, so the
-///   view stays close to the last stitched rows and scrolling back is short.
+///   frames since it were placed without moving (a playing video at the end
+///   of the page): they share one budget. At most
+///   `maximumStepsWithoutProgress` steps are ever posted since the last
+///   stitched progress, then the page has ended. Frames that don't fit never
+///   count: the caller stops pacing on one, so the end of the page only
+///   follows steps whose frames were placed.
 nonisolated struct AutoScrollPacer: Equatable {
     enum Action: Equatable {
         /// The step is still under way.
@@ -46,8 +47,9 @@ nonisolated struct AutoScrollPacer: Equatable {
     /// included: two quarter-region steps keep the view within half a region
     /// of what was stitched. Five carried the page a region and a quarter
     /// past it on a playing video that blocks registration (VM, 2026-10-10).
-    /// ponytail: re-covering rows captured before auto-scroll started stops
-    /// after this too; the user presses again to go further.
+    /// ponytail: re-covering rows captured before auto-scroll started would
+    /// end the capture after this too; the stitcher trims the output when the
+    /// view moves back up, so re-covered rows are appended again instead.
     static let maximumStepsWithoutProgress = 2
 
     /// One step's distance, in captured pixels.
@@ -74,9 +76,7 @@ nonisolated struct AutoScrollPacer: Equatable {
         }
         if stitched >= stepPixels { return progress(height: height, now: now) }
         guard now - lastFrameTime >= Self.settleTime || now - postedAt >= Self.stepTimeout else { return .wait }
-        if stitched * 2 >= stepPixels { return progress(height: height, now: now) }
-        if stitched > 0 { return .endOfPage }
-        return noProgress(height: height, now: now)
+        return stitched > 0 ? progress(height: height, now: now) : noProgress(height: height, now: now)
     }
 
     private mutating func progress(height: Int, now: TimeInterval) -> Action {
