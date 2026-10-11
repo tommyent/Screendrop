@@ -86,6 +86,14 @@ nonisolated enum ScrollingCaptureOffsetVerifier {
         } }
     }
 
+    /// Whether `offset` leaves at least `minimumMatchedRows` rows of overlap
+    /// above the cut, the most any frame of this height can: further, the
+    /// view has scrolled past what can be confirmed. A sticky header or
+    /// footer only shrinks the band.
+    static func canConfirm(_ offset: Int, height: Int) -> Bool {
+        abs(offset) + minimumMatchedRows <= cut(in: 0..<height)
+    }
+
     // MARK: - From R7
 
     /// Leading columns that are compared. The trailing ones are left out so
