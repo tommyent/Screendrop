@@ -128,8 +128,8 @@ final class ScrollingCapturePresenter {
         // Its monitors start before the stream; leaving by any path, a failed
         // start or Cancel included, removes them.
         autoScroller = ScrollingCaptureAutoScroller(region: rect, scale: scale, state: { [unowned self] in
-            .init(height: stitchedHeight, lastFrameTime: lastFrameTime,
-                  canContinue: outcome == nil && !hasReachedLimit && !isWaiting)
+            .init(height: stitchedHeight, lastFrameTime: lastFrameTime, isWaiting: isWaiting,
+                  canContinue: outcome == nil && !hasReachedLimit)
         }, bar: { [weak self] in self?.panel?.frame }, onStop: { [weak self] in self?.isAutoScrolling = false },
            onEndOfPage: { [weak self] in self?.finish() })
         defer { endAutoScroll() }

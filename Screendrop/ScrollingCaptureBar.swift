@@ -84,10 +84,10 @@ struct ScrollingCaptureBar: View {
         .padding(Self.margin)
     }
 
-    /// Waiting or the height limit stops auto-scroll, and it can't start again
-    /// until the user has dealt with either; pausing always works.
+    /// The height limit stops auto-scroll for good; pausing always works. It
+    /// can start while a frame doesn't fit: it waits for one to be placed.
     private var canToggleAutoScroll: Bool {
-        presenter.isAutoScrolling || presenter.canAutoScroll && !presenter.isWaiting && !presenter.hasReachedLimit
+        presenter.isAutoScrolling || presenter.canAutoScroll && !presenter.hasReachedLimit
     }
 
     private var autoScrollHelp: String {

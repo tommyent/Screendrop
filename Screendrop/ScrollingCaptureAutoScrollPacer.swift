@@ -23,8 +23,8 @@ import Foundation
 ///   of the page): they share one budget. At most
 ///   `maximumStepsWithoutProgress` steps are ever posted since the last
 ///   stitched progress, then the page has ended. Frames that don't fit never
-///   count: the caller stops pacing on one, so the end of the page only
-///   follows steps whose frames were placed.
+///   count: the caller pauses on one and starts a new pacer once a frame is
+///   placed, so the end of the page only follows steps whose frames were placed.
 nonisolated struct AutoScrollPacer: Equatable {
     enum Action: Equatable {
         /// The step is still under way.
