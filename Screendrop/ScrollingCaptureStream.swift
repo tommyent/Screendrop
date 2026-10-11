@@ -4,29 +4,33 @@ import CoreVideo
 import Foundation
 import ScreenCaptureKit
 
+/// The capture clock: mach absolute time in seconds, as ScreenCaptureKit's displayTime.
+nonisolated enum ScrollingCaptureSampleTiming {
+    static func now() -> TimeInterval { Double(mach_absolute_time()) * secondsPerTick }
+    static let secondsPerTick: Double = {
+        var timebase = mach_timebase_info_data_t()
+        mach_timebase_info(&timebase)
+        return Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
+    }()
+}
+
 /// One ScreenCaptureKit stream for a whole Scrolling Capture session. The
 /// callback copies each new frame out of its surface, so SCK gets the surface
-/// back at once, and leaves it in a single latest-frame slot: a slow engine
+/// back at once, and leaves it in a single latest-frame slot: a slow stitcher
 /// skips stale frames instead of working through a backlog. While the display
 /// doesn't change, SCK sends pixel-less idle samples at the frame interval;
 /// they go through the slot as idle ticks, but never in place of a frame.
 nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     struct Frame: @unchecked Sendable {
         let image: CGImage
-        /// When WindowServer showed the frame, on the engine's clock
+        /// When WindowServer showed the frame, on the capture clock
         /// (`ScrollingCaptureSampleTiming.now()`, mach absolute seconds).
         let time: TimeInterval
-        /// When the callback got it.
-        let callbackTime: TimeInterval
-        /// Counts every new frame SCK delivered, so a gap means frames that
-        /// were replaced in the slot before the engine took them.
-        let sequence: Int
-        let status: SCFrameStatus
     }
 
     enum Event: @unchecked Sendable {
         case frame(Frame)
-        /// The display hadn't changed when SCK said so, at this engine-clock time.
+        /// The display hadn't changed when SCK said so, at this capture-clock time.
         /// An idle sample's own display time stays at the last frame's.
         case idle(TimeInterval)
     }
@@ -35,12 +39,27 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
     private let continuation: AsyncStream<Event>.Continuation
     private var stream: SCStream?
     private let queue = DispatchQueue(label: "com.screendrop.scrolling-capture.stream", qos: .userInteractive)
-    /// Only touched on `queue`.
-    private var sequence = 0
 
     override init() {
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .bufferingNewest(1))
         super.init()
+    }
+
+    /// Scrolling further than the region's height between two samples leaves
+    /// no overlap to line frames up with, so sample often.
+    static let frameInterval = CMTime(value: 1, timescale: 20)
+
+    /// The region at the display's full pixel scale, without the cursor, in BGRA.
+    static func configuration(sourceRect: CGRect, scale: CGFloat) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.sourceRect = sourceRect
+        configuration.width = max(1, Int((sourceRect.width * scale).rounded()))
+        configuration.height = max(1, Int((sourceRect.height * scale).rounded()))
+        configuration.showsCursor = false
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.minimumFrameInterval = frameInterval
+        configuration.queueDepth = 3
+        return configuration
     }
 
     func start(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws {
@@ -58,13 +77,7 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         Task { try? await stream.stopCapture() }
     }
 
-    private static let secondsPerTick: Double = {
-        var timebase = mach_timebase_info_data_t()
-        mach_timebase_info(&timebase)
-        return Double(timebase.numer) / Double(timebase.denom) / 1_000_000_000
-    }()
-
-    private static func seconds(_ ticks: UInt64) -> TimeInterval { Double(ticks) * secondsPerTick }
+    private static func seconds(_ ticks: UInt64) -> TimeInterval { Double(ticks) * ScrollingCaptureSampleTiming.secondsPerTick }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         let callbackTime = ScrollingCaptureSampleTiming.now()
@@ -82,10 +95,8 @@ nonisolated final class ScrollingCaptureStream: NSObject, SCStreamOutput, SCStre
         guard status == .complete || status == .started,
               let pixels = sampleBuffer.imageBuffer,
               let image = Self.copy(pixels) else { return }
-        sequence += 1
         let time = (info[.displayTime] as? UInt64).map(Self.seconds) ?? callbackTime
-        continuation.yield(.frame(Frame(image: image, time: time, callbackTime: callbackTime,
-            sequence: sequence, status: status)))
+        continuation.yield(.frame(Frame(image: image, time: time)))
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

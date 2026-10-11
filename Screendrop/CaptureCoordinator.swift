@@ -132,8 +132,7 @@ final class CaptureCoordinator {
     @discardableResult
     private func performCaptureScrolling() async -> URL? {
         guard let capture = await ScrollingCapturePresenter.shared.run() else { return nil }
-        guard let url = await ScreenshotManager.shared.writeCapture(capture.image, scale: capture.scale,
-                                                                    breaks: capture.breaks) else {
+        guard let url = await ScreenshotManager.shared.writeCapture(capture.image, scale: capture.scale) else {
             FailureAlert.present(message: "Scrolling capture couldn't be saved", error: CocoaError(.fileWriteUnknown))
             return nil
         }

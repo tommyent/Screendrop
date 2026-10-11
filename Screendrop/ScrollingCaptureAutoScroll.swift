@@ -6,26 +6,22 @@
 import AppKit
 
 /// Scrolls the region of a Scrolling Capture a step at a time, paced by
-/// `AutoScrollPacer` from what the engine actually stitched.
+/// `AutoScrollPacer` from what was actually stitched.
 ///
 /// Steps are posted as pixel scroll events at the region's center, tagged so
 /// the monitors here can tell them from the user's own scrolling. The
 /// pointer is never moved. Scrolling by hand or moving the pointer off the
-/// bar hands the session back, and so do a lost track, a new part (a break),
-/// the height limit and the end of the page; only Done finishes. It never
-/// carries on across a break by itself: the user scrolls back to join the
-/// parts, or presses again to go on in the new part. No key is watched.
+/// bar hands the session back, and so do a frame that doesn't fit, the height
+/// limit and the end of the page; only Done finishes. No key is watched.
+/// Watching scrolling needs no permission; only posting does.
 final class ScrollingCaptureAutoScroller {
     struct State {
         /// The stitched height, in captured pixels.
         let height: Int
-        /// The display time of the newest frame the engine has seen, on the
-        /// stream's clock.
+        /// The display time of the newest frame taken, on the stream's clock.
         let lastFrameTime: TimeInterval
-        /// How many parts the capture has; a change is a break.
-        let partCount: Int
-        /// False once the part being captured has lost track, the height
-        /// limit is reached or the session has ended.
+        /// False while the latest frame doesn't fit, once the height limit is
+        /// reached and when the session has ended.
         let canContinue: Bool
     }
 
@@ -53,7 +49,6 @@ final class ScrollingCaptureAutoScroller {
     private var monitors: [Any] = []
     private var poller: Task<Void, Never>?
     private var pointerAtStart: CGPoint = .zero
-    private var partCountAtStart = 1
     private(set) var isRunning = false
 
     /// `region` is the selection in AppKit screen coordinates.
@@ -67,6 +62,7 @@ final class ScrollingCaptureAutoScroller {
         self.state = state
         self.bar = bar
         self.onStop = onStop
+        installMonitors()
     }
 
     /// Posting scroll events to another app needs the Accessibility
@@ -74,9 +70,7 @@ final class ScrollingCaptureAutoScroller {
     func start() {
         guard !isRunning, state().canContinue else { return }
         isRunning = true
-        partCountAtStart = state().partCount
         pointerAtStart = NSEvent.mouseLocation
-        installMonitors()
         pacer = AutoScrollPacer(stepPixels: stepPixels, height: state().height, now: ScrollingCaptureSampleTiming.now())
         post()
         poller = Task { [weak self] in
@@ -95,15 +89,20 @@ final class ScrollingCaptureAutoScroller {
         poller?.cancel()
         poller = nil
         pacer = nil
+        onStop()
+    }
+
+    /// Ends the session: stops scrolling and removes the monitors.
+    func invalidate() {
+        stop()
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors = []
-        onStop()
     }
 
     private func tick() {
         guard isRunning, var pacer else { return }
         let current = state()
-        guard current.canContinue, current.partCount == partCountAtStart else { return stop() }
+        guard current.canContinue else { return stop() }
         let action = pacer.update(height: current.height, lastFrameTime: current.lastFrameTime,
                                   now: ScrollingCaptureSampleTiming.now())
         self.pacer = pacer
@@ -140,11 +139,11 @@ final class ScrollingCaptureAutoScroller {
     }
 
     private func handle(_ event: NSEvent) {
-        guard isRunning else { return }
         if event.type == .scrollWheel {
             if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.eventTag { stop() }
             return
         }
+        guard isRunning else { return }
         // The pointer starts on the bar, where auto-scroll was turned on, and
         // goes back there to pause it or click Done; only leaving it counts.
         let location = NSEvent.mouseLocation
