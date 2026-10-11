@@ -34,12 +34,12 @@ struct ScrollingCaptureBar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(presenter.isWaiting ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
+                    .foregroundStyle(presenter.showsWaiting ? Color(nsColor: .systemOrange) : BarMetrics.activeTint)
                     .lineLimit(1)
                 Text(detail)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-                    .lineLimit(presenter.keepsChanging ? 2 : 1)
+                    .lineLimit(presenter.showsWaiting && presenter.keepsChanging ? 2 : 1)
                     .minimumScaleFactor(0.85)
             }
             Spacer(minLength: 8)
@@ -96,18 +96,20 @@ struct ScrollingCaptureBar: View {
         return "Auto-scroll"
     }
 
+    /// A short wait says nothing: see `ScrollingCapturePresenter.quietWait`.
     private var title: String {
         presenter.hasReachedLimit ? "Maximum height reached"
-            : presenter.keepsChanging ? "Something on the page keeps changing"
-            : presenter.isWaiting ? "Scroll back a little" : "Scroll to capture"
+            : !presenter.showsWaiting ? "Scroll to capture"
+            : presenter.keepsChanging ? "Something on the page keeps changing" : "Scroll back a little"
     }
 
     private var detail: String {
         guard !presenter.hasReachedLimit else { return "\(presenter.stitchedHeight.formatted()) px tall" }
-        if presenter.keepsChanging {
-            return "Video, animation or hover: pause it or move the pointer away, then scroll back a little."
+        if presenter.showsWaiting {
+            return presenter.keepsChanging
+                ? "Video, animation or hover: pause it or move the pointer away, then scroll back a little."
+                : "This view doesn’t line up yet"
         }
-        if presenter.isWaiting { return "This view doesn’t line up yet" }
         let height = "\(presenter.stitchedHeight.formatted()) px tall"
         guard let finishShortcut else { return height }
         return "\(height) · \(finishShortcut) to finish"
