@@ -16,15 +16,24 @@ nonisolated enum ScrollingCaptureOffsetEstimator {
     /// but drifts a few pixels on text.
     static let consensusSpread = 3.0
 
+    struct Candidate: Equatable, Sendable {
+        let offset: Int
+        /// The bands' consensus, not the whole frame's shift: the fallback
+        /// proposes an offset for unrelated frames too, so only agreeing
+        /// bands say the two frames still overlap.
+        let bandsAgree: Bool
+    }
+
     /// The candidate offset: the bands' consensus, else the whole frame's
     /// shift. Vision's confidence is no gate (1.0 for all 63 whole-frame
     /// results on the corpus, unrelated frames included); the verifier is.
-    static func candidateOffset(from last: [UInt8], to new: [UInt8], width: Int, height: Int,
-                                ignoredTrailingColumns: Int) -> Int? {
+    static func candidate(from last: [UInt8], to new: [UInt8], width: Int, height: Int,
+                          ignoredTrailingColumns: Int) -> Candidate? {
         guard let images = images(last, new, width: width, height: height) else { return nil }
         let usable = ScrollingCaptureOffsetVerifier.hashedWidth(width: width, ignoredTrailingColumns: ignoredTrailingColumns)
-        if let agreed = consensus(bandShifts(images, usable: usable)) { return agreed }
-        return translation(images, in: CGRect(x: 0, y: 0, width: usable, height: height)).map { Int($0.rounded()) }
+        if let agreed = consensus(bandShifts(images, usable: usable)) { return Candidate(offset: agreed, bandsAgree: true) }
+        return translation(images, in: CGRect(x: 0, y: 0, width: usable, height: height))
+            .map { Candidate(offset: Int($0.rounded()), bandsAgree: false) }
     }
 
     /// Each band's shift, nil-free, for the consensus.
