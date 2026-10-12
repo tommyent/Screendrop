@@ -17,9 +17,13 @@ Sukusho started as a fork of [Screendrop](https://github.com/fayazara/Screendrop
 
 ## Screenshots
 
-The Library keeps captures together, with a grid, tags and an inspector for the selected image.
+The Library keeps captures together, with a grid, tags and an inspector for the selected image, next to your Cloud uploads, comments and likes.
 
-![Sukusho Library showing nine captures of a travel website in a grid, a green Travel tag in the sidebar, and the inspector for a mountain lake image](docs/screenshots/library.png)
+![Sukusho Library showing nine captures of a travel website in a grid, the Cloud section with 7 uploads and 11 likes, a green Travel tag in the sidebar, and the inspector for a mountain lake image](docs/screenshots/library.png)
+
+Comments left on your share pages arrive in the Library, newest first, each with the upload it's on.
+
+![Sukusho Comments view listing seven viewer comments with thumbnails of the photos they're on, with one comment open in the inspector](docs/screenshots/comments.png)
 
 The editor sets a capture on a background, with a camera angle and progressive blur, and annotates it with arrows, text, shapes, pixelation and blur.
 
