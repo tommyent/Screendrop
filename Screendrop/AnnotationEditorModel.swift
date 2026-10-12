@@ -310,8 +310,10 @@ final class AnnotationEditorModel {
 
     private func makePreviewImage(from url: URL) -> NSImage? {
         if ScreendropPreferences.lowResolutionEditorPreview {
-            isPreviewDownscaled = max(imageSize.width, imageSize.height) > previewImageMaxPixelSize
-            return ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: previewImageMaxPixelSize)
+            // Cap the width, not the longest side, so a tall scrolling capture keeps its detail.
+            let maxPixelSize = previewImageMaxPixelSize * max(1, imageSize.height / max(imageSize.width, 1))
+            isPreviewDownscaled = max(imageSize.width, imageSize.height) > maxPixelSize
+            return ScreenshotImageLoader.downsampledImage(at: url, maxPixelSize: maxPixelSize)
         } else {
             isPreviewDownscaled = false
             return ScreenshotImageLoader.fullResolutionImage(at: url)
