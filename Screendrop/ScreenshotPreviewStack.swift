@@ -54,11 +54,12 @@ final class ScreenshotPreviewStack {
         return items.first { $0.id == hoveredItemID }
     }
 
-    /// Items currently in the stack that have not been written anywhere on the
-    /// user's filesystem (Auto Save off and never manually saved). These only
-    /// live in the temporary directory and are lost when the app quits.
+    /// Items in the stack whose only copy is lost when the app quits: not
+    /// saved, and not kept in the Library (a capture that failed to import
+    /// stays in the temporary directory).
     var unsavedItems: [ScreenshotPreviewItem] {
-        items.filter { $0.autoSavedURL == nil }
+        let library = ScreendropStorage.applicationSupportDirectory.standardizedFileURL.path + "/"
+        return items.filter { $0.autoSavedURL == nil && !$0.url.standardizedFileURL.path.hasPrefix(library) }
     }
 
     private init() {}
