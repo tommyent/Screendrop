@@ -17,15 +17,17 @@ Sukusho started as a fork of [Screendrop](https://github.com/fayazara/Screendrop
 
 ## Screenshots
 
-The Library keeps captures together, with a grid and an inspector for the selected image.
+The Library keeps captures together, with a grid, tags and an inspector for the selected image.
 
-![Sukusho Library with Wikipedia page captures, a London map and NASA photographs](docs/screenshots/library.png)
+![Sukusho Library showing nine captures of a travel website in a grid, a green Travel tag in the sidebar, and the inspector for a mountain lake image](docs/screenshots/library.png)
 
-Annotate an image with arrows, text, shapes, pixelation and blur.
+The editor sets a capture on a background, with a camera angle and progressive blur, and annotates it with arrows, text, shapes, pixelation and blur.
 
-![Sukusho editor annotating the Earthrise article with an arrow, text, a rectangle, pixelation and blur](docs/screenshots/editor.png)
+![Sukusho editor showing a browser window capture tilted in perspective over a pastel sky wallpaper, with progressive blur settings in the sidebar](docs/screenshots/editor.png)
 
-[Image sources and licences](docs/screenshots/README.md): Wikipedia contributors (CC BY-SA 4.0), NASA imagery (public domain), and © OpenStreetMap contributors (ODbL).
+Scrolling Capture turns a whole page into one image. Auto-scroll captured this demo page from top to bottom and finished by itself; it's split into four columns here to fit.
+
+![A full-page Scrolling Capture of a travel website, 2,108 by 6,524 pixels, shown in four columns](docs/screenshots/scrolling-capture.png)
 
 ## Features
 
@@ -52,7 +54,14 @@ Change any of them in **Settings → General**. If a shortcut can't be registere
 
 ### Scrolling Capture
 
-Draw a box over a scrolling view, scroll through it at your own pace, and click **Done**. Sukusho lines up each new frame with the last one and adds only the rows that scrolled into view, giving one tall image up to 16,384 pixels high. If it loses its place, it shows the last rows it kept so you can scroll back to them, and **Done** always keeps what has been captured so far.
+Draw a box over a scrolling view, then scroll through it yourself or click the auto-scroll button on the capture bar. Sukusho lines up each new frame with the last one and adds only the rows that scrolled into view, giving one tall image up to 16,384 pixels high.
+
+- **Auto-scroll** moves the view a step at a time, paced by what has been captured, and finishes the capture by itself at the end of the page. It pauses while a frame doesn't fit and carries on once one does. Scrolling yourself or moving the pointer off the bar hands control back to you. Auto-scroll needs the Accessibility permission; the bar offers to open it.
+- **Every frame is checked before it's added.** Apple's Vision framework proposes where the new frame fits, and Sukusho adds it only once an exact pixel match confirms it. A frame that doesn't fit is skipped, not joined in the wrong place.
+- **The capture bar** stays quiet through brief misses. If frames keep failing to fit, it says **Scroll back a little** when the view has moved past where it can line up, or **Something on the page keeps changing** for a video, an animation or a hover.
+- **Done**, or `Control + Option + 4`, keeps everything captured so far. At the height limit the capture stops and waits for **Done**.
+
+Draw the box around the part that scrolls: a sidebar or button that stays put inside the box is repeated down the image.
 
 ### Library
 
