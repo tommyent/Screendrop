@@ -68,13 +68,13 @@ actor ScrollingCaptureFrameStitcher {
 
     var stitchedHeight: Int { height + appended.count / (width * 4) }
 
-    /// Where the frame went, and Vision's candidate offset against the
-    /// reference (nil when it had none), for the frame dump and the video hint.
-    func add(_ frame: [UInt8]) -> (placement: Placement, candidate: Int?) {
+    /// Where the frame went, and Vision's candidate against the reference
+    /// (nil when it had none), for the frame dump and the bar's message.
+    func add(_ frame: [UInt8]) -> (placement: Placement, candidate: ScrollingCaptureOffsetEstimator.Candidate?) {
         guard frame.count == last.count else { lastWasUpward = false; return (.skipped, nil) }
-        let candidate = ScrollingCaptureOffsetEstimator.candidateOffset(from: last, to: frame,
+        let candidate = ScrollingCaptureOffsetEstimator.candidate(from: last, to: frame,
             width: width, height: height, ignoredTrailingColumns: ignoredTrailingColumns)
-        return (place(frame, candidate: candidate), candidate)
+        return (place(frame, candidate: candidate?.offset), candidate)
     }
 
     private func place(_ frame: [UInt8], candidate: Int?) -> Placement {

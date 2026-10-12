@@ -38,6 +38,14 @@
 // --compare runs a second matcher too and prints, for both, the correct seams
 // among those both score, and |heightErr| summed over the jump-free pages
 // (no known seam with nothing fitting) where both have a height.
+// For the stitcher, a second table counts the frames for which the capture bar
+// would show a message, as back/changing ("Scroll back a little" / "Something
+// on the page keeps changing"), after each delay: refused frames at least that
+// long after the first refused frame of their run (by truth.json frame
+// times), changing when the feed's keepsChanging rule holds (Vision's bands
+// agree on an offset the verifier can confirm). The app waits
+// ScrollingCapturePresenter.quietWait. Fresh pages' frame times are a
+// script's pauses, not a stream's.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -105,8 +113,8 @@ final class VisionMatcher: CorpusMatcher {
     func place(_ frame: CGImage, index: Int) async -> Claim {
         guard let new = Self.pixels(frame) else { return Claim(against: reference, offset: nil) }
         defer { last = new; reference = index }
-        let candidate = ScrollingCaptureOffsetEstimator.candidateOffset(from: last, to: new,
-            width: frame.width, height: frame.height, ignoredTrailingColumns: ignoredTrailingColumns)
+        let candidate = ScrollingCaptureOffsetEstimator.candidate(from: last, to: new,
+            width: frame.width, height: frame.height, ignoredTrailingColumns: ignoredTrailingColumns)?.offset
         guard verify, let candidate else { return Claim(against: reference, offset: candidate) }
         return Claim(against: reference, offset: ScrollingCaptureOffsetVerifier.verifiedOffset(candidate: candidate,
             from: last, to: new, width: frame.width, height: frame.height,
@@ -124,9 +132,14 @@ final class VisionMatcher: CorpusMatcher {
 /// vision-verify driven through the stitcher: a frame that isn't verified is
 /// skipped, and the next is compared with the reference it kept.
 final class StitcherMatcher: CorpusMatcher {
+    /// `changing`: the feed's keepsChanging rule, which the bar's message follows.
+    struct Logged { let index: Int; let skipped: Bool; let changing: Bool }
+
     let stitcher: ScrollingCaptureFrameStitcher
     let width: Int
     var reference: Int
+    /// Every frame placed or skipped, for the bar-message table.
+    var log: [Logged] = []
 
     init?(first: CGImage, index: Int, ignoredTrailingColumns: Int) {
         guard let pixels = VisionMatcher.pixels(first), let stitcher = ScrollingCaptureFrameStitcher(firstFrame: pixels,
@@ -138,7 +151,11 @@ final class StitcherMatcher: CorpusMatcher {
 
     func place(_ frame: CGImage, index: Int) async -> Claim {
         guard let pixels = VisionMatcher.pixels(frame) else { return Claim(against: reference, offset: nil) }
-        let placement = await stitcher.add(pixels).placement
+        let (placement, candidate) = await stitcher.add(pixels)
+        let skipped = placement == .skipped
+        log.append(Logged(index: index, skipped: skipped, changing: skipped && candidate.map {
+            $0.bandsAgree && ScrollingCaptureOffsetVerifier.canConfirm($0.offset, height: frame.height)
+        } ?? false))
         let claim = Claim(against: reference, offset: placement.offset)
         if placement.isReference { reference = index }
         return claim
@@ -188,9 +205,26 @@ let matchers: [String: (_ first: CGImage, _ index: Int, _ ignoredTrailingColumns
     "stitcher": { StitcherMatcher(first: $0, index: $1, ignoredTrailingColumns: $2) },
 ]
 
+/// Delays, in seconds, after which the bar-message table counts.
+let barDelays: [TimeInterval] = [0, 0.3, 0.5, 1, 2]
+
+/// Refused frames, then back and changing after each of `barDelays`. A
+/// refusal run is consecutive refused frames.
+func barCounts(_ log: [StitcherMatcher.Logged], times: [Int: TimeInterval]) -> [Int] {
+    var counts = [Int](repeating: 0, count: 1 + 2 * barDelays.count)
+    var runStart: TimeInterval = 0
+    for (n, frame) in log.enumerated() where frame.skipped {
+        if n == 0 || !log[n - 1].skipped || log[n - 1].index != frame.index - 1 { runStart = times[frame.index] ?? 0 }
+        counts[0] += 1
+        let waited = (times[frame.index] ?? 0) - runStart
+        for (d, delay) in barDelays.enumerated() where waited >= delay { counts[1 + 2 * d + (frame.changing ? 1 : 0)] += 1 }
+    }
+    return counts
+}
+
 struct Truth: Decodable {
     struct Rect: Decodable { let columns: [Int]; let rows: [Int] }
-    struct Frame: Decodable { let index: Int }
+    struct Frame: Decodable { let index: Int; let time: TimeInterval? }
     struct Seam: Decodable { let from: Int; let to: Int; let offset: Int?; let truthKind: String }
     let selection: Rect
     let ignoredTrailingColumns: Int
@@ -209,6 +243,8 @@ struct Tally {
     /// A page's seams (by frame index) for --compare, and whether any known seam has nothing fitting.
     var scoredSeams = Set<Int>(), correctSeams = Set<Int>()
     var jumpFree = true
+    /// `barCounts`, for the stitcher only.
+    var bar: [Int] = []
 
     static func += (lhs: inout Tally, rhs: Tally) {
         lhs.pages += rhs.pages; lhs.seams += rhs.seams; lhs.scored += rhs.scored; lhs.correct += rhs.correct
@@ -216,6 +252,11 @@ struct Tally {
         lhs.heightAbs += rhs.heightAbs; lhs.heightPages += rhs.heightPages
         if let dup = rhs.dupBlocks { lhs.dupBlocks = (lhs.dupBlocks ?? 0) + dup }
         lhs.offBy.merge(rhs.offBy, uniquingKeysWith: +)
+        if !rhs.bar.isEmpty { lhs.bar = lhs.bar.isEmpty ? rhs.bar : zip(lhs.bar, rhs.bar).map(+) }
+    }
+
+    var barRow: [String] {
+        ["\(bar[0])"] + stride(from: 1, to: bar.count, by: 2).map { "\(bar[$0])/\(bar[$0 + 1])" }
     }
 
     var row: [String] {
@@ -252,7 +293,7 @@ struct Tally {
         let corpus = URL(fileURLWithPath: arguments[1])
         let pages = try FileManager.default.contentsOfDirectory(atPath: corpus.path).sorted()
             .filter { FileManager.default.fileExists(atPath: corpus.appendingPathComponent("\($0)/truth.json").path) }
-        var rows: [[String]] = []
+        var rows: [[String]] = [], barRows: [[String]] = []
         var total = Tally()
         var groups: [String: Tally] = [:]
         for page in pages {
@@ -271,11 +312,16 @@ struct Tally {
                 }
             }
             rows.append([page] + tally.row)
+            if !tally.bar.isEmpty { barRows.append([page] + tally.barRow) }
             total += tally
             groups[String(page.prefix { $0 != "-" }), default: Tally()] += tally
         }
         if groups.count > 1 { rows += groups.keys.sorted().map { ["TOTAL \($0)"] + groups[$0]!.row } }
         rows.append(["TOTAL"] + total.row)
+        if !total.bar.isEmpty {
+            if groups.count > 1 { barRows += groups.keys.sorted().map { ["TOTAL \($0)"] + groups[$0]!.barRow } }
+            barRows.append(["TOTAL"] + total.barRow)
+        }
         print("matcher \(arguments[3]), corpus \(corpus.path)")
         defer {
             if other != nil {
@@ -283,7 +329,15 @@ struct Tally {
                     + "jump-free pages with heights \(jumpFreePages), sum |heightErr| \(jumpFreeHeight.0) vs \(jumpFreeHeight.1)")
             }
         }
-        let header = ["page", "pages", "seams", "scored", "correct", "off-by-N (N:count)", "wrong", "skipped", "unscored", "stuck", "heightErr", "dupBlocks"]
+        printTable(["page", "pages", "seams", "scored", "correct", "off-by-N (N:count)", "wrong", "skipped", "unscored", "stuck",
+                    "heightErr", "dupBlocks"], rows)
+        if !barRows.isEmpty {
+            print("bar messages, frames back/changing after each delay")
+            printTable(["page", "refused"] + barDelays.map { "@\($0.formatted())s" }, barRows)
+        }
+    }
+
+    static func printTable(_ header: [String], _ rows: [[String]]) {
         let table = [header] + rows
         let widths = header.indices.map { column in table.map { $0[column].count }.max()! }
         for row in table {
@@ -314,9 +368,11 @@ struct Tally {
         var matcher: CorpusMatcher?
         struct Run { var known = true, position = 0, trailingNil = 0 }
         var run = Run(), pageKnown = true, pageErr = 0
+        var barLog: [StitcherMatcher.Logged]?
         func finishRun() async {
             guard let matcher else { return }
             tally.stuck += run.trailingNil
+            if let stitcher = matcher as? StitcherMatcher { barLog = (barLog ?? []) + stitcher.log }
             if let image = await matcher.stitchedImage {
                 tally.dupBlocks = (tally.dupBlocks ?? 0) + dupBlocks(image.pixels, width: image.width, usableWidth:
                     ScrollingCaptureOffsetVerifier.hashedWidth(width: image.width, ignoredTrailingColumns: truth.ignoredTrailingColumns))
@@ -372,6 +428,10 @@ struct Tally {
             else { tally.wrong += 1 }
         }
         await finishRun()
+        if let barLog {
+            tally.bar = barCounts(barLog, times: Dictionary(uniqueKeysWithValues: truth.frames.compactMap { frame in
+                frame.time.map { (frame.index, $0) } }))
+        }
         tally.jumpFree = !truth.seams.contains { $0.truthKind != "unknown" && ($0.offset.map { abs($0) >= Int(crop.height) } ?? true) }
         if pageKnown { tally.heightErr = pageErr; tally.heightAbs = abs(pageErr); tally.heightPages = 1 }
         return tally

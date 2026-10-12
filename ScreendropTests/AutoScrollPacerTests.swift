@@ -21,13 +21,16 @@ import Testing
         #expect(p.update(height: 1100, lastFrameTime: 10.15, now: 10.17) == .step)
     }
 
-    @Test("After the view settles, most of a step carries on and a small remainder is the end of the page")
+    @Test("After the view settles, any part of a step carries on: only steps that moved nothing end the page")
     func partialSteps() {
         var most = pacer()
         #expect(most.update(height: 1060, lastFrameTime: 10.1, now: 10.3) == .wait)
         #expect(most.update(height: 1060, lastFrameTime: 10.1, now: 10.1 + AutoScrollPacer.settleTime) == .step)
+        // The last of the page: a short step is progress, then two steps move nothing.
         var end = pacer()
-        #expect(end.update(height: 1030, lastFrameTime: 10.1, now: 10.1 + AutoScrollPacer.settleTime) == .endOfPage)
+        #expect(end.update(height: 1030, lastFrameTime: 10.1, now: 10.5) == .step)
+        #expect(end.update(height: 1030, lastFrameTime: 10.1, now: 10.5 + AutoScrollPacer.responseTime) == .step)
+        #expect(end.update(height: 1030, lastFrameTime: 10.1, now: 10.5 + 2 * AutoScrollPacer.responseTime) == .endOfPage)
     }
 
     @Test("A step that changes nothing on screen is retried once, then ends the page")

@@ -11,8 +11,9 @@ import AppKit
 /// Steps are posted as pixel scroll events at the region's center, tagged so
 /// the monitors here can tell them from the user's own scrolling. The
 /// pointer is never moved. Scrolling by hand or moving the pointer off the
-/// bar hands the session back, and so do a frame that doesn't fit, the height
-/// limit and the end of the page; only Done finishes. No key is watched.
+/// bar hands the session back, and so does the height limit; a frame that
+/// doesn't fit pauses the steps until one is placed again, and the end of the
+/// page finishes the capture, as Done does. No key is watched.
 /// Watching scrolling needs no permission; only posting does.
 final class ScrollingCaptureAutoScroller {
     struct State {
@@ -20,8 +21,9 @@ final class ScrollingCaptureAutoScroller {
         let height: Int
         /// The display time of the newest frame taken, on the stream's clock.
         let lastFrameTime: TimeInterval
-        /// False while the latest frame doesn't fit, once the height limit is
-        /// reached and when the session has ended.
+        /// The latest frame doesn't fit: no steps until one is placed.
+        let isWaiting: Bool
+        /// False once the height limit is reached and when the session has ended.
         let canContinue: Bool
     }
 
@@ -45,15 +47,18 @@ final class ScrollingCaptureAutoScroller {
     private let state: () -> State
     private let bar: () -> CGRect?
     private let onStop: () -> Void
+    private let onEndOfPage: () -> Void
+    /// Nil while paused: before the first step and while frames don't fit.
     private var pacer: AutoScrollPacer?
     private var monitors: [Any] = []
     private var poller: Task<Void, Never>?
     private var pointerAtStart: CGPoint = .zero
     private(set) var isRunning = false
 
-    /// `region` is the selection in AppKit screen coordinates.
+    /// `region` is the selection in AppKit screen coordinates. `onEndOfPage`
+    /// runs after the session is handed back, to finish the capture.
     init(region: CGRect, scale: CGFloat, state: @escaping () -> State,
-         bar: @escaping () -> CGRect?, onStop: @escaping () -> Void) {
+         bar: @escaping () -> CGRect?, onStop: @escaping () -> Void, onEndOfPage: @escaping () -> Void) {
         // Quartz flips AppKit's y about the main display's height.
         point = CGPoint(x: region.midX, y: CGDisplayBounds(CGMainDisplayID()).height - region.midY)
         let step = min(max((region.height * Self.stepFraction).rounded(), Self.stepRange.lowerBound), Self.stepRange.upperBound)
@@ -62,17 +67,17 @@ final class ScrollingCaptureAutoScroller {
         self.state = state
         self.bar = bar
         self.onStop = onStop
+        self.onEndOfPage = onEndOfPage
         installMonitors()
     }
 
     /// Posting scroll events to another app needs the Accessibility
-    /// permission; the caller checks it first.
+    /// permission; the caller checks it first. The first step goes out on the
+    /// first poll.
     func start() {
         guard !isRunning, state().canContinue else { return }
         isRunning = true
         pointerAtStart = NSEvent.mouseLocation
-        pacer = AutoScrollPacer(stepPixels: stepPixels, height: state().height, now: ScrollingCaptureSampleTiming.now())
-        post()
         poller = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.pollInterval)
@@ -100,15 +105,25 @@ final class ScrollingCaptureAutoScroller {
     }
 
     private func tick() {
-        guard isRunning, var pacer else { return }
+        guard isRunning else { return }
         let current = state()
         guard current.canContinue else { return stop() }
+        // A frame that doesn't fit pauses the steps, so the pacer never counts
+        // it as a step without progress. The first frame placed after it
+        // starts a new pacer with a new step: the wait isn't counted either.
+        guard !current.isWaiting else { pacer = nil; return }
+        guard var pacer else {
+            self.pacer = AutoScrollPacer(stepPixels: stepPixels, height: current.height, now: ScrollingCaptureSampleTiming.now())
+            return post()
+        }
         let action = pacer.update(height: current.height, lastFrameTime: current.lastFrameTime,
                                   now: ScrollingCaptureSampleTiming.now())
         self.pacer = pacer
         switch action {
         case .step: post()
-        case .endOfPage: stop()
+        case .endOfPage:
+            stop()
+            onEndOfPage()
         case .wait: break
         }
     }
