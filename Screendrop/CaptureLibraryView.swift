@@ -145,6 +145,8 @@ struct CaptureLibraryView: View {
                         .labelStyle(.iconOnly)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 8)
+                        // The whole row clicks, not just the gear's own pixels.
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Settings")
