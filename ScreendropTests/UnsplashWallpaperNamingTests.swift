@@ -30,6 +30,7 @@ struct UnsplashWallpaperNamingTests {
 
     @Test func legacyIDsGetAccessibleFallbackWithoutRenamingLocalFiles() {
         let old = AnnotationCustomWallpaper(url: URL(fileURLWithPath: "/Wallpapers/Unsplash/hwQZLREASZk.jpg"))
+        #expect(old.title == "Unsplash photo")
         #expect(old.accessibilityTitle(ordinal: 3) == "Wallpaper 3")
         #expect(old.url.lastPathComponent == "hwQZLREASZk.jpg")
         let local = AnnotationCustomWallpaper(url: URL(fileURLWithPath: "/Pictures/Golden Gate [Bridge].jpg"))
