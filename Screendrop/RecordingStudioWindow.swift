@@ -82,17 +82,6 @@ private struct RecordingStudioContent: View {
                 if model.isCroppingVideo {
                     videoCropActions
                 } else {
-                    Button {
-                        withAnimation(.snappy(duration: 0.22)) {
-                            model.beginVideoCrop()
-                        }
-                    } label: {
-                        Label("Crop", systemImage: "crop")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .disabled(!model.isLoaded || model.exportState.isExporting)
-                    .help("Crop the finished video canvas")
-
                     if model.isProject {
                         saveStatus
                     }
@@ -460,13 +449,20 @@ private struct StudioCanvas: View {
     @State private var playbackFlash: PlaybackFlash?
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The Crop button's corner of the workspace: inset, button and a gap.
+    private static let cropCorner: CGFloat = 12 + 34 + 6
+
     var body: some View {
         GeometryReader { proxy in
-            let available = CGSize(
-                width: max(proxy.size.width - 68, 100),
-                height: max(proxy.size.height - 56, 100)
-            )
-            let canvasSize = Self.aspectFit(model.previewCanvasSize, into: available)
+            // The picture keeps clear of the Crop button by giving up width
+            // or height, whichever costs it less.
+            let corner = Self.cropCorner * 2
+            let canvasSize = [
+                CGSize(width: proxy.size.width - corner, height: proxy.size.height - 56),
+                CGSize(width: proxy.size.width - 68, height: proxy.size.height - corner),
+            ]
+            .map { Self.aspectFit(model.previewCanvasSize, into: CGSize(width: max($0.width, 100), height: max($0.height, 100))) }
+            .max { $0.width < $1.width } ?? .zero
             let cropEditingLayout = RecordingStudioLayout.make(
                 canvasSize: canvasSize,
                 style: model.style,
@@ -534,6 +530,19 @@ private struct StudioCanvas: View {
             }
             .animation(.easeOut(duration: 0.15), value: skimTime == nil)
             .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        // Cropping swaps it for the crop actions in the toolbar.
+        .overlay(alignment: .topTrailing) {
+            if !model.isCroppingVideo {
+                AnnotationDockButton(systemImage: "crop", title: "Crop", help: "Crop the finished video canvas") {
+                    withAnimation(.snappy(duration: 0.22)) {
+                        model.beginVideoCrop()
+                    }
+                }
+                .glassEffect(.regular, in: .circle)
+                .disabled(!model.isLoaded || model.exportState.isExporting)
+                .padding(12)
+            }
         }
     }
 
