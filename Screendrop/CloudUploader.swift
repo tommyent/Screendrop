@@ -173,6 +173,8 @@ final class CloudUploader: NSObject {
             if mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
                 scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, creds: creds)
             }
+            // The Library's storage bar; a video's sidecars land in the next reading.
+            CloudLibraryModel.shared.refreshUsage()
             return result
         } catch {
             if uploadTask.isCancelled || Task.isCancelled || error is CancellationError
@@ -342,6 +344,19 @@ final class CloudUploader: NSObject {
             let page = try CloudLikeList.decode(data)
             return (page.likes, page.next)
         }
+    }
+
+    /// What the Worker's bucket holds, or nil when the Worker predates
+    /// GET /api/usage.
+    func usage() async throws -> CloudUsage? {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else {
+            throw CloudUploadError.notConfigured
+        }
+        return try await CloudUsage.fetch(
+            workerBase: Self.normalizeWorkerURL(creds.workerURL),
+            token: creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 
     /// Every page of one owner feed, newest first, without repeats. A 404

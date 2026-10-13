@@ -21,6 +21,9 @@ final class CloudLibraryModel {
     private(set) var hasLoaded = false
     private(set) var isLoading = false
     private(set) var loadError: String?
+    /// The bucket's stored bytes for the storage bar; nil until known, or
+    /// when the Worker predates GET /api/usage.
+    private(set) var usage: CloudUsage?
     private(set) var deletingIDs: Set<String> = []
     /// Uploads whose share settings are being changed.
     private(set) var savingIDs: Set<String> = []
@@ -93,6 +96,22 @@ final class CloudLibraryModel {
                 loadError = error.localizedDescription
             }
             selection.formIntersection(uploads.map(\.id))
+        }
+        refreshUsage()
+    }
+
+    /// One list of the bucket (a Class A operation per 1,000 objects), so
+    /// only when the Library opens or the page reloads, and after an upload
+    /// or a delete. A failure keeps the last reading.
+    func refreshUsage() {
+        guard CloudUploader.shared.isConfigured else {
+            usage = nil
+            return
+        }
+        Task {
+            if let usage = try? await CloudUploader.shared.usage() {
+                self.usage = usage
+            }
         }
     }
 
@@ -286,6 +305,7 @@ final class CloudLibraryModel {
                 deletingIDs.remove(upload.id)
             }
             if !failures.isEmpty { CaptureLibraryModel.shared.errorMessage = failures.joined(separator: "\n") }
+            refreshUsage()
         }
     }
 }

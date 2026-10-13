@@ -212,6 +212,7 @@ extension CaptureLibraryModel {
         run("Deleting cloud copy…") {
             try await CloudUploader.shared.deleteFromCloud(uploadID: uploadID)
             for id in item.historyIDs { ScreenshotHistoryStore.shared.setLibraryCloudURL(id: id, cloudURL: nil) }
+            CloudLibraryModel.shared.refreshUsage()
             self.refresh()
         }
     }
