@@ -27,7 +27,7 @@ struct AnnotationStyleStrip: View {
     @FocusState private var isNameFieldFocused: Bool
 
     private static let tileAspect: CGFloat = 1.5
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: 3)
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
@@ -212,36 +212,29 @@ struct AnnotationStyleStrip: View {
     }
 
     private var addTile: some View {
-        VStack(spacing: 4) {
-            Button {
-                onEditorAction()
-                draftName = ""
-                isNameEditorPresented = true
-            } label: {
-                RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                    .foregroundStyle(.quaternary)
-                    .aspectRatio(Self.tileAspect, contentMode: .fit)
-                    .overlay {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(2.5)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Save this look as a style")
-            .accessibilityLabel("Save Style")
-            .closesOnEditorEscape($isNameEditorPresented)
-            .popover(isPresented: $isNameEditorPresented, arrowEdge: .bottom) {
-                nameEditor
-            }
-
-            Text(presetStore.presets.isEmpty ? "Save Look" : "Save")
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.tertiaryLabel)
-                .frame(height: 28, alignment: .top)
+        Button {
+            onEditorAction()
+            draftName = ""
+            isNameEditorPresented = true
+        } label: {
+            RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                .foregroundStyle(.quaternary)
+                .aspectRatio(Self.tileAspect, contentMode: .fit)
+                .overlay {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(2.5)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Save this look as a style")
+        .accessibilityLabel("New Style")
+        .closesOnEditorEscape($isNameEditorPresented)
+        .popover(isPresented: $isNameEditorPresented, arrowEdge: .bottom) {
+            nameEditor
         }
         .frame(maxWidth: .infinity)
     }
