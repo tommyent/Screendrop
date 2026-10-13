@@ -1927,7 +1927,29 @@ final class RecordingStudioModel {
 
     /// `recording_<date>_<time>`, not the session package's internal name.
     private var exportSuggestedFileName: String {
-        VideoFileActions.exportFileName(for: session?.directoryURL ?? screenURL, container: exportSettings.effectiveContainer)
+        let source = session?.directoryURL ?? screenURL
+        guard exportSettings.effectiveExportsGIF else {
+            return VideoFileActions.exportFileName(for: source, container: exportSettings.effectiveContainer)
+        }
+        return ScreenshotFileNaming.recordingFileName(date: VideoFileActions.recordingDate(for: source), extension: "gif")
+    }
+
+    /// Saves a rendered movie to the export folder, or the GIF made from it
+    /// when the settings ask for one. `progress` follows the GIF's frames.
+    private static func save(
+        movie: URL,
+        as settings: VideoCompressionSettings,
+        suggestedFileName: String,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> URL {
+        guard settings.effectiveExportsGIF else {
+            return try await VideoFileActions.saveToDefaultLocation(from: movie, suggestedFileName: suggestedFileName)
+        }
+        let gif = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).gif")
+        defer { try? FileManager.default.removeItem(at: gif) }
+        try await RecordingGIFExport.write(movie: movie, to: gif, frameRate: settings.effectiveGIFFrameRate,
+                                           width: settings.effectiveGIFWidth, progress: progress)
+        return try await VideoFileActions.saveToDefaultLocation(from: gif, suggestedFileName: suggestedFileName)
     }
 
     /// Entry point for the export options popover. Assigning settings marks
@@ -1952,16 +1974,22 @@ final class RecordingStudioModel {
         // both - so exporting becomes a plain copy into the save folder.
         if let cached = freshDeliverableURL {
             let suggestedFileName = exportSuggestedFileName
+            let settings = exportSettings
+            // A copy is instant; a GIF takes a while, so it shows progress.
+            if settings.effectiveExportsGIF { exportState = .exporting(progress: 0) }
             exportTask = Task { [weak self] in
                 do {
-                    let savedURL = try await VideoFileActions.saveToDefaultLocation(
-                        from: cached,
-                        suggestedFileName: suggestedFileName
-                    )
+                    let savedURL = try await Self.save(movie: cached, as: settings, suggestedFileName: suggestedFileName) { progress in
+                        Task { @MainActor [weak self] in
+                            if self?.exportState.isExporting == true { self?.exportState = .exporting(progress: progress) }
+                        }
+                    }
                     RecordingExportNotifier.notifySuccess(fileURL: savedURL)
                     RecordingExportNotifier.revealIfPreferred(fileURL: savedURL)
                     ScreenshotPreviewStack.shared.dismissVideo(for: previewURL)
                     self?.exportState = .finished(savedURL)
+                } catch is CancellationError {
+                    self?.exportState = .idle
                 } catch {
                     self?.exportState = .failed(error.localizedDescription)
                 }
@@ -1979,13 +2007,16 @@ final class RecordingStudioModel {
             return
         }
         let suggestedFileName = exportSuggestedFileName
+        let settings = exportSettings
+        // The render's share of the bar; a GIF's frames take the rest.
+        let renderShare = settings.effectiveExportsGIF ? 0.8 : 1.0
 
         let dockProgressID = DockExportProgressCoordinator.shared.start()
 
         exportTask = Task { [weak self] in
             do {
                 let exporter = RecordingStudioExporter()
-                let temporaryURL = try await exporter.export(configuration) { progress in
+                let report: @Sendable (Double) -> Void = { progress in
                     Task { @MainActor [weak self] in
                         DockExportProgressCoordinator.shared.update(dockProgressID, progress: progress)
                         if self?.exportState.isExporting == true {
@@ -1993,11 +2024,11 @@ final class RecordingStudioModel {
                         }
                     }
                 }
-                let savedURL = try await VideoFileActions.saveToDefaultLocation(
-                    from: temporaryURL,
-                    suggestedFileName: suggestedFileName
-                )
-                try? FileManager.default.removeItem(at: temporaryURL)
+                let temporaryURL = try await exporter.export(configuration) { report($0 * renderShare) }
+                defer { try? FileManager.default.removeItem(at: temporaryURL) }
+                let savedURL = try await Self.save(movie: temporaryURL, as: settings, suggestedFileName: suggestedFileName) {
+                    report(renderShare + $0 * (1 - renderShare))
+                }
                 DockExportProgressCoordinator.shared.finish(dockProgressID)
                 RecordingExportNotifier.notifySuccess(fileURL: savedURL)
                 RecordingExportNotifier.revealIfPreferred(fileURL: savedURL)

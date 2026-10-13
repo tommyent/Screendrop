@@ -58,17 +58,42 @@ struct RecordingExportOptionsPopover: View {
                 .font(.inspectorSectionHeader)
                 .padding(.bottom, 2)
 
-            segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
-            segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
-            segmented("Resolution", options: VideoCompressionResolution.allCases, selection: $settings.resolution)
+            // First, because a GIF swaps the rows below it. `container` is
+            // optional on disk for backwards compatibility, but the control
+            // always shows a concrete choice.
             segmented(
-                "Frame rate",
-                options: VideoExportFrameRate.allCases,
+                "Format",
+                options: RecordingExportFormat.allCases,
                 selection: Binding(
-                    get: { settings.effectiveFrameRate },
-                    set: { settings.frameRate = $0 }
+                    get: { RecordingExportFormat(settings) },
+                    set: { $0.apply(to: &settings) }
                 )
             )
+
+            InspectorHint(formatHint)
+
+            if settings.effectiveExportsGIF {
+                segmented("Width", options: GIFWidth.allCases, selection: Binding(
+                    get: { settings.effectiveGIFWidth },
+                    set: { settings.gifWidth = $0 }
+                ))
+                segmented("Frame rate", options: GIFFrameRate.allCases, selection: Binding(
+                    get: { settings.effectiveGIFFrameRate },
+                    set: { settings.gifFrameRate = $0 }
+                ))
+            } else {
+                segmented("Quality", options: VideoCompressionQuality.allCases, selection: $settings.quality)
+                segmented("Codec", options: VideoCompressionCodec.allCases, selection: $settings.codec)
+                segmented("Resolution", options: VideoCompressionResolution.allCases, selection: $settings.resolution)
+                segmented(
+                    "Frame rate",
+                    options: VideoExportFrameRate.allCases,
+                    selection: Binding(
+                        get: { settings.effectiveFrameRate },
+                        set: { settings.frameRate = $0 }
+                    )
+                )
+            }
 
             toggle("Motion blur", isOn: Binding(
                 get: { settings.effectiveMotionBlurEnabled },
@@ -76,24 +101,13 @@ struct RecordingExportOptionsPopover: View {
             ))
             .help("Soften motion during zooms and pans. Turn off for faster exports with sharper motion.")
 
-            // `container` is optional on disk for backwards compatibility,
-            // but the control always shows a concrete choice.
-            segmented(
-                "Format",
-                options: VideoExportContainer.allCases,
-                selection: Binding(
-                    get: { settings.effectiveContainer },
-                    set: { settings.container = $0 }
-                )
-            )
-
-            InspectorHint(formatHint)
-
-            toggle("Include audio", isOn: Binding(
-                get: { !settings.removeAudio },
-                set: { settings.removeAudio = !$0 }
-            ))
-            .padding(.top, 2)
+            if !settings.effectiveExportsGIF {
+                toggle("Include audio", isOn: Binding(
+                    get: { !settings.removeAudio },
+                    set: { settings.removeAudio = !$0 }
+                ))
+                .padding(.top, 2)
+            }
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
@@ -126,11 +140,13 @@ struct RecordingExportOptionsPopover: View {
     }
 
     private var formatHint: String {
-        switch settings.effectiveContainer {
+        switch RecordingExportFormat(settings) {
         case .mov:
             "Native QuickTime format for Apple apps."
         case .mp4:
             "Plays on more platforms, including Windows, browsers, and Slack."
+        case .gif:
+            "A silent loop that plays anywhere. Keep it short: GIFs grow fast."
         }
     }
 
@@ -159,6 +175,23 @@ struct RecordingExportOptionsPopover: View {
                 }
             )
         }
+    }
+}
+
+/// The Format row's choices: the two movie containers, or a GIF made from
+/// the rendered movie, which keeps its container setting for the render.
+private enum RecordingExportFormat: String, CaseIterable {
+    case mov = "MOV"
+    case mp4 = "MP4"
+    case gif = "GIF"
+
+    init(_ settings: VideoCompressionSettings) {
+        self = settings.effectiveExportsGIF ? .gif : settings.effectiveContainer == .mp4 ? .mp4 : .mov
+    }
+
+    func apply(to settings: inout VideoCompressionSettings) {
+        settings.exportsGIF = self == .gif
+        if self != .gif { settings.container = self == .mp4 ? .mp4 : .mov }
     }
 }
 
