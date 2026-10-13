@@ -85,10 +85,17 @@ nonisolated struct VideoCompressionSettings: Codable, Equatable, Sendable {
     /// for existing projects, preferences, and cached-deliverable stamps.
     var frameRate: VideoExportFrameRate?
     var motionBlurEnabled: Bool?
+    /// A GIF made from the rendered movie instead of the movie (sd-ahk).
+    var exportsGIF: Bool?
+    var gifFrameRate: GIFFrameRate?
+    var gifWidth: GIFWidth?
 
     var effectiveContainer: VideoExportContainer { container ?? .default }
     var effectiveFrameRate: VideoExportFrameRate { frameRate ?? .fps60 }
     var effectiveMotionBlurEnabled: Bool { motionBlurEnabled ?? true }
+    var effectiveExportsGIF: Bool { exportsGIF ?? false }
+    var effectiveGIFFrameRate: GIFFrameRate { gifFrameRate ?? .default }
+    var effectiveGIFWidth: GIFWidth { gifWidth ?? .default }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.quality == rhs.quality && lhs.speed == rhs.speed && lhs.codec == rhs.codec
@@ -96,5 +103,8 @@ nonisolated struct VideoCompressionSettings: Codable, Equatable, Sendable {
             && lhs.container == rhs.container
             && lhs.effectiveFrameRate == rhs.effectiveFrameRate
             && lhs.effectiveMotionBlurEnabled == rhs.effectiveMotionBlurEnabled
+            && lhs.effectiveExportsGIF == rhs.effectiveExportsGIF
+            && lhs.effectiveGIFFrameRate == rhs.effectiveGIFFrameRate
+            && lhs.effectiveGIFWidth == rhs.effectiveGIFWidth
     }
 }

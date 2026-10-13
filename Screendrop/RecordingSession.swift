@@ -131,7 +131,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     }
 
     /// True when two documents would render identical media and differ only in
-    /// the container they get wrapped in.
+    /// the container they get wrapped in, or the GIF made from them.
     static func differsOnlyByExportContainer(
         _ document: RecordingEditDocument,
         _ other: RecordingEditDocument?
@@ -139,6 +139,9 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         guard let other else { return false }
         var normalized = document
         normalized.exportSettings?.container = other.exportSettings?.container
+        normalized.exportSettings?.exportsGIF = other.exportSettings?.exportsGIF
+        normalized.exportSettings?.gifFrameRate = other.exportSettings?.gifFrameRate
+        normalized.exportSettings?.gifWidth = other.exportSettings?.gifWidth
         return normalized == other
     }
 
