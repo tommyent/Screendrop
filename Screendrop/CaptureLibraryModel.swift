@@ -137,6 +137,10 @@ final class CaptureLibraryModel {
     /// the current names, so a failed save can't linger here.
     @ObservationIgnored var savedNames: [String: String] = [:]
     var pendingTrash: [CaptureLibraryItem] = []
+    /// A capture waiting on the Share to Cloud options sheet.
+    var pendingCloudUpload: CaptureLibraryItem?
+    /// A shared capture waiting on the Delete from Cloud confirmation.
+    var pendingCloudDelete: CaptureLibraryItem?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var visibleIndices: [String: Int] = [:]

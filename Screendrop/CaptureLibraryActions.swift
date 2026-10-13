@@ -149,6 +149,36 @@ extension CaptureLibraryModel {
         }
     }
 
+    /// The captures' right-click menu: the shared actions, then the
+    /// selected capture's cloud actions, which moved here from the
+    /// inspector's bar, then Move to Trash.
+    func menuItems(selected count: Int) -> [LibraryMenuItem] {
+        var items = CaptureLibraryAction.menu(selected: count, perform: perform)
+        let trash = items.removeLast()
+        items += cloudMenuItems()
+        items.append(trash)
+        return items
+    }
+
+    private func cloudMenuItems() -> [LibraryMenuItem] {
+        guard selectedItems.count == 1, let item = selectedItems.first else { return [] }
+        if let link = item.cloudURL {
+            return [
+                LibraryMenuItem(title: "Copy Cloud Link", startsGroup: true) { self.copyLink(item) },
+                LibraryMenuItem(title: "Open Shared Capture", isEnabled: URL(string: link) != nil) {
+                    if let url = URL(string: link) { NSWorkspace.shared.open(url) }
+                },
+                LibraryMenuItem(title: "Delete from Cloud…", isEnabled: !isBusy) { self.pendingCloudDelete = item },
+            ]
+        }
+        guard CloudUploader.shared.isConfigured else { return [] }
+        return [
+            LibraryMenuItem(title: "Share to Cloud…", isEnabled: !isBusy, startsGroup: true) {
+                self.pendingCloudUpload = item
+            },
+        ]
+    }
+
     func copyLink(_ item: CaptureLibraryItem) {
         guard let link = item.cloudURL else { return }
         NSPasteboard.general.clearContents()
