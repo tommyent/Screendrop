@@ -105,6 +105,9 @@ struct AnnotationCanvas: View {
                     && !hasActiveInteraction
                     && !model.isTransformingExistingAnnotation
                     && model.selectionCount == 0
+                    // The settled frame is the saved fill; a hovered one
+                    // shows through the live approximation instead.
+                    && model.previewBackground == nil
             )
 
             ZStack(alignment: .topLeading) {
