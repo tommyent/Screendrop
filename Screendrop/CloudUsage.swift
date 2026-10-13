@@ -67,6 +67,7 @@ enum CloudStoragePreferences {
 /// only; nothing is blocked or deleted.
 struct CloudUsageBar: View {
     let usage: CloudUsage
+    private static let barHeight: CGFloat = 6
     @AppStorage(CloudStoragePreferences.thresholdGBKey) private var thresholdGB = CloudStoragePreferences.defaultThresholdGB
 
     var body: some View {
@@ -76,12 +77,12 @@ struct CloudUsageBar: View {
         VStack(alignment: .leading, spacing: 4) {
             Capsule()
                 .fill(Color.primary.opacity(0.08))
-                .frame(height: 6)
+                .frame(height: Self.barHeight)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
                         Capsule()
                             .fill(color(for: CloudUsage.level(bytes: usage.bytes, threshold: threshold)))
-                            .frame(width: max(6, proxy.size.width * fraction))
+                            .frame(width: max(Self.barHeight, proxy.size.width * fraction))
                     }
                 }
             Text(summary)
@@ -90,6 +91,8 @@ struct CloudUsageBar: View {
                 .monospacedDigit()
         }
         .frame(maxWidth: 260, alignment: .leading)
+        // Centred rows (the sidebar foot's gear) line up with the bar, not the bar and text together.
+        .alignmentGuide(VerticalAlignment.center) { _ in Self.barHeight / 2 }
         .help("Cloud storage, against the threshold in Settings › Cloud")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Cloud storage")
