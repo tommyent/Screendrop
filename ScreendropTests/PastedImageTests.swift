@@ -79,4 +79,29 @@ struct PastedImageTests {
     @Test func undecodableBytesAreNoAsset() {
         #expect(AnnoImageAsset(data: Data("not an image".utf8)) == nil)
     }
+
+    // MARK: Storage
+
+    @Test func sidecarKeepsThePixelsOfShownPicturesOnly() throws {
+        let png = Self.bandedPNG()
+        let assets = ["shown": AnnoImageAsset(data: png)!, "undone": AnnoImageAsset(data: png)!]
+        let shapes = [AnnoShape(x: 0, y: 0, kind: .image(ImageProps(assetID: "shown", w: 4, h: 4)))]
+        let images = AnnotationDocument.images(for: shapes, from: assets)
+        #expect(Array(images.keys) == ["shown"] && images["shown"] == png)
+
+        let document = AnnotationDocument(shapes: shapes, background: AnnotationBackgroundSettings(), images: images)
+        let reopened = try JSONDecoder().decode(AnnotationDocument.self, from: JSONEncoder().encode(document))
+        #expect(reopened.shapes == shapes && reopened.images == images)
+        // What the editor does on load: the reopened shape finds its pixels again.
+        let loaded = reopened.images.compactMapValues(AnnoImageAsset.init(data:))
+        #expect(loaded["shown"]?.image.width == 4)
+    }
+
+    @Test func sidecarsFromBeforePastingHaveNoImages() throws {
+        let document = AnnotationDocument(shapes: [], background: AnnotationBackgroundSettings())
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as! [String: Any]
+        json.removeValue(forKey: "images")
+        let old = try JSONDecoder().decode(AnnotationDocument.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old.images.isEmpty)
+    }
 }

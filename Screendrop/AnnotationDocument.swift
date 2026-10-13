@@ -39,11 +39,16 @@ struct AnnotationDocument: Codable, Equatable {
     var shapes: [AnnoShape]
     var bindings: [ArrowBinding]
     var background: StoredBackground
+    /// Pasted pictures' encoded bytes (PNG or JPEG) by asset ID (sd-eec), base64 in the JSON.
+    /// They live here, with the shapes that show them, so the one sidecar file every Library
+    /// move, rename and delete already handles carries them too. Absent before pasting existed.
+    var images: [String: Data]
 
     init(
         shapes: [AnnoShape],
         bindings: [ArrowBinding] = [],
         background: AnnotationBackgroundSettings,
+        images: [String: Data] = [:],
         baseImageFileName: String = "",
         version: Int = AnnotationDocument.currentVersion
     ) {
@@ -52,6 +57,14 @@ struct AnnotationDocument: Codable, Equatable {
         self.shapes = shapes
         self.bindings = bindings
         self.background = StoredBackground(background)
+        self.images = images
+    }
+
+    /// The pixels the saved shapes still show. An undone or deleted paste's stay in the editor
+    /// for redo but are left out of the file.
+    static func images(for shapes: [AnnoShape], from assets: [String: AnnoImageAsset]) -> [String: Data] {
+        let used = Set(shapes.compactMap { $0.imageProps?.assetID })
+        return assets.filter { used.contains($0.key) }.mapValues(\.data)
     }
 
     init(from decoder: Decoder) throws {
@@ -70,6 +83,7 @@ struct AnnotationDocument: Codable, Equatable {
             : StoredBackground(AnnotationBackgroundSettings())
         shapes = version >= 2 ? (try container.decodeIfPresent([AnnoShape].self, forKey: .shapes) ?? []) : []
         bindings = version >= 2 ? (try container.decodeIfPresent([ArrowBinding].self, forKey: .bindings) ?? []) : []
+        images = try container.decodeIfPresent([String: Data].self, forKey: .images) ?? [:]
     }
 
     var backgroundSettings: AnnotationBackgroundSettings {

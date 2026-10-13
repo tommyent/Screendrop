@@ -288,6 +288,8 @@ final class AnnotationEditorModel {
         previewCGImage = previewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
 
         engine.viewport = AnnoViewport(imageFrame: .zero, imageSize: imageSize)
+        // Pasted pictures' pixels, before the shapes that show them (sd-eec).
+        engine.imageAssets = (document?.images ?? [:]).compactMapValues(AnnoImageAsset.init(data:))
         var snapshot = AnnoDocument.Snapshot(shapes: document?.shapes ?? [], bindings: document?.bindings ?? [])
         // Before version 3, shapes were placed on the raw pixel grid, while the page is now the
         // upright image. Move them so a mask still covers what it covered in the saved export.
@@ -411,7 +413,8 @@ final class AnnotationEditorModel {
             let document = AnnotationDocument(
                 shapes: shapes,
                 bindings: bindings,
-                background: backgroundSettings
+                background: backgroundSettings,
+                images: AnnotationDocument.images(for: shapes, from: engine.imageAssets)
             )
             resultURL = try ScreenshotHistoryStore.shared.commitAnnotations(
                 displayURL: sourceURL,
