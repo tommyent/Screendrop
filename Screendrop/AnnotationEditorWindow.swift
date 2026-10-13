@@ -656,3 +656,20 @@ struct AnnotationEditorSaveAsCommand: View {
             .disabled(editor == nil)
     }
 }
+
+/// File › Revert To for the key editor window, as document apps have it.
+/// Each is one step Undo takes back; the next save writes it.
+struct AnnotationEditorRevertCommand: View {
+    @FocusedValue(\.annotationEditor) private var editor
+
+    var body: some View {
+        if let editor {
+            Menu("Revert To") {
+                Button("Original") { editor.revertToOriginal() }
+                    .disabled(!editor.canRevertToOriginal)
+                Button("Last Opened") { editor.revertToLastOpened() }
+                    .disabled(!editor.canRevertToLastOpened)
+            }
+        }
+    }
+}

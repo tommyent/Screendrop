@@ -229,6 +229,11 @@ final class RecordingStudioModel {
     private var transcriptionTask: Task<Void, Never>?
     private var projectSaveTask: Task<Void, Never>?
     private var autosaveTask: Task<Void, Never>?
+    /// The project as this window opened it, for Revert To › Last Opened.
+    private var openedDocument: RecordingEditDocument?
+    private var openedStylePresetID: RecordingStudioStylePreset.ID?
+    /// Revert To › Last Opened is off until something changes.
+    private(set) var hasEditsSinceOpening = false
     private var screenAsset: AVURLAsset?
     private var isTornDown = false
     private var isLoading = false
@@ -440,6 +445,8 @@ final class RecordingStudioModel {
             // tells the close prompt whether there are any to lose.
             lastSavedDocument = currentDocument()
         }
+        openedDocument = currentDocument()
+        openedStylePresetID = appliedStylePresetID
         StudioProjectRegistry.shared.register(self)
     }
 
@@ -1163,6 +1170,7 @@ final class RecordingStudioModel {
     private func scheduleProjectSave() {
         guard isLoaded, !isApplyingDocument else { return }
         hasUnsavedChanges = true
+        hasEditsSinceOpening = true
         projectSaveTask?.cancel()
         projectSaveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
@@ -1305,7 +1313,7 @@ final class RecordingStudioModel {
 
     /// The parts of a stored project that need the timeline rebuilt around
     /// them: cuts, the imported soundtrack, and everything derived from both.
-    private func applyDocumentTimeline(_ document: RecordingEditDocument) async {
+    private func applyDocumentTimeline(_ document: RecordingEditDocument, keepingUndo: Bool = false) async {
         guard !isTornDown, !Task.isCancelled, let session else { return }
         isApplyingDocument = true
         defer { isApplyingDocument = false }
@@ -1345,8 +1353,71 @@ final class RecordingStudioModel {
         rebuildPointerTimeline()
         rebuildViewportTimeline()
         rebuildPreviewReframe()
-        editUndoManager.removeAllActions()
+        if !keepingUndo { editUndoManager.removeAllActions() }
         undoRevision += 1
+    }
+
+    // MARK: - Revert To
+
+    /// A project, loaded, not cropping, and with no export or upload that
+    /// is rendering the current edits.
+    var canRevert: Bool {
+        isLoaded && isProject && !isCroppingVideo && !hasRunningWork
+    }
+
+    /// File › Revert To › Original: every edit back to what a new recording
+    /// opens with. The recording itself was never changed.
+    func revertToOriginal() {
+        revert(
+            to: freshDocument(),
+            stylePresetID: RecordingStudioStylePresetStore.shared.activePreset?.id,
+            actionName: "Revert to Original"
+        )
+    }
+
+    /// File › Revert To › Last Opened: the project as this window opened it.
+    func revertToLastOpened() {
+        guard let openedDocument else { return }
+        revert(to: openedDocument, stylePresetID: openedStylePresetID, actionName: "Revert to Last Opened")
+    }
+
+    /// What a new recording opens with (see `load`): the style for new
+    /// recordings or the default one, zooms found in its pointer track, the
+    /// whole clip, and no captions, crop or soundtrack.
+    private func freshDocument() -> RecordingEditDocument {
+        RecordingEditDocument(
+            style: RecordingStudioStylePresetStore.shared.activePreset?.value
+                ?? RecordingStudioStyle(background: RecordingStudioDefaults.background),
+            zoomEnabled: true,
+            zoomCues: ZoomCueSynthesizer.cues(from: pointerCapture, duration: sourceDuration),
+            exportSettings: RecordingExportPreferences.lastSettings,
+            showsClickEffects: manifest?.pressEffectsEnabled ?? true
+        )
+    }
+
+    /// A whole document as one step Undo takes back (and Redo repeats),
+    /// saved like any other edit.
+    private func revert(
+        to document: RecordingEditDocument,
+        stylePresetID: RecordingStudioStylePreset.ID?,
+        actionName: String
+    ) {
+        guard canRevert else { return }
+        let previous = currentDocument()
+        guard document != previous else { return }
+        let previousStylePresetID = appliedStylePresetID
+        registerUndo(actionName) { target in
+            target.revert(to: previous, stylePresetID: previousStylePresetID, actionName: actionName)
+        }
+        pause()
+        selectedCueID = nil
+        applyDocumentSettings(document)
+        appliedStylePresetID = stylePresetID
+        scheduleProjectSave()
+        Task {
+            await applyDocumentTimeline(document, keepingUndo: true)
+            scheduleProjectSave()
+        }
     }
 
     /// Viewport frame to render at a given time, honoring the zoom toggle.

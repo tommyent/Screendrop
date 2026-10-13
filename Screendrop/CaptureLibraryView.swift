@@ -244,6 +244,14 @@ struct CaptureLibraryView: View {
                 model.upload(item, options: options)
             }
         }
+        .alert("Revert “\(model.pendingRevert?.title ?? "")” to the original?", isPresented: Binding(
+            get: { model.pendingRevert != nil }, set: { if !$0 { model.pendingRevert = nil } }
+        )) {
+            Button("Revert", role: .destructive) { model.revertPendingItem() }
+            Button("Cancel", role: .cancel) { model.pendingRevert = nil }
+        } message: {
+            Text("Its edits will be removed.")
+        }
         .alert("Delete from cloud?", isPresented: Binding(
             get: { model.pendingCloudDelete != nil }, set: { if !$0 { model.pendingCloudDelete = nil } }
         ), presenting: model.pendingCloudDelete) { item in

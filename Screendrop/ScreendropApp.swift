@@ -49,6 +49,7 @@ struct ScreendropApp: App {
             CommandGroup(after: .newItem) {
                 AnnotationEditorSaveCommand()
                 AnnotationEditorSaveAsCommand()
+                AnnotationEditorRevertCommand()
             }
         }
         .windowResizability(.contentSize)
@@ -60,6 +61,7 @@ struct ScreendropApp: App {
         .commands {
             CommandGroup(after: .newItem) {
                 RecordingStudioSaveCommand()
+                RecordingStudioRevertCommand()
             }
         }
         .windowResizability(.contentSize)

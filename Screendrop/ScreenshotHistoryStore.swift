@@ -275,10 +275,8 @@ final class ScreenshotHistoryStore {
         // the display image is the capture; after one, the base is (a crop
         // saved before originals were kept is already in it). The
         // transaction stages every source before installing anything.
-        let originalDestination = Self.originalImageURL(for: displayURL)
-        if !FileManager.default.fileExists(atPath: originalDestination.path) {
-            let hasBase = FileManager.default.fileExists(atPath: baseDestination.path)
-            replacements.append((hasBase ? baseDestination : displayURL, originalDestination))
+        if let source = Self.originalSource(for: displayURL) {
+            replacements.append((source, Self.originalImageURL(for: displayURL)))
         }
         // The base is always the image these shapes were drawn on. When that is the display
         // image, an existing base belongs to something else (a pre-v2 sidecar's clean
@@ -307,19 +305,47 @@ final class ScreenshotHistoryStore {
         return displayURL
     }
 
-    /// Restores the base and removes the editable files as one recoverable save.
+    /// Where the original comes from while none is kept: the base once an
+    /// edit was saved, otherwise the display image. Nil once it is kept.
+    nonisolated private static func originalSource(for displayURL: URL) -> URL? {
+        guard !FileManager.default.fileExists(atPath: originalImageURL(for: displayURL).path) else { return nil }
+        let base = baseImageURL(for: displayURL)
+        return FileManager.default.fileExists(atPath: base.path) ? base : displayURL
+    }
+
+    /// The image as captured, kept now if no save has kept it yet. A file
+    /// from outside History is its own original.
+    func originalImage(for displayURL: URL) throws -> URL {
+        guard isHistoryURL(displayURL) else { return displayURL }
+        let original = Self.originalImageURL(for: displayURL)
+        if let source = Self.originalSource(for: displayURL) {
+            try ScreenshotEditFileTransaction.apply(replacements: [(source, original)])
+        }
+        return original
+    }
+
+    /// The Library's Revert to Original: the capture as captured, with no
+    /// edits left to open.
     @discardableResult
-    func removeAnnotations(displayURL: URL) throws -> URL {
+    func revertToOriginal(displayURL: URL) throws -> URL {
+        try removeAnnotations(displayURL: displayURL, restoringFrom: originalImage(for: displayURL))
+    }
+
+    /// Restores the base, or `source` (the original, for a revert), and
+    /// removes the editable files as one recoverable save. The original stays.
+    @discardableResult
+    func removeAnnotations(displayURL: URL, restoringFrom source: URL? = nil) throws -> URL {
         _ = try loadEditDocument(for: displayURL)
         guard isHistoryURL(displayURL) else { return displayURL }
         let baseDestination = Self.baseImageURL(for: displayURL)
         let documentURL = Self.editDocumentURL(for: displayURL)
-        // Missing base pixels are a failed restore, not a successful clear.
-        guard FileManager.default.fileExists(atPath: baseDestination.path) else {
+        let restored = source ?? baseDestination
+        // Missing pixels are a failed restore, not a successful clear.
+        guard FileManager.default.fileExists(atPath: restored.path) else {
             throw CocoaError(.fileReadNoSuchFile)
         }
         try ScreenshotEditFileTransaction.apply(
-            replacements: [(baseDestination, displayURL)],
+            replacements: [(restored, displayURL)],
             removing: [baseDestination, documentURL]
         )
         if let index = items.firstIndex(where: { $0.fileName == displayURL.lastPathComponent }) {

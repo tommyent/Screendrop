@@ -169,10 +169,45 @@ extension CaptureLibraryModel {
            let export = items.firstIndex(where: { $0.title == CaptureLibraryAction.export.rawValue }) {
             items.insert(LibraryMenuItem(title: "Export as GIF…", isEnabled: !isBusy) { self.exportGIF(item) }, at: export + 1)
         }
+        if count == 1, let item = selectedItems.first, item.hasEdits || item.hasDraft,
+           let rename = items.firstIndex(where: { $0.title == CaptureLibraryAction.rename.rawValue }) {
+            items.insert(LibraryMenuItem(title: "Revert to Original…", isEnabled: !isBusy) { self.requestRevert(item) }, at: rename + 1)
+        }
         let trash = items.removeLast()
         items += cloudMenuItems()
         items.append(trash)
         return items
+    }
+
+    /// Asks first, since there's no Undo here. A capture open in an editor
+    /// is brought forward instead, to revert there with File › Revert To.
+    func requestRevert(_ item: CaptureLibraryItem) {
+        if CaptureLibraryOpenEditors.isEditing(item.ownedURL) {
+            perform(.edit)
+        } else {
+            pendingRevert = item
+        }
+    }
+
+    /// The capture as captured, or a recording as a new one opens. Its name,
+    /// tags and cloud link stay, and an uploaded copy isn't touched.
+    func revertPendingItem() {
+        guard let item = pendingRevert else { return }
+        pendingRevert = nil
+        run("Reverting…") {
+            guard !CaptureLibraryOpenEditors.isEditing(item.ownedURL) else {
+                throw CocoaError(.fileWriteNoPermission, userInfo: [
+                    NSLocalizedDescriptionKey: "Close the capture's editor before reverting it."
+                ])
+            }
+            if let session = item.session {
+                try session.removeEdits()
+                RecordingProjectStore.shared.reload()
+            } else {
+                try ScreenshotHistoryStore.shared.revertToOriginal(displayURL: item.fileURL)
+            }
+            self.refresh()
+        }
     }
 
     private func cloudMenuItems() -> [LibraryMenuItem] {
