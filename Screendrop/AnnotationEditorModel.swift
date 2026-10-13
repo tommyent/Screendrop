@@ -137,6 +137,10 @@ final class AnnotationEditorModel {
     /// The state this window opened on, for Revert To › Last Opened. Kept
     /// apart from `history`, which drops its oldest steps.
     private var openedSnapshot: EditSnapshot?
+    private var openedSessionDocument: AnnotationDocument?
+    private var sessionOpenedAt = Date()
+    private var keptOpeningSession = false
+    private(set) var sessionSnapshots: [CaptureSessionSnapshot] = []
     private var historyIndex = 0
     private var isRestoringHistory = false
     private var inspectorEditingDepth = 0
@@ -254,6 +258,9 @@ final class AnnotationEditorModel {
         history.removeAll()
         historyIndex = 0
         openedSnapshot = nil
+        openedSessionDocument = nil
+        keptOpeningSession = false
+        sessionSnapshots = []
         inspectorEditingDepth = 0
         croppedInSession = false
         lastSaveSucceeded = nil
@@ -358,6 +365,9 @@ final class AnnotationEditorModel {
         history.removeAll()
         historyIndex = 0
         openedSnapshot = nil
+        openedSessionDocument = nil
+        keptOpeningSession = false
+        sessionSnapshots = []
         inspectorEditingDepth = 0
         croppedInSession = false
         engine.release()
@@ -466,6 +476,7 @@ final class AnnotationEditorModel {
             inspectorEditingDepth = 0
             recordHistoryChange(force: true)
         }
+        if hasUnsavedChanges { try keepOpeningSession() }
         var committedSnapshot = currentSnapshot()
         // Revert To › Original: nothing on the kept original, which becomes
         // the image again rather than a render of it.
@@ -616,6 +627,15 @@ final class AnnotationEditorModel {
             history = [currentSnapshot()]
             historyIndex = 0
             openedSnapshot = savedSnapshot
+            sessionOpenedAt = Date()
+            openedSessionDocument = AnnotationDocument(
+                shapes: shapes, bindings: bindings, background: backgroundSettings,
+                images: AnnotationDocument.images(for: shapes, from: engine.imageAssets)
+            )
+            if let sourceURL {
+                do { sessionSnapshots = try sessionStore(for: sourceURL).entries() }
+                catch { errorMessage = "Unable to read session snapshots: \(error.localizedDescription)" }
+            }
         }
     }
 
@@ -639,6 +659,8 @@ final class AnnotationEditorModel {
         let snapshot = currentSnapshot()
         defer { scheduleIdleSave() }
         guard snapshot != history[historyIndex] else { return }
+        do { try keepOpeningSession() }
+        catch { errorMessage = "Unable to keep the opening session: \(error.localizedDescription)" }
         history.removeSubrange((historyIndex + 1)..<history.count)
         history.append(snapshot)
         if history.count > 201 { history.removeFirst() }
@@ -1256,6 +1278,46 @@ extension AnnotationEditorModel {
             p.fontSize *= uniform
             p.w *= sx
             shape.kind = .text(p)
+        }
+    }
+
+    private func sessionStore(for url: URL) -> CaptureSessionSnapshots {
+        CaptureSessionSnapshots(directory: ScreenshotHistoryStore.sessionSnapshotsURL(for: url))
+    }
+
+    private func keepOpeningSession() throws {
+        guard !keptOpeningSession, let sourceURL, let openedSnapshot,
+              ScreenshotHistoryStore.shared.isHistoryURL(sourceURL),
+              let base = openedSnapshot.baseImageURL, let document = openedSessionDocument else { return }
+        sessionSnapshots = try sessionStore(for: sourceURL).keep(
+            document: CaptureSessionSnapshots.encode(document), baseImage: base, openedAt: sessionOpenedAt
+        )
+        keptOpeningSession = true
+    }
+
+    func revertToSession(_ session: CaptureSessionSnapshot) {
+        guard let sourceURL, !isCropping, !isBlockingCommit else { return }
+        do {
+            let stored = try sessionStore(for: sourceURL).read(session)
+            let document = try JSONDecoder().decode(AnnotationDocument.self, from: stored.document)
+            guard let base = stored.baseImage, let size = ScreenshotImageLoader.imageSize(at: base) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let assets = document.images.compactMapValues(AnnoImageAsset.init(data:))
+            guard assets.count == document.images.count else { throw CocoaError(.fileReadCorruptFile) }
+            guard prepareRevert() else { return }
+            // The first edit can prune this entry; Undo must own its image first.
+            let original = ScreenshotHistoryStore.originalImageURL(for: sourceURL)
+            let isOriginal = document.shapes.isEmpty && !document.background.settings.hasRenderableContent
+                && FileManager.default.contentsEqual(atPath: base.path, andPath: original.path)
+            guard let retainedBase = isOriginal ? original : stableCropSnapshotURL(for: base) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            engine.imageAssets.merge(assets) { _, restored in restored }
+            revert(to: EditSnapshot(baseImageURL: retainedBase, imageSize: size, isCropped: false,
+                                    shapes: document.shapes, bindings: document.bindings, background: document.background))
+        } catch {
+            errorMessage = "Unable to restore the session: \(error.localizedDescription)"
         }
     }
 

@@ -30,3 +30,5 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 It excludes only `AppEntry.swift`, uses the existing built Sparkle/DockProgress dependencies, and verifies Foundation's storage resolves inside a temporary home before creating synthetic captures. It covers crop/undo, image deletion, text/composition and drag gates, coalescing, transaction failure, and close/quit during a delayed render. One AppKit window exercises the close delegate but is never shown or focused. Three 5K background/blur commits provide timings. The runner holds the shared benchmark lock only while executing the checks.
 
+Session snapshot checks cover unedited opens, five-session retention, deduplication, cropped pixels and pasted pictures after restore, Undo/Redo and auto-save in both editors, and Studio soundtrack retention and write failures. Library Trash uses a disposable destination to check that the snapshot folder moves with its capture; no files go to the user's Trash.
+

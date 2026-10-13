@@ -1,6 +1,10 @@
 import AppKit
+import AVFoundation
+import CoreMedia
+import CoreVideo
 import Darwin
 import ImageIO
+import SwiftUI
 import UniformTypeIdentifiers
 
 // Built against the actual app sources by check-editor-idle-save.py.
@@ -8,8 +12,8 @@ import UniformTypeIdentifiers
 struct IdleSaveChecks {
     struct Failure: Error, CustomStringConvertible { let description: String }
 
-    @MainActor static func check(_ value: @autoclosure () -> Bool, _ message: String) throws {
-        if !value() { throw Failure(description: message) }
+    @MainActor static func check(_ value: @autoclosure () throws -> Bool, _ message: String) throws {
+        if try !value() { throw Failure(description: message) }
     }
 
     @MainActor static func until(_ condition: () -> Bool) async throws {
@@ -80,6 +84,271 @@ struct IdleSaveChecks {
 
     static func rect(x: Double = 10) -> AnnoShape {
         AnnoShape(x: x, y: 10, kind: .geo(GeoProps(w: 40, h: 30)))
+    }
+
+    @MainActor static func sessionStoreRetention() throws {
+        let directory = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("SessionStore")
+        let store = CaptureSessionSnapshots(directory: directory)
+        try check(try store.entries().isEmpty, "Empty store made entries")
+        let sibling = URL(fileURLWithPath: ScreenshotHistoryStore.historyDirectory.path + "-outside/capture.png")
+        try check(!ScreenshotHistoryStore.shared.isHistoryURL(sibling), "History prefix accepted a sibling directory")
+        let firstBase = directory.deletingLastPathComponent().appendingPathComponent("first-base.png")
+        let secondBase = directory.deletingLastPathComponent().appendingPathComponent("same-base.png")
+        try png().write(to: firstBase)
+        try FileManager.default.copyItem(at: firstBase, to: secondBase)
+        var published: [CaptureSessionSnapshot] = []
+        for index in 0..<7 {
+            let entries = try store.keep(document: Data("{\"state\":\(index)}".utf8), baseImage: firstBase,
+                                         openedAt: Date(timeIntervalSince1970: Double(index)))
+            published.append(entries[0])
+        }
+        let kept = try store.entries()
+        try check(kept.count == 5 && kept.first == published[6] && kept.last == published[2], "Five-session limit/order failed")
+        for entry in published.prefix(2) {
+            try check(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(entry.id.uuidString).path), "Old session wasn't pruned")
+        }
+        let deduped = try store.keep(document: Data("{\"state\":6}".utf8), baseImage: secondBase, openedAt: Date())
+        try check(deduped == kept, "Identical state at another path created a duplicate")
+        try png(width: 220).write(to: secondBase)
+        let changed = try store.keep(document: Data("{\"state\":6}".utf8), baseImage: secondBase, openedAt: Date())
+        try check(changed.count == 5 && changed[0].id != kept[0].id, "Changed base pixels were deduplicated")
+        do {
+            _ = try store.keep(document: Data(), baseImage: directory.appendingPathComponent("missing.png"), openedAt: Date())
+            throw Failure(description: "Missing base was published")
+        } catch is Failure { throw Failure(description: "Missing base was published") } catch {}
+        let afterFailure = try store.entries()
+        try check(afterFailure == changed, "Failed copy displaced a complete session")
+        print("PASS session store: newest-first, five kept, old folders pruned, content dedupe, changed pixels, failed copy preserves history")
+    }
+
+    @MainActor static func openImage(_ url: URL) throws -> AnnotationEditorModel {
+        let model = AnnotationEditorModel()
+        model.load(url: url, dismiss: EnvironmentValues().dismiss)
+        try check(model.errorMessage == nil && model.imageSize.width > 0, "Image fixture didn't load: \(model.errorMessage ?? "empty image")")
+        model.updateViewport(imageFrame: CGRect(origin: .zero, size: model.imageSize))
+        return model
+    }
+
+    @MainActor static func sessionImageRestore() async throws {
+        let directory = ScreenshotHistoryStore.historyDirectory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = directory.appendingPathComponent("sessions-\(UUID()).png")
+        let captured = try png()
+        try captured.write(to: source)
+        let store = CaptureSessionSnapshots(directory: ScreenshotHistoryStore.sessionSnapshotsURL(for: source))
+        let untouched = try openImage(source)
+        untouched.releaseEditorResources()
+        try check(!FileManager.default.fileExists(atPath: store.directory.path), "Open/close without an edit kept a session")
+
+        let first = try openImage(source)
+        first.engine.replaceDocument(shapes: [rect()])
+        _ = try await first.commitEdits()
+        first.releaseEditorResources()
+        try check(try store.entries().count == 1, "Edit/close didn't keep exactly one opening state")
+        let originalEntry = try store.entries()[0]
+
+        let second = try openImage(source)
+        second.isCropping = true
+        second.cropRect = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        second.applyCrop()
+        _ = try await second.commitEdits()
+        let croppedShapes = second.shapes
+        let croppedPixels = try Data(contentsOf: source)
+        second.releaseEditorResources()
+
+        let third = try openImage(source)
+        try check(third.imageSize.width == 100 && third.shapes == croppedShapes, "Cropped opening state was wrong")
+        var moved = third.shapes
+        moved[0].x += 10
+        third.engine.replaceDocument(shapes: moved)
+        _ = try await third.commitEdits()
+        third.releaseEditorResources()
+        let croppedEntry = try store.entries()[0]
+
+        let restored = try openImage(source)
+        restored.revertToSession(croppedEntry)
+        try check(restored.errorMessage == nil && restored.shapes == croppedShapes && restored.imageSize.width == 100,
+                  "Session restore lost cropped pixels/marks")
+        restored.undo()
+        try check(restored.shapes == moved && restored.imageSize.width == 100, "One Undo didn't recover work after restore")
+        restored.redo()
+        try await until { !restored.hasUnsavedChanges && restored.saveStatus == "Saved" }
+        let restoredPixels = try Data(contentsOf: source)
+        try check(restoredPixels == croppedPixels, "Auto-saved restored composite differs from the earlier crop")
+        // The newest snapshot is this window's opening state. Another edit in
+        // that same state in a new window must not record it again.
+        restored.undo()
+        _ = try await restored.commitEdits()
+        restored.releaseEditorResources()
+        let beforeDedupe = try store.entries()
+        let reopened = try openImage(source)
+        reopened.engine.replaceDocument(shapes: croppedShapes)
+        _ = try await reopened.commitEdits()
+        try check(try store.entries() == beforeDedupe, "Reopening the newest kept state created a duplicate")
+        // Untouched capture snapshots must use the original bytes and clear edits.
+        reopened.revertToSession(originalEntry)
+        try await until { !reopened.hasUnsavedChanges && reopened.saveStatus == "Saved" }
+        let originalPixels = try Data(contentsOf: source)
+        try check(originalPixels == captured && !ScreenshotHistoryStore.shared.hasEditDocument(for: source), "Original session re-rendered or stayed edited")
+        reopened.releaseEditorResources()
+        print("PASS image sessions: unedited opens keep nothing, edit/close keeps one, cropped pixels+marks, one Undo/Redo, auto-save, dedupe, original bytes")
+    }
+
+    @MainActor static func sessionPrunedRestoreAndPictures() async throws {
+        let gate = Gate(), model = try fixture(gate)
+        gate.hold = false
+        let source = model.sourceURL!
+        let asset = AnnoImageAsset(data: try png(width: 20, height: 12))!
+        let imageID = model.engine.insertImage(asset, assetID: "session-picture")
+        _ = try await model.commitEdits()
+        model.releaseEditorResources()
+        let withPicture = try openImage(source)
+        let pictureShapes = withPicture.shapes
+        withPicture.engine.replaceDocument(shapes: [rect(x: 30)])
+        _ = try await withPicture.commitEdits()
+        withPicture.releaseEditorResources()
+        let store = CaptureSessionSnapshots(directory: ScreenshotHistoryStore.sessionSnapshotsURL(for: source))
+        let pictureEntry = try store.entries()[0]
+        // Fill the remaining places so this restore's first edit prunes the
+        // very entry it chose. Its image must already belong to Undo history.
+        for index in 0..<4 {
+            _ = try store.keep(document: Data("filler-\(index)".utf8), baseImage: source,
+                               openedAt: pictureEntry.openedAt.addingTimeInterval(Double(index + 1)))
+        }
+        let current = try openImage(source)
+        try check(current.engine.imageAssets["session-picture"] == nil, "Picture fixture already had the missing asset")
+        current.revertToSession(pictureEntry)
+        try check(current.errorMessage == nil && current.shapes == pictureShapes && current.shapes.contains(where: { $0.id == imageID })
+                  && current.engine.imageAssets["session-picture"] != nil, "Snapshot didn't restore pasted picture bytes")
+        try check(!FileManager.default.fileExists(atPath: store.directory.appendingPathComponent(pictureEntry.id.uuidString).path), "Restored oldest entry wasn't pruned")
+        current.undo()
+        try check(current.shapes.count == 1 && current.shapes[0].x == 30, "Pruned restore Undo lost the newer work")
+        current.redo()
+        _ = try await current.commitEdits()
+        let document = try ScreenshotHistoryStore.shared.loadEditDocument(for: source)
+        try check(document?.images["session-picture"] == asset.data, "Save dropped restored picture bytes")
+        current.releaseEditorResources()
+        let reopened = try openImage(source)
+        try check(reopened.shapes == pictureShapes && reopened.engine.imageAssets["session-picture"] != nil, "Saved picture restore didn't reopen")
+        reopened.releaseEditorResources()
+        print("PASS restoring an entry pruned by the same edit: owned crop pixels, Undo/Redo, missing pasted picture assets, save/reopen")
+    }
+
+    @MainActor static func sessionTrash() throws {
+        let gate = Gate(), model = try fixture(gate), source = model.sourceURL!
+        model.releaseEditorResources()
+        let snapshots = ScreenshotHistoryStore.sessionSnapshotsURL(for: source)
+        let item = CaptureLibraryItem(id: "trash-session", historyIDs: [], name: source.lastPathComponent, customName: nil,
+            fileURL: source, session: nil, createdAt: Date(), modifiedAt: Date(), pixelWidth: 200, pixelHeight: 100,
+            duration: nil, isVideo: false, hasEdits: true, hasDraft: false, cloudURL: nil, tags: [], thumbnailKey: "session")
+        try check(item.ownedFileURLs.contains(snapshots) && CaptureLibraryScanner.sizeOnDisk(of: snapshots) > 0, "Snapshots omitted from ownership/Size on Disk")
+        let trash = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("FixtureTrash")
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        try CaptureLibraryFiles.trash(item) { url in
+            let destination = trash.appendingPathComponent(url.lastPathComponent)
+            try FileManager.default.moveItem(at: url, to: destination)
+            return destination
+        }
+        try check(!FileManager.default.fileExists(atPath: source.path) && !FileManager.default.fileExists(atPath: snapshots.path), "Trash left snapshot companions behind")
+        let trashedStore = CaptureSessionSnapshots(directory: trash.appendingPathComponent(snapshots.lastPathComponent))
+        try check(try trashedStore.entries().count == 1, "Trash lost the snapshot contents")
+        print("PASS Library Trash moves capture and session folder; recursive Size on Disk includes snapshots (isolated destination)")
+    }
+
+    @MainActor static func studioSessionRestore() async throws {
+        let root = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("StudioSessions.screendroprec")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let session = RecordingSession(directoryURL: root)
+        let writer = try AVAssetWriter(outputURL: session.screenURL, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 160, AVVideoHeightKey: 90
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: 160, kCVPixelBufferHeightKey as String: 90
+        ])
+        writer.add(input)
+        try check(writer.startWriting(), "Fixture writer failed")
+        writer.startSession(atSourceTime: .zero)
+        for frame in 0..<30 {
+            try await until { input.isReadyForMoreMediaData || writer.status != .writing }
+            var buffer: CVPixelBuffer?
+            try check(CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer) == kCVReturnSuccess, "Fixture frame allocation failed")
+            CVPixelBufferLockBaseAddress(buffer!, [])
+            memset(CVPixelBufferGetBaseAddress(buffer!), 0x88, CVPixelBufferGetDataSize(buffer!))
+            CVPixelBufferUnlockBaseAddress(buffer!, [])
+            try check(adaptor.append(buffer!, withPresentationTime: CMTime(value: Int64(frame), timescale: 30)), "Fixture frame append failed")
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+        try check(writer.status == .completed, "Fixture movie failed")
+        let noEdit = RecordingStudioModel(url: root)
+        await noEdit.load()
+        try check(noEdit.isLoaded && noEdit.loadError == nil, "Studio fixture didn't load")
+        noEdit.teardown()
+        try check(!FileManager.default.fileExists(atPath: session.sessionSnapshotsURL.path), "Studio unedited open kept a session")
+
+        let first = RecordingStudioModel(url: root)
+        await first.load()
+        let originalPadding = first.style.padding
+        first.style.padding += 12
+        try check(first.sessionSnapshots.count == 1 && first.saveProject(reportingFailure: false), "Studio first real edit wasn't kept/saved")
+        let firstEntry = first.sessionSnapshots[0]
+        first.teardown()
+
+        let second = RecordingStudioModel(url: root)
+        await second.load()
+        second.style.padding += 24
+        try check(second.saveProject(reportingFailure: false) && second.sessionSnapshots.count == 2, "Studio second session wasn't kept")
+        let laterPadding = second.style.padding
+        second.revertToSession(firstEntry)
+        try check(second.style.padding == originalPadding && second.canUndo, "Studio snapshot restore failed")
+        second.undo()
+        try check(second.style.padding == laterPadding, "Studio snapshot wasn't one Undo step")
+        second.redo()
+        try await until { !second.hasUnsavedChanges && second.saveStatus == "Saved" }
+        try check(session.loadEditDocument()?.style.value.padding == originalPadding, "Studio snapshot didn't auto-save")
+        second.revertToSession(second.sessionSnapshots[0])
+        try await until { !second.hasUnsavedChanges && second.saveStatus == "Saved" }
+        second.teardown()
+        let third = RecordingStudioModel(url: root)
+        await third.load()
+        let before = third.sessionSnapshots
+        let unchangedZoom = third.zoomEnabled
+        third.zoomEnabled = unchangedZoom // didSet without a real change
+        try check(third.sessionSnapshots == before, "Studio no-op assignment kept a snapshot")
+        third.style.padding += 6
+        try check(third.sessionSnapshots == before, "Studio duplicated the newest opening state")
+        // Soundtrack cleanup must see saved sessions, even when the current
+        // edit no longer references their imported audio.
+        var soundtrackDocument = session.loadEditDocument()!
+        let name = "\(RecordingSession.replacementAudioBaseName).kept.wav"
+        soundtrackDocument.replacementAudioFileName = name
+        let keptAudio = root.appendingPathComponent(name)
+        try Data([1, 2, 3]).write(to: keptAudio)
+        let unusedAudio = root.appendingPathComponent("\(RecordingSession.replacementAudioBaseName).unused.wav")
+        try Data([4, 5]).write(to: unusedAudio)
+        _ = try CaptureSessionSnapshots(directory: session.sessionSnapshotsURL).keep(
+            document: CaptureSessionSnapshots.encode(soundtrackDocument), openedAt: Date())
+        try check(third.saveProject(reportingFailure: false), "Studio soundtrack cleanup fixture didn't save")
+        third.teardown()
+        try check(FileManager.default.fileExists(atPath: keptAudio.path) && !FileManager.default.fileExists(atPath: unusedAudio.path), "Studio cleanup deleted a snapshot's soundtrack or retained unused audio")
+        let failed = RecordingStudioModel(url: root)
+        await failed.load()
+        let savedBytes = try Data(contentsOf: session.editDocumentURL)
+        let backup = root.appendingPathComponent("sessions-backup")
+        try FileManager.default.moveItem(at: session.sessionSnapshotsURL, to: backup)
+        try Data([0]).write(to: session.sessionSnapshotsURL) // a file blocks the snapshot directory
+        failed.audioVolume = 0.7
+        failed.flushDraft()
+        try check(failed.saveStatus == "Not Saved" && !failed.saveProject(reportingFailure: false), "Studio snapshot failure didn't report/block the save")
+        try check(try Data(contentsOf: session.editDocumentURL) == savedBytes && !session.hasUnsavedDraft, "Snapshot failure overwrote Studio's opening state")
+        try FileManager.default.moveItem(at: session.sessionSnapshotsURL, to: root.appendingPathComponent("failed-marker"))
+        try FileManager.default.moveItem(at: backup, to: session.sessionSnapshotsURL)
+        try check(failed.saveProject(reportingFailure: false), "Studio couldn't retry after snapshot storage recovered")
+        failed.teardown()
+        print("PASS Studio sessions: no-edit boundary, first edit, dated restore, one Undo/Redo, auto-save, no-op/dedupe and snapshot soundtrack retention")
+        print("PASS snapshot storage failure blocks draft/commit, reports Not Saved, preserves disk edits and retries after recovery")
     }
 
     @MainActor static func savesOnlyRefreshExistingPreviews() async throws {
@@ -653,6 +922,11 @@ struct IdleSaveChecks {
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(actualHome == isolated && support.hasPrefix(isolated + "/"), "Foundation storage escaped isolated home")
         NSApplication.shared.setActivationPolicy(.prohibited)
+        try sessionStoreRetention()
+        try await sessionImageRestore()
+        try await sessionPrunedRestoreAndPictures()
+        try sessionTrash()
+        try await studioSessionRestore()
         try await savesOnlyRefreshExistingPreviews()
         try await titleFieldFocusSelectionAndCommands()
         try await titleRenameIsOnlyMetadata()

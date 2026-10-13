@@ -435,6 +435,10 @@ struct RecordingStudioRevertCommand: View {
                 Button("Original") { studio.revertToOriginal() }
                 Button("Last Opened") { studio.revertToLastOpened() }
                     .disabled(!studio.hasEditsSinceOpening)
+                if !studio.sessionSnapshots.isEmpty { Divider() }
+                ForEach(studio.sessionSnapshots) { snapshot in
+                    Button(snapshot.title) { studio.revertToSession(snapshot) }
+                }
             }
             .disabled(!studio.canRevert)
         }

@@ -231,6 +231,9 @@ final class RecordingStudioModel {
     private var autosaveTask: Task<Void, Never>?
     /// The project as this window opened it, for Revert To › Last Opened.
     private var openedDocument: RecordingEditDocument?
+    private var sessionOpenedAt = Date()
+    private var keptOpeningSession = false
+    private(set) var sessionSnapshots: [CaptureSessionSnapshot] = []
     private var openedStylePresetID: RecordingStudioStylePreset.ID?
     /// Revert To › Last Opened is off until something changes.
     private(set) var hasEditsSinceOpening = false
@@ -485,6 +488,11 @@ final class RecordingStudioModel {
             lastSavedDocument = currentDocument()
         }
         openedDocument = currentDocument()
+        sessionOpenedAt = Date()
+        if let session {
+            do { sessionSnapshots = try CaptureSessionSnapshots(directory: session.sessionSnapshotsURL).entries() }
+            catch { FailureAlert.present(message: "Session snapshots could not be read", error: error) }
+        }
         openedStylePresetID = appliedStylePresetID
         StudioProjectRegistry.shared.register(self)
     }
@@ -1253,6 +1261,8 @@ final class RecordingStudioModel {
         guard isLoaded, !isApplyingDocument else { return }
         hasUnsavedChanges = true
         hasEditsSinceOpening = true
+        do { try keepOpeningSession() }
+        catch { lastSaveSucceeded = false }
         // The uploaded link no longer matches; bring Upload back.
         if case .finished = shareState { shareState = .idle }
         projectSaveTask?.cancel()
@@ -1322,6 +1332,8 @@ final class RecordingStudioModel {
             hasUnsavedChanges = document != lastSavedDocument
             return
         }
+        do { if document != openedDocument { try keepOpeningSession() } }
+        catch { lastSaveSucceeded = false; return }
         if document == lastSavedDocument {
             // Edited back to the saved state (undo, or a discard landing):
             // the draft is now noise and would reopen the project dirty.
@@ -1358,6 +1370,7 @@ final class RecordingStudioModel {
         autosaveTask?.cancel()
         let document = currentDocument()
         do {
+            if document != openedDocument { try keepOpeningSession() }
             try session.writeEditDocument(document)
             session.removeDraftDocument()
             lastSavedDocument = document
@@ -1439,6 +1452,26 @@ final class RecordingStudioModel {
         rebuildPreviewReframe()
         if !keepingUndo { editUndoManager.removeAllActions() }
         undoRevision += 1
+    }
+
+    private func keepOpeningSession() throws {
+        guard !keptOpeningSession, let session, let openedDocument,
+              currentDocument() != openedDocument else { return }
+        sessionSnapshots = try CaptureSessionSnapshots(directory: session.sessionSnapshotsURL).keep(
+            document: CaptureSessionSnapshots.encode(openedDocument), openedAt: sessionOpenedAt
+        )
+        keptOpeningSession = true
+    }
+
+    func revertToSession(_ snapshot: CaptureSessionSnapshot) {
+        guard canRevert, let session else { return }
+        do {
+            let stored = try CaptureSessionSnapshots(directory: session.sessionSnapshotsURL).read(snapshot)
+            let document = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: stored.document)
+            revert(to: document, stylePresetID: nil, actionName: "Revert to Session")
+        } catch {
+            FailureAlert.present(message: "The session could not be restored", error: error)
+        }
     }
 
     // MARK: - Revert To
@@ -2394,12 +2427,19 @@ final class RecordingStudioModel {
         guard !session.hasSavedProject || savedDocument != nil,
               !FileManager.default.fileExists(atPath: session.draftDocumentURL.path)
                 || draftDocument != nil else { return }
+        let store = CaptureSessionSnapshots(directory: session.sessionSnapshotsURL)
+        let keptDocuments: [RecordingEditDocument]
+        do {
+            keptDocuments = try store.entries().map {
+                try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: store.read($0).document)
+            }
+        } catch { return } // An unreadable snapshot may still need an imported soundtrack.
         let referencedNames = Set([
             savedDocument?.replacementAudioFileName,
             draftDocument?.replacementAudioFileName,
             lastSavedDocument?.replacementAudioFileName,
             replacementAudio?.url.lastPathComponent
-        ].compactMap { $0 })
+        ].compactMap { $0 } + keptDocuments.compactMap(\.replacementAudioFileName))
         let names = (try? FileManager.default.contentsOfDirectory(
             atPath: session.directoryURL.path
         )) ?? []
