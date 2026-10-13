@@ -59,7 +59,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     var systemImage: String {
         switch self {
         case .select:
-            "hand.point.up.left"
+            "cursorarrow"
         case .rectangle:
             "rectangle"
         case .filledRectangle:
