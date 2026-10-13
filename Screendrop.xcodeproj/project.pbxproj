@@ -19,7 +19,6 @@
 		AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */; };
 		AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */; };
 		AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */; };
-		AA6100000000000000000067 /* Screendrop/Engine/AnnoEditorMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CB /* Screendrop/Engine/AnnoEditorMeasure.swift */; };
 		AA6100000000000000000068 /* Screendrop/Engine/AnnoEditorSnapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CC /* Screendrop/Engine/AnnoEditorSnapping.swift */; };
 		AA6100000000000000000069 /* Screendrop/Engine/AnnoShapeDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CD /* Screendrop/Engine/AnnoShapeDrawing.swift */; };
 		AA610000000000000000006A /* Screendrop/Engine/AnnoSnapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA61000000000000000000CE /* Screendrop/Engine/AnnoSnapping.swift */; };
@@ -87,7 +86,6 @@
 		AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditor.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorInteraction.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorMagnifier.swift; sourceTree = SOURCE_ROOT; };
-		AA61000000000000000000CB /* Screendrop/Engine/AnnoEditorMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorMeasure.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000CC /* Screendrop/Engine/AnnoEditorSnapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorSnapping.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000CD /* Screendrop/Engine/AnnoShapeDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoShapeDrawing.swift; sourceTree = SOURCE_ROOT; };
 		AA61000000000000000000CE /* Screendrop/Engine/AnnoSnapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoSnapping.swift; sourceTree = SOURCE_ROOT; };
@@ -204,7 +202,6 @@
 				AA61000000000000000000C8 /* Screendrop/Engine/AnnoEditor.swift */,
 				AA61000000000000000000C9 /* Screendrop/Engine/AnnoEditorInteraction.swift */,
 				AA61000000000000000000CA /* Screendrop/Engine/AnnoEditorMagnifier.swift */,
-				AA61000000000000000000CB /* Screendrop/Engine/AnnoEditorMeasure.swift */,
 				AA61000000000000000000CC /* Screendrop/Engine/AnnoEditorSnapping.swift */,
 				AA61000000000000000000CD /* Screendrop/Engine/AnnoShapeDrawing.swift */,
 				AA61000000000000000000CE /* Screendrop/Engine/AnnoSnapping.swift */,
@@ -377,7 +374,6 @@
 				AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */,
 				AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */,
 				AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */,
-				AA6100000000000000000067 /* Screendrop/Engine/AnnoEditorMeasure.swift in Sources */,
 				AA6100000000000000000068 /* Screendrop/Engine/AnnoEditorSnapping.swift in Sources */,
 				AA6100000000000000000069 /* Screendrop/Engine/AnnoShapeDrawing.swift in Sources */,
 				AA610000000000000000006A /* Screendrop/Engine/AnnoSnapping.swift in Sources */,

@@ -85,7 +85,7 @@ Editing is non-destructive. The untouched image and an editable sidecar are kept
 
 - **Tools:** rectangle, circle, straight line, arrow, freehand, numbered circle, text, highlight, magnifier, pixelate and blur. Select, move, resize, undo and redo.
 - **Snapping:** shapes snap to each other and to the image's edges and centre, with alignment guides.
-- **Measuring:** click the ruler in the tool dock and point at the image for the width and height under the pointer, or hold **1** (height) or **2** (width) with any tool; click to stamp the measurement onto the screenshot. **Tab** copies the colour under the pointer.
+- **Measuring:** click the ruler in the tool dock and point at the image for the width and height under the pointer, or hold **1** (height) or **2** (width) with any tool. **Tab** copies the colour under the pointer.
 - **Smart Redaction** finds sensitive text and blurs or pixelates it, and the strength stays editable.
 - **Crop** at full resolution with freeform and fixed ratios; annotations follow the crop.
 - **Backgrounds:** colours, gradients, your own images, padding, corner radius, shadow, border, watermark, perspective and progressive blur, saved as presets you can share as `.screendroppreset` files.

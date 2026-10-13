@@ -1,4 +1,4 @@
-// sd-xoh: an imprinted measurement keeps the length its label states.
+// sd-xoh: a stamped measurement keeps the length its label states.
 import AppKit
 import Testing
 
@@ -17,6 +17,18 @@ struct MeasurementImprintTests {
         return editor
     }
 
+    /// A measurement as the ruler stamped them before clicks stopped
+    /// stamping (2026-10-13): a labelled arrow with a bar at each end.
+    /// Saved captures still hold them.
+    static func measurement(from start: Vec, to end: Vec, label: String) -> AnnoShape {
+        var props = ArrowProps()
+        props.arrowheadStart = .bar
+        props.arrowheadEnd = .bar
+        props.end = Vec.sub(end, start)
+        props.label = label
+        return AnnoShape(x: start.x, y: start.y, kind: .arrow(props))
+    }
+
     static func geometry(_ shape: AnnoShape?) -> (start: Vec, end: Vec, bend: Double, label: String?)? {
         guard case let .arrow(props) = shape?.kind else { return nil }
         return (props.start, props.end, props.bend, props.label)
@@ -29,38 +41,8 @@ struct MeasurementImprintTests {
             .map { editor.pageToScreen(shape.pageTransform.applyToPoint($0)) }
     }
 
-    @Test func heldArrowStampsOnceAndLeavesNothingSelected() throws {
-        let engine = Self.editor()
-        // Held ↑, click: one imprint, unselected, so the held key's repeats keep measuring.
-        engine.imprintMeasurement(from: Vec(300, 100), to: Vec(300, 220), label: "61 pt · 122 px")
-        #expect(engine.shapes.count == 1 && engine.selectedIds.isEmpty)
-        let stamped = try #require(engine.shapes.first)
-        // The double-click's second click belongs to the same stamp.
-        engine.imprintMeasurement(from: Vec(300, 100), to: Vec(300, 220), label: "61 pt · 122 px", clickCount: 2)
-        #expect(engine.shapes.count == 1)
-        // Still holding: a repeat that reaches the nudge path finds nothing to move.
-        engine.nudgeSelected(dx: 0, dy: -1)
-        engine.nudgeSelected(dx: 0, dy: -1)
-        let after = try #require(engine.shapes.first)
-        #expect(engine.shapes.count == 1 && engine.selectedIds.isEmpty)
-        #expect(after.x == stamped.x && after.y == stamped.y)
-        #expect(Self.geometry(after)?.end == Vec(0, 120))
-    }
-
-    @Test func rulerStampsWidthAndHeightAsOneUndoStep() {
-        let engine = Self.editor()
-        engine.imprintMeasurements([
-            (Vec(100, 200), Vec(300, 200), "200 pt · 400 px"),
-            (Vec(200, 130), Vec(200, 270), "140 pt · 280 px"),
-        ])
-        #expect(engine.shapes.count == 2 && engine.selectedIds.isEmpty)
-        engine.undo()
-        #expect(engine.shapes.isEmpty)
-    }
-
     @Test func measurementHasNoBendOrEndpointHandles() throws {
-        let engine = Self.editor()
-        engine.imprintMeasurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px")
+        let engine = Self.editor([Self.measurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px")])
         let shape = try #require(engine.shapes.first)
         engine.selectedIds = [shape.id]
         for point in Self.handlePoints(engine, shape) {
@@ -76,8 +58,7 @@ struct MeasurementImprintTests {
     }
 
     @Test func draggingAMeasurementOnlyMovesIt() throws {
-        let engine = Self.editor()
-        engine.imprintMeasurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px")
+        let engine = Self.editor([Self.measurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px")])
         let shape = try #require(engine.shapes.first)
         let before = try #require(Self.geometry(shape))
         engine.selectedIds = [shape.id]
@@ -100,8 +81,10 @@ struct MeasurementImprintTests {
     @Test func resizingAGroupMovesAMeasurementWithoutStretchingIt() throws {
         var box = GeoProps()
         box.w = 100; box.h = 100
-        let engine = Self.editor([AnnoShape(x: 400, y: 300, kind: .geo(box))])
-        engine.imprintMeasurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px")
+        let engine = Self.editor([
+            Self.measurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px"),
+            AnnoShape(x: 400, y: 300, kind: .geo(box)),
+        ])
         let measurementId = try #require(engine.shapes.first(where: \.isMeasurement)?.id)
         engine.selectedIds = Set(engine.shapes.map(\.id))
         let corner = try #require(engine.selectionBounds?.pagePoint(Vec(1, 1)))

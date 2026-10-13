@@ -67,7 +67,7 @@ struct AnnotationToolDock: View {
             AnnotationDockButton(
                 systemImage: "ruler",
                 title: "Measure",
-                help: "Measure: point at the image for the width and height under the pointer; a click stamps them. Or hold 1 (height) or 2 (width) with any tool.",
+                help: "Measure: point at the image for the width and height under the pointer. Or hold 1 (height) or 2 (width) with any tool.",
                 isSelected: probe.isMeasuringTool
             ) {
                 probe.isMeasuringTool.toggle()
