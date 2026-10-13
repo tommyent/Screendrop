@@ -512,7 +512,9 @@ struct LibraryCellContent: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
+                // Reused cells keep @State; the id gives each capture its own tick.
                 LibraryCloudBadge(item: item)
+                    .id(item.id)
             }
             .overlay(alignment: .bottomTrailing) {
                 if item.isVideo {
