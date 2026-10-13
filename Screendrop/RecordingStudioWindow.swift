@@ -271,29 +271,16 @@ private struct RecordingStudioContent: View {
                 model.cancelShare()
             }
         case .finished(let url):
-            HStack(spacing: 6) {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                } label: {
-                    Label("Link Copied", systemImage: "checkmark.icloud")
-                        .foregroundStyle(.green)
-                }
-                .help("Copy the share link again")
-
-                if let shareURL = URL(string: url) {
-                    Link(destination: shareURL) {
-                        Image(systemName: "arrow.up.right.square")
-                    }
-                    .accessibilityLabel("Open Share Link")
-                    .help("Open the share link in your browser")
-                }
-
-                CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: model.shareToCloud) {
-                    Image(systemName: "icloud.and.arrow.up")
-                }
-                .help("Upload Again")
+            // As in the image editor: Upload comes back with the next edit.
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url, forType: .string)
+            } label: {
+                Label("Link Copied", systemImage: "checkmark.icloud")
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(.green)
             }
+            .help("Copy the share link again")
         case .failed(let message):
             HStack(spacing: 6) {
                 Label("Upload Failed", systemImage: "exclamationmark.triangle.fill")

@@ -1253,6 +1253,8 @@ final class RecordingStudioModel {
         guard isLoaded, !isApplyingDocument else { return }
         hasUnsavedChanges = true
         hasEditsSinceOpening = true
+        // The uploaded link no longer matches; bring Upload back.
+        if case .finished = shareState { shareState = .idle }
         projectSaveTask?.cancel()
         projectSaveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
