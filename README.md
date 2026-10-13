@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-Sukusho is a native macOS app for screenshots, scrolling captures and screen recordings, with an editor, a Library for everything you capture, and share links served from your own Cloudflare Worker.
+Sukusho is a native macOS app for screenshots, scrolling captures and screen recordings. Its Library brings together your captures, Cloud uploads, comments and likes; Studio edits your recordings, and the image editor adds annotations, pictures and backgrounds. Share links are served from your own Cloudflare Worker.
 
 Sukusho started as a fork of [Screendrop](https://github.com/fayazara/Screendrop) by Fayaz Ahmed, and thanks go to that project for the foundation. It has since grown into a separate project: a heavily modified app with its own features, its own name and app identity, and its own Cloudflare Worker for share pages. The two apps install side by side and don't share updates.
 
@@ -21,7 +21,7 @@ The Library keeps captures together, with a grid, tags and an inspector for the 
 
 ![Sukusho Library showing nine captures of a travel website in a grid, the Cloud section with 7 uploads and 11 likes, a green Travel tag in the sidebar, and the inspector for a mountain lake image](docs/screenshots/library.png)
 
-Comments left on your share pages arrive in the Library, newest first, each with the upload it's on.
+Comments left on your share pages arrive in the Library, newest first by default, each with the upload it's on.
 
 ![Sukusho Comments view listing seven viewer comments with thumbnails of the photos they're on, with one comment open in the inspector](docs/screenshots/comments.png)
 
@@ -34,6 +34,55 @@ Scrolling Capture turns a whole page into one image. Auto-scroll captured this d
 ![A full-page Scrolling Capture of a travel website, 2,108 by 6,524 pixels, shown in four columns](docs/screenshots/scrolling-capture.png)
 
 ## Features
+
+### Cloud uploads, comments and likes
+
+Sharing is optional and self-hosted: uploads go to a Cloudflare Worker you deploy, which keeps files in R2 and metadata in D1. Sukusho only needs the Worker's URL and an upload token.
+
+- **Share pages:** recordings get a video player with captions, a searchable transcript and scrub previews; screenshots get a clean viewer. Pages show view counts and rich link previews in chat apps.
+- **Comments and likes** from viewers appear in the Library beside your uploads. Enable or disable them per share, and choose whether comments can be anonymous.
+- **Share Options:** a title, a link expiry, an optional password, and whether comments and likes are allowed. **Settings → Cloud** sets the default link expiry and the share page's name, logo and favicon.
+- Edited recordings upload the finished cut, followed by its poster, transcript and scrub previews.
+
+### Library
+
+One window for screenshots, recordings and recording projects, with **Uploads**, **Comments** and **Likes** beside them:
+
+- Grid or list view with an adjustable card size, search, and filters for screenshots or recordings. Tags have their own colours and icons.
+- A trimmed toolbar for the view and inspector controls, with search alongside them. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Copy**, **Export…**, the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
+- The same capture menu holds its cloud actions: **Share to Cloud…** before upload; **Copy Cloud Link**, **Open Shared Capture** and **Delete from Cloud…** once shared.
+- Right-click between the cards to choose the sort order or **Refresh**, on the captures, Uploads, Comments and Likes pages. **Command + R** refreshes the current page.
+- Capture cards show a cloud badge when Cloud is set up or the capture is already shared. Click it to share an unshared capture or copy an existing share link; shared captures have a blue badge.
+- An inspector with dimensions, dates, duration, disk use and tags. **Space** opens Quick Look, **Return** renames, and multi-selection supports copying, exporting, sharing, revealing and moving captures to Trash.
+- Cloud uploads open their share links; comments and likes arrive from your share pages, newest first by default, with the capture each belongs to.
+- A storage bar beside the sidebar's Settings gear shows cloud use against the **Storage threshold** in **Settings → Cloud**. It turns amber at 80% and red at the threshold; it warns without limiting uploads.
+
+Normal launches open the Library; launching at login stays quietly in the menu bar.
+
+### Editor
+
+Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations and pasted pictures can be reopened and changed later. Exports render at the image's full resolution.
+
+- **Floating tool dock:** Select, rectangle, ellipse, highlight, arrow, straight line, freehand, text, numbered circle, magnifier, pixelate and blur sit above the canvas, followed by **Crop**, the **eyedropper**, **Measure**, and a **colour/size pill**. The pill changes the selected annotation's colour and line width or text size, or the armed tool's settings when nothing is selected.
+- **Place a shape, then adjust it:** shapes, arrows, lines, magnifiers and redactions return to Select with the new annotation selected. Text returns to Select when editing finishes. Freehand and numbered circles stay armed for drawing strokes or placing a run of numbers, with the newest annotation selected.
+- **Smoother freehand:** stronger smoothing while drawing and when finishing a longer stroke reduces jitter while keeping its endpoints in place.
+- **Paste pictures:** **Command + V** adds an image from the clipboard, selected and ready to move or resize. Corner handles keep its aspect ratio unless Shift is held; side handles stretch it. With no background, camera effect or bleeding blur, dragging a picture past the screenshot's edge grows the canvas to fit it.
+- **Eyedropper:** arm it and click the image to copy the pixel's hex colour. **Tab** also copies the colour under the pointer when the canvas has keyboard focus.
+- **Measure:** hold **1** for height or **2** for width under the pointer, or arm the ruler for a crosshair showing both. Clicking while measuring does not stamp an annotation or draw a shape. Escape disarms the ruler.
+- **Crop:** use the dock's Crop button or **C** for a freeform or fixed-ratio crop at full resolution. With Select armed, **Command-click** the image to start a crop around the box under the pointer, then adjust or confirm it. Annotations follow the crop.
+- **Snapping and editing:** move and resize annotations, snap to other shapes and the image's edges and centre with alignment guides, and undo or redo changes.
+- **Smart Redaction** finds sensitive text and blurs or pixelates it, with editable strength.
+- **Inspector:** the **Styles** thumbnail strip applies and saves looks; its menus import or export `.screendroppreset` files, set a default for new screenshots, or delete a style. **Background** opens a picker beside the inspector, with colour and gradient hover previews. The **Screenshot** group labels padding, corners and shadow, and the fields are pills. Style controls appear only when the current tool or selection has something to adjust.
+- **Backgrounds and effects:** colours, gradients, wallpapers or your own images, padding, corner radius, shadow, border, watermark, perspective and progressive blur.
+- **Unsplash wallpapers:** the Background picker's **Wallpaper** library offers search using your own [Unsplash Access Key](https://unsplash.com/oauth/applications), stored in the Keychain. Choose a result to download and use it, with photographer credits beside the results. Recent wallpapers and images you choose remain available; the old wallpaper packs are gone.
+
+### Screen recording and Studio
+
+- Record a display, a window or an area, with a camera, a microphone and system audio as separate sources, a start timer, and a teleprompter that follows your narration on-device.
+- A floating bar pauses, restarts, stops or discards the recording.
+- Every recording is a non-destructive project. In Studio, cut and trim clips, change speed, add automatic or manual zooms, a reconstructed cursor, click highlights and keystroke captions, move and resize the camera, and pick a background and an aspect ratio for social formats.
+- Transcribe narration on-device, edit captions, or cut the video by deleting words from its transcript.
+- Export the finished composition, or share it straight to your Worker.
 
 ### Capture
 
@@ -69,46 +118,6 @@ Draw a box over a scrolling view, then scroll through it yourself or click the a
 
 Draw the box around the part that scrolls: a sidebar or button that stays put inside the box is repeated down the image.
 
-### Library
-
-One window for screenshots, recordings and recording projects:
-
-- Grid or list view with an adjustable card size, search, sorting, and a filter for screenshots or recordings.
-- Tags with their own colours and icons.
-- An inspector with dimensions, dates, duration, disk use and cloud sharing.
-- **Space** for Quick Look, **Return** to rename, multi-select to copy, export, reveal or move to Trash.
-- A **Cloud** section with your **Uploads**, plus **Comments** and **Likes** from your share pages, newest first.
-
-Normal launches open the Library; launching at login stays quietly in the menu bar.
-
-### Editor
-
-Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations can be reopened and changed later, and exports render at the image's full resolution.
-
-- **Tools:** rectangle, circle, straight line, arrow, freehand, numbered circle, text, highlight, magnifier, pixelate and blur. Select, move, resize, undo and redo.
-- **Snapping:** shapes snap to each other and to the image's edges and centre, with alignment guides.
-- **Measuring:** click the ruler in the tool dock and point at the image for the width and height under the pointer, or hold **1** (height) or **2** (width) with any tool. **Tab** copies the colour under the pointer.
-- **Smart Redaction** finds sensitive text and blurs or pixelates it, and the strength stays editable.
-- **Crop** at full resolution with freeform and fixed ratios; annotations follow the crop.
-- **Backgrounds:** colours, gradients, your own images, padding, corner radius, shadow, border, watermark, perspective and progressive blur, saved as presets you can share as `.screendroppreset` files.
-
-### Screen recording and Studio
-
-- Record a display, a window or an area, with a camera, a microphone and system audio as separate sources, a start timer, and a teleprompter that follows your narration on-device.
-- A floating bar pauses, restarts, stops or discards the recording.
-- Every recording is a non-destructive project. In Studio, cut and trim clips, change speed, add automatic or manual zooms, a reconstructed cursor, click highlights and keystroke captions, move and resize the camera, and pick a background and an aspect ratio for social formats.
-- Transcribe narration on-device, edit captions, or cut the video by deleting words from its transcript.
-- Export the finished composition, or share it straight to your Worker.
-
-### Cloud sharing
-
-Sharing is optional and self-hosted: uploads go to a Cloudflare Worker you deploy, which keeps files in R2 and metadata in D1. Sukusho only needs the Worker's URL and an upload token.
-
-- **Share pages:** recordings get a video player with captions, a searchable transcript and scrub previews; screenshots get a clean viewer. Pages show view counts and rich link previews in chat apps.
-- **Comments and likes** from viewers, which you can turn on or off for each share, with or without anonymous comments.
-- **Share Options:** a title, a link expiry, an optional password, and whether comments and likes are allowed. **Settings → Cloud** sets the default link expiry and the share page's name, logo and favicon.
-- Edited recordings upload the finished cut, followed by its poster, transcript and scrub previews.
-
 ### Automation
 
 Capture and recording actions are available in Shortcuts, Siri and Spotlight.
@@ -116,8 +125,8 @@ Capture and recording actions are available in Shortcuts, Siri and Spotlight.
 ## Privacy and permissions
 
 - Captures, projects, edits and transcripts stay on your Mac. Transcription and text recognition run on-device.
-- The upload token is kept in the Keychain. Nothing is uploaded unless you or an after-capture action asks for it.
-- There is no Sukusho account or server, and no automatic app updates. The network is used only for your Worker, for checking whether your Worker has an update, for wallpaper downloads, and for the setup video in **Settings → Cloud** when you play it.
+- The upload token and your Unsplash Access Key are kept in the Keychain. Captures are uploaded only when you or an after-capture action asks for it.
+- There is no Sukusho account or central Sukusho server, and no automatic app updates. Network features include your Worker and its update check, Unsplash search and wallpaper downloads, and the setup video in **Settings → Cloud** when you play it. Apple's on-device speech models may need an initial download for transcription or the teleprompter.
 
 macOS asks for **Screen & System Audio Recording** for captures and recordings, and, when you first use them, **Camera**, **Microphone** and **Input Monitoring** (for keystroke captions). Sukusho's own windows are left out of captures unless you turn on **Settings → General → Include Sukusho windows in captures**.
 
@@ -125,7 +134,7 @@ macOS asks for **Screen & System Audio Recording** for captures and recordings, 
 
 Requirements:
 
-- macOS 27 or newer.
+- macOS 27.0 or newer.
 - Xcode 27 beta (installed as `Xcode-beta.app`), with its Metal Toolchain for the Studio motion-blur shader:
 
   ```bash
