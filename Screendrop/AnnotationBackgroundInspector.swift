@@ -506,20 +506,6 @@ struct AnnotationWatermarkInspector: View {
     let focusedField: FocusState<AnnotationEditorFocusedField?>.Binding
     let onFocusCleared: () -> Void
 
-    @State private var isTextEditing = false
-
-    private var watermarkText: Binding<String> {
-        Binding(
-            get: { settings.text },
-            set: { text in
-                var next = settings
-                next.text = text
-                next.isEnabled = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                settings = next
-            }
-        )
-    }
-
     /// The watermark stores its own color type; the shared swatch strip
     /// speaks `AnnotationSwatch`, so presets match by value and anything else
     /// shows in the custom well.
@@ -534,11 +520,9 @@ struct AnnotationWatermarkInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            if isTextEditing {
-                watermarkTextField
-            } else {
-                watermarkActivationButton
-            }
+            // The section's switch alone turns the watermark on or off;
+            // empty text just draws nothing yet (upstream 28ec23e).
+            watermarkTextField
 
             if hasWatermarkText {
                 VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
@@ -584,66 +568,30 @@ struct AnnotationWatermarkInspector: View {
                         }
                     }
                 }
-                .disabled(!settings.isEnabled)
-                .opacity(settings.isEnabled ? 1 : 0.48)
             }
         }
-        .onChange(of: focusedField.wrappedValue) { _, newValue in
-            guard newValue != .watermarkText else { return }
-            isTextEditing = false
+        .onAppear {
+            // Switched on with nothing to show yet: start typing straight away.
+            if !hasWatermarkText { focusedField.wrappedValue = .watermarkText }
         }
-    }
-
-    private var watermarkActivationButton: some View {
-        Button(action: beginTextEditing) {
-            HStack(spacing: 7) {
-                Image(systemName: hasWatermarkText ? "textformat" : "plus")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 12)
-
-                Text(hasWatermarkText ? settings.text : "Add watermark")
-                    .font(.inspectorValue)
-                    .foregroundColor(hasWatermarkText ? Color.primary.opacity(0.85) : Color.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: hasWatermarkText ? "pencil" : "chevron.right")
-                    .font(.system(size: hasWatermarkText ? 10 : 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 8)
-            .inspectorField()
-        }
-        .buttonStyle(.plain)
-        .help(hasWatermarkText ? "Edit watermark text" : "Add watermark")
     }
 
     private var watermarkTextField: some View {
-        TextField("Watermark text", text: watermarkText)
+        TextField("Watermark text", text: $settings.text)
             .focused(focusedField, equals: .watermarkText)
             .onSubmit(finishTextEditing)
             .textFieldStyle(.plain)
             .font(.inspectorValue)
             .padding(.horizontal, 8)
             .inspectorField()
-            .onAppear {
-                focusedField.wrappedValue = .watermarkText
-            }
-            .onClickOutside(enabled: true, perform: finishTextEditing)
+            .onClickOutside(enabled: focusedField.wrappedValue == .watermarkText, perform: finishTextEditing)
     }
 
     private var hasWatermarkText: Bool {
         !settings.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func beginTextEditing() {
-        isTextEditing = true
-    }
-
     private func finishTextEditing() {
-        isTextEditing = false
         focusedField.wrappedValue = nil
         onFocusCleared()
     }
