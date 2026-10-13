@@ -29,40 +29,42 @@ struct ScreenshotsSettingsPane: View {
     var body: some View {
         Form {
             Section("Capture") {
-                Picker(selection: $captureDelaySeconds) {
-                    ForEach(delayOptions, id: \.self) { seconds in
-                        Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
+                SettingsControlLabel(
+                    "Self-timer",
+                    detail: "Show a countdown before the capture is taken."
+                ).control { label in
+                    Picker(selection: $captureDelaySeconds) {
+                        ForEach(delayOptions, id: \.self) { seconds in
+                            Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
+                        }
+                    } label: {
+                        label
                     }
-                } label: {
-                    SettingsControlLabel(
-                        "Self-timer",
-                        detail: "Show a countdown before the capture is taken."
-                    )
                 }
 
-                Toggle(isOn: $captureWindowShadow) {
-                    SettingsControlLabel(
-                        "Capture window shadow",
-                        detail: "Include the window's drop shadow when capturing a window."
-                    )
+                SettingsControlLabel(
+                    "Capture window shadow",
+                    detail: "Include the window's drop shadow when capturing a window."
+                ).control { label in
+                    Toggle(isOn: $captureWindowShadow) { label }
                 }
                 .toggleStyle(.switch)
 
-                Toggle(isOn: $trimFullscreenMenuBar) {
-                    SettingsControlLabel(
-                        "Trim menu bar from fullscreen captures",
-                        detail: "On notched Macs, removes the empty black bar at the top of a fullscreen capture. A visible menu bar is kept."
-                    )
+                SettingsControlLabel(
+                    "Trim menu bar from fullscreen captures",
+                    detail: "On notched Macs, removes the empty black bar at the top of a fullscreen capture. A visible menu bar is kept."
+                ).control { label in
+                    Toggle(isOn: $trimFullscreenMenuBar) { label }
                 }
                 .toggleStyle(.switch)
             }
 
             Section("Annotation Editor") {
-                Toggle(isOn: $lowResolutionEditorPreview) {
-                    SettingsControlLabel(
-                        "Use low-resolution preview to save memory",
-                        detail: "Shows a downscaled image while editing to reduce memory use. Saved and exported screenshots are always full resolution."
-                    )
+                SettingsControlLabel(
+                    "Use low-resolution preview to save memory",
+                    detail: "Shows a downscaled image while editing to reduce memory use. Saved and exported screenshots are always full resolution."
+                ).control { label in
+                    Toggle(isOn: $lowResolutionEditorPreview) { label }
                 }
                 .toggleStyle(.switch)
             }
@@ -70,12 +72,17 @@ struct ScreenshotsSettingsPane: View {
             AfterCaptureActionsSection(type: .screenshot, title: "After Capture")
 
             Section("File Format") {
-                Picker("Format", selection: Binding(
-                    get: { exportFormat },
-                    set: { exportFormat = $0 }
-                )) {
-                    ForEach(ScreenshotExportFormat.allCases) { format in
-                        Text(format.title).tag(format)
+                SettingsControlLabel(
+                    "Format",
+                    detail: "Choose PNG or JPEG for exported screenshots."
+                ).control { label in
+                    Picker(label.title, selection: Binding(
+                        get: { exportFormat },
+                        set: { exportFormat = $0 }
+                    )) {
+                        ForEach(ScreenshotExportFormat.allCases) { format in
+                            Text(format.title).tag(format)
+                        }
                     }
                 }
 

@@ -251,6 +251,13 @@ struct SettingsControlLabel: View {
         }
         .fixedSize(horizontal: false, vertical: true)
     }
+
+    /// macOS reads the name and hint from the control itself.
+    func control<Content: View>(@ViewBuilder _ content: (Self) -> Content) -> some View {
+        content(self)
+            .accessibilityLabel(title)
+            .accessibilityHint(detail)
+    }
 }
 
 extension URL {
