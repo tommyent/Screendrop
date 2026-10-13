@@ -366,6 +366,7 @@ struct CloudLibraryPage: View {
                                                 selected: selected, deleting: deleting.contains(upload.id)))
                     },
                     menu: { _ in cloud.menuItems() },
+                    backgroundMenu: { CaptureLibraryModel.shared.backgroundMenuItems { cloud.refresh() } },
                     onAction: cloud.perform
                 )
             }

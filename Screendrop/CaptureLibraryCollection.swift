@@ -29,6 +29,8 @@ struct LibraryMenuItem {
     var isEnabled = true
     /// Drawn after a separator.
     var startsGroup = false
+    /// Shows a check mark, for the chosen option in a group.
+    var isChecked = false
     let perform: () -> Void
 }
 
@@ -49,6 +51,8 @@ struct CaptureLibraryCollection<Entry: Identifiable>: NSViewRepresentable where 
     let cell: (Entry, Bool, @escaping (CGRect) -> Void) -> AnyView
     /// The context menu, for the number of selected entries.
     let menu: (Int) -> [LibraryMenuItem]
+    /// The menu for a right-click between the cards, like Finder's.
+    var backgroundMenu: () -> [LibraryMenuItem] = { [] }
     let onAction: (CaptureLibraryAction) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -199,13 +203,17 @@ struct CaptureLibraryCollection<Entry: Identifiable>: NSViewRepresentable where 
         }
 
         func menu(for event: NSEvent) -> NSMenu? {
-            guard let collection,
-                  let path = collection.indexPathForItem(at: collection.convert(event.locationInWindow, from: nil)) else { return nil }
-            if !collection.selectionIndexPaths.contains(path) {
-                collection.selectionIndexPaths = [path]
-                selectionChanged()
+            guard let collection else { return nil }
+            if let path = collection.indexPathForItem(at: collection.convert(event.locationInWindow, from: nil)) {
+                if !collection.selectionIndexPaths.contains(path) {
+                    collection.selectionIndexPaths = [path]
+                    selectionChanged()
+                }
+                menuItems = parent.menu(collection.selectionIndexPaths.count)
+            } else {
+                menuItems = parent.backgroundMenu()
             }
-            menuItems = parent.menu(collection.selectionIndexPaths.count)
+            guard !menuItems.isEmpty else { return nil }
             let menu = NSMenu()
             menu.autoenablesItems = false
             for (index, entry) in menuItems.enumerated() {
@@ -214,6 +222,7 @@ struct CaptureLibraryCollection<Entry: Identifiable>: NSViewRepresentable where 
                 item.target = self
                 item.tag = index
                 item.isEnabled = !parent.isBusy && entry.isEnabled
+                item.state = entry.isChecked ? .on : .off
                 menu.addItem(item)
             }
             return menu

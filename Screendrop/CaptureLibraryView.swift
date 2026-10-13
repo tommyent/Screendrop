@@ -207,6 +207,7 @@ struct CaptureLibraryView: View {
         .modifier(LibraryToolbarSeparator())
         .searchable(text: $model.searchText, placement: .toolbar, prompt: comments.isShown ? "Search comments" : likes.isShown ? "Search likes" : cloud.isShown ? "Search uploads" : "Search captures")
         .toolbar { toolbar }
+        .background { refreshShortcut }
         .frame(minWidth: 860, minHeight: 540)
         .onAppear {
             AppActivationPolicy.enter()
@@ -321,6 +322,7 @@ struct CaptureLibraryView: View {
                     AnyView(LibraryCellContent(item: item, layout: layout, selected: selected, onTitleFrame: onTitleFrame))
                 },
                 menu: { [model] in model.menuItems(selected: $0) },
+                backgroundMenu: { [model] in model.backgroundMenuItems { model.refresh() } },
                 onAction: model.perform)
         }
     }
@@ -453,6 +455,19 @@ struct CaptureLibraryView: View {
         .frame(height: 30)
     }
 
+    /// ⌘R refreshes the page. Its menu item went with the toolbar's sort
+    /// menu; Refresh is also in the right-click menu between the cards.
+    private var refreshShortcut: some View {
+        Button("Refresh") {
+            if comments.isShown { comments.refresh() } else if likes.isShown { likes.refresh() }
+            else if cloud.isShown { cloud.refresh() } else { model.refresh() }
+        }
+        .keyboardShortcut("r", modifiers: .command)
+        .opacity(0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             // Comments are always a list, so the picker says so there.
@@ -464,21 +479,6 @@ struct CaptureLibraryView: View {
             .pickerStyle(.segmented)
             .disabled(comments.isShown || likes.isShown)
             .help("Switch between grid and list")
-        }
-        .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Picker("Sort By", selection: $model.sortOrder) {
-                    ForEach(CaptureLibrarySort.allCases) { Text($0.title).tag($0) }
-                }
-                Divider()
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    if comments.isShown { comments.refresh() } else if likes.isShown { likes.refresh() }
-                    else if cloud.isShown { cloud.refresh() } else { model.refresh() }
-                }
-                    .keyboardShortcut("r", modifiers: .command)
-            } label: { Label("Sort", systemImage: "arrow.up.arrow.down") }
-            .help("Sort captures")
         }
         .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {

@@ -201,6 +201,7 @@ struct LikesLibraryPage: View {
                                     selected: selected, fresh: fresh.contains(like.id)))
                 },
                 menu: { _ in likes.menuItems() },
+                backgroundMenu: { CaptureLibraryModel.shared.backgroundMenuItems { likes.refresh() } },
                 onAction: likes.perform
             )
         }
