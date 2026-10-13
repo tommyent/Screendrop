@@ -445,9 +445,18 @@ struct LibraryCellContent: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
                 .accessibilityElement(children: isRenaming(item) ? .contain : .ignore)
                 .accessibilityLabel("\(item.name), \(item.kindTitle), \(item.subtitle)"
+                    + (item.cloudURL != nil ? ", shared" : "")
                     + (item.tags.isEmpty ? "" : ", tags: \(item.tags.joined(separator: ", "))"))
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
                 .accessibilityAction(named: "Rename") { CaptureLibraryModel.shared.beginRename(item, at: .card) }
+                // The cloud badge's click, for VoiceOver, which reads the card as one element.
+                .accessibilityActions {
+                    if item.cloudURL != nil {
+                        Button("Copy Cloud Link") { CaptureLibraryModel.shared.copyLink(item) }
+                    } else if CloudUploader.shared.isConfigured {
+                        Button("Share to Cloud") { CaptureLibraryModel.shared.pendingCloudUpload = item }
+                    }
+                }
             } else { Color.clear }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -523,6 +532,8 @@ struct LibraryCellContent: View {
 /// up; the right-click menu has the same actions.
 private struct LibraryCloudBadge: View {
     let item: CaptureLibraryItem
+    /// Shows a tick for a moment after a click copies the link.
+    @State private var didCopy = false
 
     var body: some View {
         let isShared = item.cloudURL != nil
@@ -530,9 +541,14 @@ private struct LibraryCloudBadge: View {
             Button {
                 let model = CaptureLibraryModel.shared
                 model.selection = [item.id]
-                if isShared { model.copyLink(item) } else { model.pendingCloudUpload = item }
+                if isShared {
+                    model.copyLink(item)
+                    didCopy = true
+                } else {
+                    model.pendingCloudUpload = item
+                }
             } label: {
-                Image(systemName: "icloud.and.arrow.up")
+                Image(systemName: didCopy ? "checkmark" : "icloud.and.arrow.up")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isShared ? Color.blue : Color.white)
                     .padding(5)
@@ -541,8 +557,13 @@ private struct LibraryCloudBadge: View {
             }
             .buttonStyle(.plain)
             .padding(6)
-            .help(isShared ? "Shared to the cloud. Click to copy its link." : "Share to Cloud")
+            .help(didCopy ? "Link copied" : isShared ? "Shared to the cloud. Click to copy its link." : "Share to Cloud")
             .accessibilityLabel(isShared ? "Copy cloud link" : "Share to Cloud")
+            .task(id: didCopy) {
+                guard didCopy else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                didCopy = false
+            }
         }
     }
 }
