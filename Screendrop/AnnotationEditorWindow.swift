@@ -509,7 +509,8 @@ struct AnnotationEditorWindow: View {
                       let resultURL = try await model.commitEdits(idle: idle) else { return }
                 _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                     originalURL: sourceURL,
-                    historyURL: resultURL
+                    historyURL: resultURL,
+                    updatesClipboard: !idle
                 )
             } catch {
                 model.errorMessage = "Failed to save annotation: \(error.localizedDescription)"
@@ -535,13 +536,10 @@ struct AnnotationEditorWindow: View {
             do {
                 let resultURL = try await model.commitEdits()
                 if let resultURL {
-                    let updatedExistingPreview = await ScreenshotPreviewStack.shared.applyAnnotation(
+                    _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                         originalURL: sourceURL,
                         historyURL: resultURL
                     )
-                    if !updatedExistingPreview {
-                        PreviewPanelPresenter.shared.show(displayID: nil)
-                    }
                 }
                 // No result means nothing was drawn: the original is the image.
                 try await ScreenshotFileActions.copyImageToClipboard(from: resultURL ?? sourceURL)

@@ -62,7 +62,11 @@ final class ScreenshotPreviewStack {
         return items.filter { $0.autoSavedURL == nil && !$0.url.standardizedFileURL.path.hasPrefix(library) }
     }
 
-    private init() {}
+    @ObservationIgnored private let copyImage: (URL) async throws -> Void
+
+    init(copyImage: @escaping (URL) async throws -> Void = { try await ScreenshotFileActions.copyImageToClipboard(from: $0) }) {
+        self.copyImage = copyImage
+    }
 
     /// Tuck the overlay into the peek tab (no-op when there's nothing to show).
     func collapse() {
@@ -627,38 +631,31 @@ final class ScreenshotPreviewStack {
         }
     }
 
-    /// Refreshes a preview item after a (non-destructive) annotation commit and
-    /// re-publishes the latest version: re-copying it to the clipboard and
-    /// overwriting the existing auto-saved file so we never leave a stale copy
-    /// behind or accumulate duplicates.
+    /// Refreshes an existing card and its exported copy after a commit. Saves
+    /// never add cards, and idle saves leave the clipboard alone.
     @discardableResult
-    func applyAnnotation(originalURL: URL, historyURL: URL) async -> Bool {
-        guard let thumbnail = await CaptureLibraryThumbnails.shared.image(at: historyURL) else {
+    func applyAnnotation(originalURL: URL, historyURL: URL, updatesClipboard: Bool = true) async -> Bool {
+        guard let id = items.first(where: { $0.url == originalURL })?.id,
+              let thumbnail = await CaptureLibraryThumbnails.shared.image(at: historyURL),
+              let index = items.firstIndex(where: { $0.id == id }) else {
             return false
         }
         let image = NSImage(cgImage: thumbnail, size: CGSize(width: thumbnail.width, height: thumbnail.height))
 
         QuickLookPreviewPresenter.dismiss()
 
-        if let index = items.firstIndex(where: { $0.url == originalURL }) {
-            CloudUploader.shared.clearUploadState(for: items[index].id)
-            items[index].url = historyURL
-            items[index].previewImage = image
-            await republishLatestVersion(at: index)
-            return true
-        } else {
-            prepareForInsertedPreview()
-            items.insert(ScreenshotPreviewItem(url: historyURL, previewImage: image), at: 0)
-            await republishLatestVersion(at: 0)
-            return false
-        }
+        CloudUploader.shared.clearUploadState(for: id)
+        items[index].url = historyURL
+        items[index].previewImage = image
+        await republishLatestVersion(at: index, updatesClipboard: updatesClipboard)
+        return true
     }
 
-    /// Re-copies the current image to the clipboard (when auto-copy is on) and
+    /// Re-copies the current image when requested and auto-copy is on, and
     /// overwrites an existing exported file in place. Auto Save controls whether
     /// a new export is created, not whether an earlier manual/automatic export
     /// should stay synchronized with the latest edit.
-    private func republishLatestVersion(at index: Int) async {
+    private func republishLatestVersion(at index: Int, updatesClipboard: Bool) async {
         guard items.indices.contains(index) else { return }
         let item = items[index]
 
@@ -672,7 +669,7 @@ final class ScreenshotPreviewStack {
             items[index].autoSavedURL = saveToDefaultLocation(from: item.url)
         }
 
-        if ScreendropPreferences.autoCopy {
+        if updatesClipboard && ScreendropPreferences.autoCopy {
             _ = await copyURLToClipboard(item.url)
         }
     }
@@ -809,7 +806,7 @@ final class ScreenshotPreviewStack {
 
     private func copyURLToClipboard(_ url: URL) async -> Bool {
         do {
-            try await ScreenshotFileActions.copyImageToClipboard(from: url)
+            try await copyImage(url)
             return true
         } catch {
             print("Failed to copy screenshot: \(error)")
