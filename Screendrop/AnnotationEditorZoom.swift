@@ -3,7 +3,7 @@ import CoreGraphics
 extension AnnotationEditorModel {
     /// The screenshot plus any growth for annotations past its edge.
     var canvasContentSize: CGSize {
-        displayedCanvasExpansion.grownSize(imageSize)
+        canvasExpansion.grownSize(imageSize)
     }
 
     var canvasPixelSize: CGSize {
