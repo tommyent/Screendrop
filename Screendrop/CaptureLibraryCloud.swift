@@ -312,7 +312,6 @@ final class CloudLibraryModel {
 
 struct CloudLibraryPage: View {
     let cloud: CloudLibraryModel
-    let layout: CaptureLibraryLayout
     let cardWidth: CGFloat
 
     var body: some View {
@@ -358,11 +357,11 @@ struct CloudLibraryPage: View {
                 // The Library's own collection, so uploads select, open and
                 // delete as captures do.
                 CaptureLibraryCollection(
-                    items: uploads, revision: revision(uploads, local: local), layout: layout, cardWidth: cardWidth,
+                    items: uploads, revision: revision(uploads, local: local), layout: .grid, cardWidth: cardWidth,
                     selection: Binding { cloud.selection } set: { cloud.selection = $0 },
                     isBusy: cloud.isBusy, accessibilityLabel: "Uploads",
-                    cell: { [layout, deleting = cloud.deletingIDs] upload, selected, _ in
-                        AnyView(CloudUploadCard(upload: upload, local: local[upload.id], layout: layout,
+                    cell: { [deleting = cloud.deletingIDs] upload, selected, _ in
+                        AnyView(CloudUploadCard(upload: upload, local: local[upload.id],
                                                 selected: selected, deleting: deleting.contains(upload.id)))
                     },
                     menu: { _ in cloud.menuItems() },
@@ -426,7 +425,6 @@ struct CloudLibraryPage: View {
 private struct CloudUploadCard: View {
     let upload: CloudUpload
     let local: CaptureLibraryItem?
-    let layout: CaptureLibraryLayout
     let selected: Bool
     let deleting: Bool
     @State private var isHovering = false
@@ -434,26 +432,9 @@ private struct CloudUploadCard: View {
     @State private var durationWidth: CGFloat = 0
 
     var body: some View {
-        Group {
-            if layout == .grid {
-                VStack(alignment: .leading, spacing: 8) {
-                    thumbnail.frame(maxWidth: .infinity, maxHeight: .infinity)
-                    labels.padding(.horizontal, 4).padding(.bottom, 4)
-                }
-            } else {
-                HStack(spacing: 14) {
-                    thumbnail.frame(width: 88, height: 58)
-                    labels
-                    Spacer(minLength: 8)
-                    Text([CloudUploadText.comments(upload.commentCount), CloudUploadText.likes(upload.likeCount),
-                          upload.hasPassword == true ? "Password" : nil,
-                          CloudUploadText.expiry(upload.expiresAt), local == nil ? "Cloud only" : "In Library"]
-                        .compactMap(\.self).joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.trailing, 8)
-                }
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            thumbnail.frame(maxWidth: .infinity, maxHeight: .infinity)
+            labels.padding(.horizontal, 4).padding(.bottom, 4)
         }
         .padding(6)
         .background(
@@ -493,7 +474,7 @@ private struct CloudUploadCard: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 Text(upload.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
-                if local != nil, layout == .grid {
+                if local != nil {
                     Image(systemName: "internaldrive").foregroundStyle(.secondary).help("The capture is in your Library")
                 }
             }
@@ -513,7 +494,7 @@ private struct CloudUploadCard: View {
             // Bottom left, clear of the pills above. Side by side when they fit
             // beside the duration, stacked when the card is too small.
             .overlay(alignment: .bottomLeading) {
-                if layout == .grid, (upload.commentCount ?? 0) > 0 || (upload.likeCount ?? 0) > 0 || local?.isTall == true {
+                if (upload.commentCount ?? 0) > 0 || (upload.likeCount ?? 0) > 0 || local?.isTall == true {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 4) { socialPills }
                         VStack(alignment: .leading, spacing: 4) { socialPills }
@@ -523,9 +504,8 @@ private struct CloudUploadCard: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                // The list says these in words beside the thumbnail instead.
                 // The duration pill's style, so they read on any thumbnail.
-                if layout == .grid, upload.hasPassword == true || upload.expiresAt != nil {
+                if upload.hasPassword == true || upload.expiresAt != nil {
                     HStack(spacing: 4) {
                         if upload.hasPassword == true {
                             Image(systemName: "lock.fill")

@@ -153,6 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if RecordingExportBenchmark.runIfRequested() { return }
         #endif
         HotkeyManager.shared.registerHotkeys()
+        // The Library's Grid/List choice, saved before List view went (sd-vkd).
+        UserDefaults.standard.removeObject(forKey: "captureLibrary.layout")
         ImageTextWarmUp.shared.start()
         updaterManager.start()
         RecordingRecoveryCoordinator.recoverInterruptedRecordings()

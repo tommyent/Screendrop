@@ -48,7 +48,7 @@ Sharing is optional and self-hosted: uploads go to a Cloudflare Worker you deplo
 
 One window for screenshots, recordings and recording projects, with **Uploads**, **Comments** and **Likes** beside them:
 
-- Grid or list view with an adjustable card size, search, and filters for screenshots or recordings. Tags have their own colours and icons.
+- Cards with an adjustable size, search, and filters for screenshots or recordings. Tags have their own colours and icons.
 - A trimmed toolbar for the view and inspector controls, with search alongside them. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Copy**, **Export…**, the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
 - The same capture menu holds its cloud actions: **Share to Cloud…** before upload; **Copy Cloud Link**, **Open Shared Capture** and **Delete from Cloud…** once shared.
 - Right-click between the cards to choose the sort order or **Refresh**, on the captures, Uploads, Comments and Likes pages. **Command + R** refreshes the current page.

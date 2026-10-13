@@ -33,7 +33,8 @@ nonisolated enum CaptureLibrarySort: String, CaseIterable, Identifiable {
     }
 }
 
-nonisolated enum CaptureLibraryLayout: String, CaseIterable {
+/// Captures and uploads show as cards; Comments and Likes as rows.
+nonisolated enum CaptureLibraryLayout {
     case grid, list
 }
 
