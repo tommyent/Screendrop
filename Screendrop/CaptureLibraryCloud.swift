@@ -664,11 +664,10 @@ private struct CloudCardPill: ViewModifier {
 
 nonisolated enum CloudUploadText {
     /// What an upload's card and inspector call it (sd-8oa): a title set on
-    /// the upload, else its Library capture's title, else when it went up.
-    /// Renaming the capture never renames the upload.
+    /// the upload, else its Library capture's title, else when it went up,
+    /// in the captures' format. Renaming the capture never renames the upload.
     static func title(_ upload: CloudUpload, local: CaptureLibraryItem?) -> String {
-        customTitle(upload, local: local) ?? local?.dateTitle
-            ?? "Uploaded " + upload.createdAt.formatted(.dateTime.month(.abbreviated).day())
+        customTitle(upload, local: local) ?? local?.dateTitle ?? CaptureLibraryItem.dateTitle(upload.createdAt)
     }
 
     /// A name someone gave it. Uploads used to send the file's name as the
