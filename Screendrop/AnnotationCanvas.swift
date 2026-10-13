@@ -780,8 +780,11 @@ struct AnnotationCanvas: View {
     /// click does nothing: measuring only shows the numbers (the user,
     /// 2026-10-13), and it mustn't draw either. False when nothing measures.
     private func swallowsMeasuringClick() -> Bool {
-        guard !model.isCropping, let probe else { return false }
-        return probe.measuring != nil || probe.isMeasuringTool
+        guard !model.isCropping, let probe, probe.measuring != nil || probe.isMeasuringTool else { return false }
+        // Still the canvas's click: Escape and Tab must come here, not stay in an inspector field.
+        onEditorInteraction()
+        takeKeyboardFocusFromInspector()
+        return true
     }
 
     private func viewRect(_ rect: CGRect, in imageFrame: CGRect) -> CGRect {
