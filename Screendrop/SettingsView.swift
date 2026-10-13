@@ -250,9 +250,13 @@ struct SettingsControlLabel: View {
                 .foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityHint(detail)
+    }
+
+    /// macOS reads the name and hint from the control itself.
+    func control<Content: View>(@ViewBuilder _ content: (Self) -> Content) -> some View {
+        content(self)
+            .accessibilityLabel(title)
+            .accessibilityHint(detail)
     }
 }
 

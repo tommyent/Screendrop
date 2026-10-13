@@ -70,21 +70,21 @@ struct GeneralSettingsPane: View {
                     }
                 }
 
-                Toggle(isOn: saveButtonUsesFolderBinding) {
-                    SettingsControlLabel(
-                        "Save without choosing a location",
-                        detail: "When you click Save, write straight to the save folder instead of asking where to put it."
-                    )
+                SettingsControlLabel(
+                    "Save without choosing a location",
+                    detail: "When you click Save, write straight to the save folder instead of asking where to put it."
+                ).control { label in
+                    Toggle(isOn: saveButtonUsesFolderBinding) { label }
                 }
                 .toggleStyle(.switch)
             }
 
             Section("System") {
-                Toggle(isOn: launchAtLoginBinding) {
-                    SettingsControlLabel(
-                        "Launch at login",
-                        detail: "Start Sukusho automatically when you sign in."
-                    )
+                SettingsControlLabel(
+                    "Launch at login",
+                    detail: "Start Sukusho automatically when you sign in."
+                ).control { label in
+                    Toggle(isOn: launchAtLoginBinding) { label }
                 }
                 .toggleStyle(.switch)
 
@@ -98,29 +98,29 @@ struct GeneralSettingsPane: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Toggle(isOn: $playSounds) {
-                    SettingsControlLabel(
-                        "Play sounds",
-                        detail: "Play the camera shutter sound when a screenshot is taken."
-                    )
+                SettingsControlLabel(
+                    "Play sounds",
+                    detail: "Play the camera shutter sound when a screenshot is taken."
+                ).control { label in
+                    Toggle(isOn: $playSounds) { label }
                 }
                 .toggleStyle(.switch)
 
-                Toggle(isOn: $showMenuBarIcon) {
-                    SettingsControlLabel(
-                        "Show menu bar icon",
-                        detail: "When hidden, reopen Sukusho to get back to Settings."
-                    )
+                SettingsControlLabel(
+                    "Show menu bar icon",
+                    detail: "When hidden, reopen Sukusho to get back to Settings."
+                ).control { label in
+                    Toggle(isOn: $showMenuBarIcon) { label }
                 }
                 .toggleStyle(.switch)
             }
 
             Section("Capture Visibility") {
-                Toggle(isOn: $includeAppWindowsInCaptures) {
-                    SettingsControlLabel(
-                        "Include Sukusho windows in captures",
-                        detail: "Show preview cards, recording controls, Settings, and other Sukusho windows in screenshots and screen recordings."
-                    )
+                SettingsControlLabel(
+                    "Include Sukusho windows in captures",
+                    detail: "Show preview cards, recording controls, Settings, and other Sukusho windows in screenshots and screen recordings."
+                ).control { label in
+                    Toggle(isOn: $includeAppWindowsInCaptures) { label }
                 }
                 .toggleStyle(.switch)
             }

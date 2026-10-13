@@ -9,11 +9,11 @@ struct VideoSettingsPane: View {
             AfterCaptureActionsSection(type: .recording, title: "After Recording")
 
             Section("After Export") {
-                Toggle(isOn: $revealExportInFinder) {
-                    SettingsControlLabel(
-                        "Reveal in Finder",
-                        detail: "Select the exported file in Finder once the render finishes."
-                    )
+                SettingsControlLabel(
+                    "Reveal in Finder",
+                    detail: "Select the exported file in Finder once the render finishes."
+                ).control { label in
+                    Toggle(isOn: $revealExportInFinder) { label }
                 }
                 .toggleStyle(.switch)
             }
@@ -47,33 +47,37 @@ struct OverlaySettingsPane: View {
     var body: some View {
         Form {
             Section("Preview Overlay") {
-                Picker(selection: $previewPositionRaw) {
-                    ForEach(PreviewOverlayPosition.allCases) { position in
-                        Text(position.title).tag(position.rawValue)
+                SettingsControlLabel(
+                    "Position on screen",
+                    detail: "Where the floating preview cards appear after a capture."
+                ).control { label in
+                    Picker(selection: $previewPositionRaw) {
+                        ForEach(PreviewOverlayPosition.allCases) { position in
+                            Text(position.title).tag(position.rawValue)
+                        }
+                    } label: {
+                        label
                     }
-                } label: {
-                    SettingsControlLabel(
-                        "Position on screen",
-                        detail: "Where the floating preview cards appear after a capture."
-                    )
                 }
 
-                Picker(selection: $autoCloseSeconds) {
-                    ForEach(autoCloseOptions, id: \.self) { seconds in
-                        Text(seconds == 0 ? "Never" : "\(seconds) seconds").tag(seconds)
+                SettingsControlLabel(
+                    "Auto-close",
+                    detail: "Automatically dismiss a preview after this delay, unless you're using it."
+                ).control { label in
+                    Picker(selection: $autoCloseSeconds) {
+                        ForEach(autoCloseOptions, id: \.self) { seconds in
+                            Text(seconds == 0 ? "Never" : "\(seconds) seconds").tag(seconds)
+                        }
+                    } label: {
+                        label
                     }
-                } label: {
-                    SettingsControlLabel(
-                        "Auto-close",
-                        detail: "Automatically dismiss a preview after this delay, unless you're using it."
-                    )
                 }
 
-                Toggle(isOn: $closeAfterDragging) {
-                    SettingsControlLabel(
-                        "Close after dragging",
-                        detail: "Dismiss the preview once you drag it out to another app."
-                    )
+                SettingsControlLabel(
+                    "Close after dragging",
+                    detail: "Dismiss the preview once you drag it out to another app."
+                ).control { label in
+                    Toggle(isOn: $closeAfterDragging) { label }
                 }
                 .toggleStyle(.switch)
             }
