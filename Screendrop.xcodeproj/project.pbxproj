@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AF0100000000000000000001 /* Screendrop/ImageTextWarmUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */; };
 		AC7700000000000000000001 /* ScrollingCaptureTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7700000000000000000002 /* ScrollingCaptureTrace.swift */; };
 		AC9900000000000000000001 /* ScrollingCaptureOffsetEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9900000000000000000002 /* ScrollingCaptureOffsetEstimator.swift */; };
 		AC9900000000000000000003 /* ScrollingCaptureOffsetVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC9900000000000000000004 /* ScrollingCaptureOffsetVerifier.swift */; };
@@ -74,6 +75,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ImageTextWarmUp.swift; sourceTree = SOURCE_ROOT; };
 		AC7700000000000000000002 /* ScrollingCaptureTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureTrace.swift; sourceTree = SOURCE_ROOT; };
 		AC9900000000000000000002 /* ScrollingCaptureOffsetEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureOffsetEstimator.swift; sourceTree = SOURCE_ROOT; };
 		AC9900000000000000000004 /* ScrollingCaptureOffsetVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ScrollingCaptureOffsetVerifier.swift; sourceTree = SOURCE_ROOT; };
@@ -194,6 +196,7 @@
 		AA6100000000000000000003 /* Tested logic */ = {
 			isa = PBXGroup;
 			children = (
+				AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */,
 				AA6200000000000000000011 /* Screendrop/ScreenshotHistoryMetadata.swift */,
 				AA6200000000000000000012 /* Screendrop/AnnotationDocument.swift */,
 				AA6200000000000000000013 /* Screendrop/AnnotationBackground.swift */,
@@ -366,6 +369,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF0100000000000000000001 /* Screendrop/ImageTextWarmUp.swift in Sources */,
 				AA6200000000000000000001 /* Screendrop/ScreenshotHistoryMetadata.swift in Sources */,
 				AA6200000000000000000002 /* Screendrop/AnnotationDocument.swift in Sources */,
 				AA6200000000000000000003 /* Screendrop/AnnotationBackground.swift in Sources */,

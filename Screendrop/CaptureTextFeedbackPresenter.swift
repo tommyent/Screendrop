@@ -20,13 +20,21 @@ final class CaptureTextFeedbackPresenter {
     /// Clears the bottom edge by more than the toast is tall, so it reads as
     /// floating over the work rather than stuck to the screen edge.
     private static let bottomInset: CGFloat = 96
-    private static let visibleDuration: Duration = .seconds(1.8)
+    private static let visibleDuration: Duration = .seconds(2.5)
     private static let fadeOutDuration: TimeInterval = 0.2
 
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
 
     private init() {}
+
+    func showReading(displayID: CGDirectDisplayID?) {
+        present(
+            symbol: "text.viewfinder", title: "Reading text…",
+            detail: "Recognizing the selected area.", displayID: displayID,
+            isReading: true
+        )
+    }
 
     /// Confirms the copy, previewing the text itself so the user can tell at a
     /// glance that the right region was read.
@@ -58,7 +66,8 @@ final class CaptureTextFeedbackPresenter {
         symbol: String,
         title: String,
         detail: String,
-        displayID: CGDirectDisplayID?
+        displayID: CGDirectDisplayID?,
+        isReading: Bool = false
     ) {
         dismissTask?.cancel()
         dismiss()
@@ -69,7 +78,8 @@ final class CaptureTextFeedbackPresenter {
                 symbol: symbol,
                 title: title,
                 detail: detail,
-                size: size
+                size: size,
+                isReading: isReading
             )
         )
         // The panel is framed by hand below, so the hosting view must not try
@@ -105,10 +115,12 @@ final class CaptureTextFeedbackPresenter {
         }
 
         self.panel = panel
-        dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.visibleDuration)
-            guard !Task.isCancelled else { return }
-            await self?.fadeOutAndDismiss()
+        if !isReading {
+            dismissTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.visibleDuration)
+                guard !Task.isCancelled else { return }
+                await self?.fadeOutAndDismiss()
+            }
         }
     }
 
@@ -155,12 +167,18 @@ private struct CaptureTextFeedbackView: View {
     let title: String
     let detail: String
     let size: NSSize
+    let isReading: Bool
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.white)
+            if isReading {
+                ProgressView().controlSize(.small).tint(.white)
+                    .accessibilityLabel("Reading text")
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.white)
+            }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)

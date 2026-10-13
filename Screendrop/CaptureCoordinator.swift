@@ -149,6 +149,7 @@ final class CaptureCoordinator {
     /// after the area is drawn, matching Capture Area.
     @discardableResult
     private func performCaptureText() async -> CaptureTextOutcome {
+        ImageTextWarmUp.shared.start()
         guard let url = await ScreenshotManager.shared.captureArea(
             delaySeconds: ScreendropPreferences.captureDelaySeconds
         ) else { return .cancelled }
@@ -158,6 +159,7 @@ final class CaptureCoordinator {
         // the user was just drawing on rather than wherever the pointer
         // drifted to while Vision worked.
         let displayID = ActiveDisplayResolver.activeDisplayID(preferPointer: true)
+        CaptureTextFeedbackPresenter.shared.showReading(displayID: displayID)
         let text = await ImageTextRecognizer.recognizeText(at: url)
 
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
