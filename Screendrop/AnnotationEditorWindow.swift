@@ -121,10 +121,8 @@ struct AnnotationEditorWindow: View {
                     probe.isMeasuringTool = false
                 }
             }
-            .onChange(of: model.revision) { _, _ in
-                if copiedLink != nil { withAnimation(.snappy(duration: 0.2)) { copiedLink = nil } }
-            }
-            .onChange(of: model.backgroundSettings) { _, _ in
+            // An edit brings Upload back; hovering or selecting a shape doesn't.
+            .onChange(of: model.editState) { _, _ in
                 if copiedLink != nil { withAnimation(.snappy(duration: 0.2)) { copiedLink = nil } }
             }
             .focusedSceneValue(\.annotationEditor, model)
@@ -464,6 +462,8 @@ struct AnnotationEditorWindow: View {
                 // editor stays open.
                 guard let sourceURL = model.sourceURL else { return }
                 let resultURL = try await model.commitEdits() ?? sourceURL
+                // The canvas stays editable while the file uploads.
+                let uploadedEdits = model.editState
 
                 _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                     originalURL: sourceURL,
@@ -482,7 +482,11 @@ struct AnnotationEditorWindow: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(result.url, forType: .string)
                 ScreenshotHistoryStore.shared.setCloudURL(for: resultURL, cloudURL: result.url)
-                withAnimation(.snappy(duration: 0.2)) { copiedLink = result.url }
+                // An edit made during the upload isn't in the link: the link is
+                // still copied, but Upload stays rather than claiming it's current.
+                if model.editState == uploadedEdits {
+                    withAnimation(.snappy(duration: 0.2)) { copiedLink = result.url }
+                }
             } catch {
                 model.errorMessage = "Upload failed: \(error.localizedDescription)"
             }

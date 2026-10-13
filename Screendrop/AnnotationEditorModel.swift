@@ -564,6 +564,13 @@ final class AnnotationEditorModel {
         )
     }
 
+    /// What a save would write now. Two compare equal when nothing was edited
+    /// in between; hovering or selecting a shape doesn't count.
+    var editState: some Equatable {
+        _ = revision
+        return currentSnapshot()
+    }
+
     /// Whether closing now would throw work away. The baseline is taken at the
     /// end of `load` rather than from an empty document, so a background
     /// preset applied automatically on open is not mistaken for a user edit.
