@@ -82,6 +82,42 @@ struct IdleSaveChecks {
         AnnoShape(x: x, y: 10, kind: .geo(GeoProps(w: 40, h: 30)))
     }
 
+    @MainActor static func titleFieldFocusSelectionAndCommands() async throws {
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 360, height: 120), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        for command in ["return", "escape", "blur"] {
+            let field = AnnotationTitleNSTextField(frame: CGRect(x: 10, y: 50, width: 320, height: 24))
+            field.stringValue = "Existing 🖼 name"
+            var draft = field.stringValue, commits = 0, cancels = 0
+            field.onChange = { draft = $0 }
+            field.onCommit = { commits += 1 }
+            field.onCancel = { cancels += 1 }
+            window.contentView?.addSubview(field)
+            try await until { field.currentEditor() != nil }
+            guard let editor = field.currentEditor() as? NSTextView else { throw Failure(description: "Title field has no text editor") }
+            try check(window.firstResponder === editor && !window.isVisible, "Title field didn't focus off-screen")
+            try check(commits == 0 && cancels == 0, "Focusing/selecting the title ended its edit before typing")
+            try check(editor.selectedRange() == NSRange(location: 0, length: field.stringValue.utf16.count), "Existing title wasn't fully selected")
+            guard let accessible = NSAccessibility.unignoredDescendant(of: field) as? any NSAccessibilityProtocol else {
+                throw Failure(description: "Title field has no exposed accessibility element")
+            }
+            try check(accessible.accessibilityRole() == .textField && accessible.accessibilityLabel() == "Name", "Title field lost native accessibility semantics")
+            editor.insertText("Replacement", replacementRange: editor.selectedRange())
+            try check(draft == "Replacement" && field.stringValue == draft, "Typing didn't replace the selected title/update the draft")
+            if command == "blur" {
+                window.makeFirstResponder(nil)
+            } else {
+                editor.doCommand(by: command == "return" ? #selector(NSResponder.insertNewline(_:)) : #selector(NSResponder.cancelOperation(_:)))
+            }
+            try check(commits == (command == "escape" ? 0 : 1) && cancels == (command == "escape" ? 1 : 0), "Title \(command) took the wrong completion path")
+            AnnotationTitleNameField.dismantleNSView(field, coordinator: ())
+            field.removeFromSuperview()
+            try check(commits + cancels == 1, "Title teardown committed a cancelled/completed edit again")
+        }
+        print("PASS native title field attachment focus, full-name selection, typing, AX semantics, Return/Escape/blur and teardown")
+    }
+
     @MainActor static func titleRenameIsOnlyMetadata() async throws {
         let gate = Gate(), model = try fixture(gate), store = ScreenshotHistoryStore.shared
         gate.hold = false
@@ -378,6 +414,7 @@ struct IdleSaveChecks {
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(actualHome == isolated && support.hasPrefix(isolated + "/"), "Foundation storage escaped isolated home")
         NSApplication.shared.setActivationPolicy(.prohibited)
+        try await titleFieldFocusSelectionAndCommands()
         try await titleRenameIsOnlyMetadata()
         try await nativeFieldFocusAndComposition()
         try await cropDuringRender()

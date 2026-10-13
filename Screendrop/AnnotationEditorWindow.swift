@@ -47,6 +47,7 @@ struct AnnotationEditorWindow: View {
                         .id(historyID)
                 }
                 .sharedBackgroundVisibility(.hidden)
+                ToolbarSpacer(.flexible, placement: .primaryAction)
                 ToolbarItemGroup(placement: .primaryAction) {
                     if model.isCropping {
                         cropActions
