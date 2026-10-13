@@ -159,6 +159,25 @@ struct IdleSaveChecks {
         print("PASS native title field attachment focus, full-name selection, typing, AX semantics, Return/Escape/blur and teardown")
     }
 
+    @MainActor static func recordingRenameIsOnlyMetadata() throws {
+        let directory = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Recording-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let session = RecordingSession(directoryURL: directory), store = RecordingProjectStore.shared
+        store.rename(session, to: "  Demo take \n")
+        try check(session.customName == "Demo take" && session.displayName == "Demo take", "Recording rename didn't trim or persist")
+        // Writes are atomic, so a rewrite with the same bytes still replaces the file.
+        let inode = { try FileManager.default.attributesOfItem(atPath: session.projectMetadataURL.path)[.systemFileNumber] as? Int }
+        let written = try inode()
+        store.rename(session, to: "Demo take")
+        let unchanged = try inode()
+        try check(written != nil && unchanged == written, "Unchanged recording rename rewrote metadata")
+        store.rename(session, to: " \n ")
+        try check(session.customName == nil && session.displayName == directory.lastPathComponent, "Empty recording rename didn't restore the default name")
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        try check(files == [RecordingSession.projectMetadataFileName], "Recording rename wrote more than its metadata")
+        print("PASS recording rename: trim, no-op, clear to the default name, metadata only")
+    }
+
     @MainActor static func titleRenameIsOnlyMetadata() async throws {
         let gate = Gate(), model = try fixture(gate), store = ScreenshotHistoryStore.shared
         gate.hold = false
@@ -558,6 +577,7 @@ struct IdleSaveChecks {
         try await savesOnlyRefreshExistingPreviews()
         try await titleFieldFocusSelectionAndCommands()
         try await titleRenameIsOnlyMetadata()
+        try recordingRenameIsOnlyMetadata()
         try await nativeFieldFocusAndComposition()
         try await cropDuringRender()
         try await savedCropKeepsOriginal()

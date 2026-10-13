@@ -65,10 +65,15 @@ nonisolated struct RecordingSession: Sendable, Equatable {
 
     /// The name shown wherever the project is listed.
     var displayName: String {
+        customName ?? directoryURL.deletingPathExtension().lastPathComponent
+    }
+
+    /// The name given in the Library or Studio's title bar, if any.
+    var customName: String? {
         let stored = loadProjectMetadata()?.displayName?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let stored, !stored.isEmpty { return stored }
-        return directoryURL.deletingPathExtension().lastPathComponent
+        guard let stored, !stored.isEmpty else { return nil }
+        return stored
     }
 
     var hasCamera: Bool {

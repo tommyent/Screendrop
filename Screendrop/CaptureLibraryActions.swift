@@ -103,8 +103,7 @@ extension CaptureLibraryModel {
               name != (savedNames[id] ?? item.customName ?? "") else { return }
         // An empty name clears the custom one, and the date shows again.
         if let session = item.session {
-            session.updateProjectMetadata { $0.displayName = name.isEmpty ? nil : name }
-            RecordingProjectStore.shared.reload()
+            RecordingProjectStore.shared.rename(session, to: name)
         } else if let historyID = item.historyIDs.first {
             ScreenshotHistoryStore.shared.rename(id: historyID, to: name)
         }

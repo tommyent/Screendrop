@@ -285,7 +285,45 @@ final class RecordingStudioModel {
     /// What the window title, share sheet, and Projects browser call this
     /// project. A bare movie falls back to its file name.
     var projectDisplayName: String {
-        session?.displayName ?? sessionURL.deletingPathExtension().lastPathComponent
+        _ = nameRevision
+        return session?.displayName ?? sessionURL.deletingPathExtension().lastPathComponent
+    }
+
+    /// The name given in the Library or the title bar, if any.
+    var customName: String? {
+        _ = nameRevision
+        return session?.customName
+    }
+
+    /// An unnamed project's name, as the Library and the image editor show
+    /// it: when it was recorded. Until load reads the manifest, that comes
+    /// from the `Screendrop_<timestamp>_<id>` folder name; a bare movie
+    /// keeps its file name.
+    var defaultName: String {
+        let name = sessionURL.deletingPathExtension().lastPathComponent
+        guard let date = manifest?.createdAt ?? Self.recordingDate(inName: name) else { return name }
+        return CaptureLibraryItem.dateTitle(date)
+    }
+
+    private static func recordingDate(inName name: String) -> Date? {
+        let parts = name.split(separator: "_")
+        guard parts.count >= 2, parts[0] == "Screendrop" else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.date(from: String(parts[1]))
+    }
+
+    /// The names above are read from disk; a rename here bumps this so the
+    /// title shows the new one at once.
+    private var nameRevision = 0
+
+    /// Renames the project as the Library does; an empty name restores the
+    /// default one.
+    func rename(to name: String) {
+        guard let session else { return }
+        RecordingProjectStore.shared.rename(session, to: name)
+        nameRevision += 1
     }
 
     func load() async {

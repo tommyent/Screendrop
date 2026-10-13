@@ -63,6 +63,15 @@ final class RecordingProjectStore {
         }
     }
 
+    /// The Library's Rename and Studio's title bar. An empty name clears the
+    /// custom one, so the default name shows again.
+    func rename(_ session: RecordingSession, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard name != (session.customName ?? "") else { return }
+        session.updateProjectMetadata { $0.displayName = name.isEmpty ? nil : name }
+        reload()
+    }
+
     // MARK: - Summaries
 
     nonisolated private static func summarize(_ session: RecordingSession) -> RecordingProjectSummary {
