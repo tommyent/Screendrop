@@ -32,4 +32,20 @@ struct FreehandSmoothingTests {
             }
         }
     }
+
+    /// The finished stroke is eased once: jitter drops, the ends and the
+    /// point count stay.
+    @Test static func finishedStrokeIsEasedWithItsEndsKept() {
+        let raw = (0...40).map { index in
+            Vec(Double(index) * 5, index.isMultiple(of: 2) ? 4 : -4, 0.5)
+        }
+        let eased = FreehandSettings.smoothedPoints(raw)
+        #expect(eased.count == raw.count)
+        #expect(eased.first == raw.first && eased.last == raw.last)
+        let middle = eased[5..<35]
+        #expect(middle.allSatisfy { abs($0.y) < 1 })
+        #expect(eased.allSatisfy { abs($0.z - 0.5) < 0.0001 })
+        // Too short to ease: left as drawn.
+        #expect(FreehandSettings.smoothedPoints(Array(raw.prefix(4))) == Array(raw.prefix(4)))
+    }
 }
