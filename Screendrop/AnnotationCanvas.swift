@@ -37,9 +37,9 @@ struct AnnotationCanvas: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(PixelProbe.self) private var probe: PixelProbe?
     @State private var hasActiveInteraction = false
-    /// A click made while an arrow key measures, which imprints the ruler
-    /// and is kept from the drawing tools until the mouse comes up.
-    @State private var isImprinting = false
+    /// A click that imprinted the ruler or picked a colour, kept from the
+    /// drawing tools until the mouse comes up.
+    @State private var swallowsPress = false
     @State private var hoveredLocation: CGPoint?
     @State private var currentCursor: AnnotationCanvasCursor = .arrow
     @State private var progressivelyBlurredImage: NSImage?
@@ -473,6 +473,11 @@ struct AnnotationCanvas: View {
                 // Inside the camera's projection, so the ruler tilts with
                 // the image it measures.
                 PixelMeasureOverlay(probe: probe, axis: axis, imageFrame: imageFrame, pointer: hoveredLocation)
+            } else if let probe, probe.isPicking || probe.copiedHex != nil,
+                      let color = probe.hovered, let pointer = hoveredLocation {
+                PixelColorBadge(color: color, copied: probe.copiedHex != nil)
+                    .fixedSize()
+                    .position(x: pointer.x + 64, y: pointer.y - 22)
             }
         }
         .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topLeading)
@@ -688,11 +693,11 @@ struct AnnotationCanvas: View {
                 guard hasActiveInteraction || visibleCanvasFrame?.contains(value.startLocation) != false else {
                     return
                 }
-                guard !isImprinting else { return }
+                guard !swallowsPress else { return }
                 let startLocation = projection.unproject(value.startLocation)
                 let location = projection.unproject(value.location)
-                if !hasActiveInteraction, imprintMeasurement(at: startLocation, imageFrame: imageFrame) {
-                    isImprinting = true
+                if !hasActiveInteraction, pickColor() || imprintMeasurement(at: startLocation, imageFrame: imageFrame) {
+                    swallowsPress = true
                     return
                 }
                 if !hasActiveInteraction {
@@ -706,8 +711,8 @@ struct AnnotationCanvas: View {
                 updateCursor(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame)
             }
             .onEnded { value in
-                if isImprinting {
-                    isImprinting = false
+                if swallowsPress {
+                    swallowsPress = false
                     return
                 }
                 guard hasActiveInteraction else { return }
@@ -726,6 +731,15 @@ struct AnnotationCanvas: View {
         guard let window = NSApp.currentEvent?.window,
               !(window.firstResponder is AnnoTextEditorOverlay) else { return }
         window.makeFirstResponder(nil)
+    }
+
+    /// With the eyedropper armed, a press copies the colour under it and
+    /// disarms, instead of drawing. False when the eyedropper is off.
+    private func pickColor() -> Bool {
+        guard !model.isCropping, let probe, probe.isPicking else { return false }
+        _ = probe.copyHovered()
+        probe.isPicking = false
+        return true
     }
 
     /// While an arrow key measures, a click imprints that ruler as an
@@ -767,7 +781,9 @@ struct AnnotationCanvas: View {
             return
         }
 
-        if hasActiveInteraction {
+        if probe?.isPicking == true {
+            setCursor(.crosshair)
+        } else if hasActiveInteraction {
             setCursor(model.isTransformingExistingAnnotation ? .closedHand : .placement)
         } else if NSEvent.modifierFlags.contains(.command), model.selectedTool.createsAnnotation {
             setCursor(.crosshair)

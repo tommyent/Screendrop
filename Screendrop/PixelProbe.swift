@@ -2,7 +2,7 @@ import AppKit
 import Observation
 
 /// The screenshot's pixels under the editor's pointer (sd-t4k, sd-p31): the
-/// colour the inspector shows and Tab copies, and which way a held arrow key
+/// colour the eyedropper shows and Tab copies, and which way a held arrow key
 /// is measuring. Each editor window owns one, apart from
 /// `AnnotationEditorModel`, since it's about the source pixels rather than
 /// the annotations.
@@ -14,10 +14,13 @@ final class PixelProbe {
     private(set) var pixelsPerPoint: CGFloat = 1
     /// The colour under the pointer; nil off the image.
     private(set) var hovered: PixelColor?
-    /// The hex Tab copied, for a moment, so the inspector can confirm it.
+    /// The hex just copied, for a moment, so the badge can confirm it.
     private(set) var copiedHex: String?
     /// Set while an arrow key is held over the image.
     private(set) var measuring: PixelMeasureAxis?
+    /// The toolbar's eyedropper is armed: the next click on the canvas
+    /// copies the colour under it instead of drawing.
+    var isPicking = false
 
     @ObservationIgnored private var previewID: ObjectIdentifier?
     @ObservationIgnored private var generation = UUID()

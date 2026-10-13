@@ -34,7 +34,21 @@ struct AnnotationEditorWindow: View {
             .modifier(CaptureLibraryEditorRegistration(url: url))
             .navigationTitle("Sukusho Annotate")
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+            // The tools fill the toolbar's middle, as in Shottr; the window
+            // keeps its title for the Window menu.
+            .toolbar(removing: .title)
             .toolbar {
+                AnnotationEditorToolbarTools(
+                    model: model,
+                    probe: probe,
+                    isDisabled: model.isCropping || isBusy,
+                    onSelectTool: { tool in
+                        clearInspectorFocus()
+                        probe.isPicking = false
+                        model.selectTool(tool)
+                    },
+                    onCrop: enterCrop
+                )
                 ToolbarItemGroup(placement: .primaryAction) {
                     if model.isCropping {
                         cropActions
@@ -71,6 +85,9 @@ struct AnnotationEditorWindow: View {
             .onDeleteCommand {
                 if !model.isCommitting { model.deleteSelectedAnnotation() }
             }
+            .onChange(of: model.isCropping) { _, isCropping in
+                if isCropping { probe.isPicking = false }
+            }
             .onChange(of: model.hasUnsavedChanges) { _, _ in
                 closeGuard.refreshDocumentEdited()
             }
@@ -102,7 +119,10 @@ struct AnnotationEditorWindow: View {
                 onUndo: model.undo,
                 onRedo: model.redo,
                 onSelectAll: model.selectAllAnnotations,
-                onSelectTool: model.selectTool,
+                onSelectTool: { tool in
+                    probe.isPicking = false
+                    model.selectTool(tool)
+                },
                 onZoomIn: model.zoomIn,
                 onZoomOut: model.zoomOut,
                 onFitCanvas: model.fitCanvas,
@@ -117,7 +137,9 @@ struct AnnotationEditorWindow: View {
                 onNudge: { step in
                     model.nudgeSelection(dx: step.dx * probe.pixelsPerPoint, dy: step.dy * probe.pixelsPerPoint)
                 },
-                onEscape: model.escapeSelectionOrDisarm
+                onEscape: {
+                    if probe.isPicking { probe.isPicking = false } else { model.escapeSelectionOrDisarm() }
+                }
             ))
             .inspector(isPresented: $isInspectorPresented) {
                 AnnotationEditorInspector(
@@ -138,13 +160,6 @@ struct AnnotationEditorWindow: View {
     /// The standard trailing actions shown when not cropping.
     @ViewBuilder
     private var editingActions: some View {
-        Button(action: enterCrop) {
-            Label("Crop", systemImage: "crop")
-                .labelStyle(.titleAndIcon)
-        }
-        .help("Crop the screenshot")
-        .disabled(model.previewImage == nil || model.imageSize == .zero)
-
         if CloudUploader.shared.isConfigured {
             CloudUploadButton(
                 suggestedTitle: model.sourceURL?.deletingPathExtension().lastPathComponent ?? "",
