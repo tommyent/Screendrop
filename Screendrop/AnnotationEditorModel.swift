@@ -586,6 +586,17 @@ final class AnnotationEditorModel {
 
     // MARK: - Tools and style
 
+    /// Cmd-V with a picture on the pasteboard adds it as an annotation, selected (sd-eec). False
+    /// without one, or with no screenshot to put it on, so the key passes on.
+    func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard !isCropping, imageSize != .zero,
+              let data = AnnoImageAsset.pasteboardData(pasteboard),
+              let asset = AnnoImageAsset(data: data) else { return false }
+        commitTextEditing()
+        engine.insertImage(asset)
+        return true
+    }
+
     func selectTool(_ tool: AnnotationTool) {
         if tool == .filledRectangle { geoFill = .solid; engine.currentGeoFill = .solid }
         selectedTool = tool.paletteTool

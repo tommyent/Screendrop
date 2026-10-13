@@ -97,6 +97,81 @@ struct PastedImageTests {
         #expect(loaded["shown"]?.image.width == 4)
     }
 
+    // MARK: Pasting
+
+    @Test func landsRightOfCentreAtAModestSize() {
+        let page = CGSize(width: 1000, height: 800)
+        #expect(AnnoEditor.pastedImageRect(pixelSize: CGSize(width: 4000, height: 2000), pageSize: page)
+                == CGRect(x: 400, y: 300, width: 400, height: 200), "a big picture shrinks to 40%, aspect kept")
+        #expect(AnnoEditor.pastedImageRect(pixelSize: CGSize(width: 100, height: 50), pageSize: page)
+                == CGRect(x: 550, y: 375, width: 100, height: 50), "a small one isn't enlarged")
+    }
+
+    static func editor() -> AnnoEditor {
+        let editor = AnnoEditor()
+        editor.viewport = AnnoViewport(imageFrame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                       imageSize: CGSize(width: 800, height: 600))
+        editor.replaceDocument(shapes: [])
+        return editor
+    }
+
+    @Test func pasteIsOneUndoStepSelectedOnSelect() throws {
+        let editor = Self.editor()
+        editor.tool = .rectangle
+        let id = editor.insertImage(AnnoImageAsset(data: Self.bandedPNG())!, assetID: "p")
+        #expect(editor.selectedIds == [id] && editor.tool == .select)
+        #expect(editor.shapes.first?.imageProps == ImageProps(assetID: "p", w: 4, h: 4))
+        editor.undo()
+        #expect(editor.shapes.isEmpty)
+        editor.redo()
+        #expect(editor.shapes.first?.id == id && editor.imageAssets["p"] != nil, "redo finds the same pixels")
+    }
+
+    static func cornerDrag(shift: Bool) throws -> ImageProps {
+        let editor = Self.editor()
+        let shape = AnnoShape(x: 100, y: 100, kind: .image(ImageProps(assetID: "p", w: 200, h: 100)))
+        editor.replaceDocument(shapes: [shape])
+        editor.selectedIds = [shape.id]
+        editor.tool = .select
+        let corner = try #require(editor.selectionBounds?.pagePoint(Vec(1, 1)))
+        // Command while moving turns snapping off, so only the aspect rule shapes the result. On
+        // the press it would mean "draw even over a shape", so the press goes without it.
+        func pointer(_ point: Vec) -> PointerInfo {
+            PointerInfo(screenPoint: point, pagePoint: point, shift: shift, command: true)
+        }
+        let press = editor.pageToScreen(corner)
+        editor.pointerDown(PointerInfo(screenPoint: press, pagePoint: corner, shift: shift))
+        editor.pointerMove(pointer(Vec(500, 220)))
+        editor.pointerUp(pointer(Vec(500, 220)))
+        return try #require(editor.shapes.first?.imageProps)
+    }
+
+    @Test func cornersKeepTheAspectUnlessShift() throws {
+        let kept = try Self.cornerDrag(shift: false)
+        #expect(abs(kept.w - 400) < 0.001 && abs(kept.h - 200) < 0.001, "\(kept)")
+        let free = try Self.cornerDrag(shift: true)
+        #expect(abs(free.w - 400) < 0.001 && abs(free.h - 120) < 0.001, "\(free)")
+    }
+
+    @Test func readsPicturesNotTextFromThePasteboard() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("sd-eec-test-\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        let png = Self.bandedPNG()
+
+        pasteboard.clearContents()
+        pasteboard.setData(png, forType: .png)
+        #expect(AnnoImageAsset.pasteboardData(pasteboard) == png, "PNG is kept as copied")
+
+        pasteboard.clearContents()
+        pasteboard.setData(try #require(NSImage(data: png)?.tiffRepresentation), forType: .tiff)
+        let converted = try #require(AnnoImageAsset.pasteboardData(pasteboard))
+        #expect(converted.starts(with: [0x89, 0x50, 0x4E, 0x47]), "TIFF becomes PNG")
+
+        pasteboard.clearContents()
+        pasteboard.setString("just text", forType: .string)
+        #expect(AnnoImageAsset.pasteboardData(pasteboard) == nil)
+    }
+
     @Test func sidecarsFromBeforePastingHaveNoImages() throws {
         let document = AnnotationDocument(shapes: [], background: AnnotationBackgroundSettings())
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as! [String: Any]

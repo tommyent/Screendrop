@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
 /// The shape model, ported from the drawing-app's `Model/Shape.swift` and widened to cover the
 /// tools Screendrop has that a whiteboard doesn't (redactions, the spotlight highlight, numbered
@@ -191,6 +192,43 @@ struct AnnoImageAsset: @unchecked Sendable {
         else { return nil }
         self.data = data
         self.image = image
+    }
+
+    /// A picture on the pasteboard, as bytes worth keeping: a copied image file's own bytes, then
+    /// PNG or JPEG as copied, then any other image (TIFF, PDF) re-encoded as PNG. Nil without one,
+    /// such as for text.
+    static func pasteboardData(_ pasteboard: NSPasteboard) -> Data? {
+        let files = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true,
+                      .urlReadingContentsConformToTypes: [UTType.image.identifier]]
+        ) as? [URL]
+        // Before the image types: Finder puts a copied file's icon there too.
+        if let file = files?.first, let data = try? Data(contentsOf: file) {
+            return reencodedIfNeeded(data)
+        }
+        for type in [NSPasteboard.PasteboardType.png, NSPasteboard.PasteboardType(UTType.jpeg.identifier)] {
+            if let data = pasteboard.data(forType: type) { return data }
+        }
+        guard let image = NSImage(pasteboard: pasteboard),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return png(cgImage)
+    }
+
+    /// PNG and JPEG are kept as they are; anything else ImageIO reads becomes PNG.
+    private static func reencodedIfNeeded(_ data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source) as String? else { return nil }
+        if type == UTType.png.identifier || type == UTType.jpeg.identifier { return data }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil).flatMap(png)
+    }
+
+    private static func png(_ image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 }
 

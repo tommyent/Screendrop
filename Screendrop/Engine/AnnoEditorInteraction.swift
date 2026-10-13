@@ -504,7 +504,11 @@ extension AnnoEditor {
             if origin != anchor.y { scaleY = (pointerInSelection.y - anchor.y) / (origin - anchor.y) }
         }
 
-        if pointer.shift, handle.isCorner {
+        // A lone pasted picture keeps its aspect ratio on a corner unless Shift is held; every
+        // other shape keeps it only with Shift (sd-eec).
+        let locksAspect = handle.isCorner
+            && pointer.shift != (selectedShapes.count == 1 && selectedShapes[0].imageProps != nil)
+        if locksAspect {
             // Preserve the aspect ratio from the larger of the two scales.
             let s = abs(scaleX) > abs(scaleY) ? abs(scaleX) : abs(scaleY)
             scaleX = s * (scaleX < 0 ? -1 : 1)
@@ -542,7 +546,7 @@ extension AnnoEditor {
         let direction: Vec?
         if let uniformDerivative {
             direction = uniformDerivative
-        } else if pointer.shift, handle.isCorner {
+        } else if locksAspect {
             direction = Vec.sub(currentHandle, bounds.transform.applyToPoint(anchor))
         } else if !handle.scalesY {
             direction = Vec(bounds.transform.a, bounds.transform.b)
