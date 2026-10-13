@@ -472,7 +472,7 @@ private struct CloudUploadCard: View {
     /// The card reads as one element, so this says what its pills show.
     private var spokenLabel: String {
         let parts: [String?] = [
-            CloudUploadText.title(upload, local: local), upload.kindTitle, CloudUploadText.subtitle(upload),
+            CloudUploadText.title(upload, local: local), upload.kindTitle, CloudUploadText.subtitle(upload, local: local),
             upload.isVideo ? upload.duration.map(CloudUploadText.duration) : nil,
             CloudUploadText.comments(upload.commentCount), CloudUploadText.likes(upload.likeCount),
             upload.hasPassword == true ? "password protected" : nil,
@@ -497,7 +497,7 @@ private struct CloudUploadCard: View {
                 }
             }
             // A space when there's no size keeps the line, so cards stay level.
-            Text(CloudUploadText.subtitle(upload) ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(CloudUploadText.subtitle(upload, local: local) ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
@@ -679,9 +679,13 @@ nonisolated enum CloudUploadText {
         return title.isEmpty || title == upload.filename || title == stem ? local?.customName : title
     }
 
-    /// The size alone: the title carries the date and a video's pill its length (sd-8oa).
-    static func subtitle(_ upload: CloudUpload) -> String? {
-        upload.size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
+    /// The date when a custom title has taken its place, the capture's if
+    /// it's in the Library; else the size. A video's pill shows its length.
+    static func subtitle(_ upload: CloudUpload, local: CaptureLibraryItem?) -> String? {
+        guard customTitle(upload, local: local) == nil else {
+            return local?.dateTitle ?? CaptureLibraryItem.dateTitle(upload.createdAt)
+        }
+        return upload.size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
     }
 
     /// "Expires in 3 days" or "Expired"; nil for a link that never expires.

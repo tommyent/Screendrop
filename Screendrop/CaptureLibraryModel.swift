@@ -70,11 +70,16 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
     var kindTitle: String { session != nil ? "Recording Project" : isVideo ? "Video" : "Screenshot" }
     /// The custom name, else when it was taken (sd-8oa).
     var title: String { customName ?? dateTitle }
+    var dateTitle: String { Self.dateTitle(createdAt) }
+    /// Under the title: the date once a custom name has taken its place,
+    /// else the dimensions. A video's pill shows its length.
+    var subtitle: String { customName == nil ? dimensions : dateTitle }
+
     /// "Oct 13, 8:13 AM", with the year when it isn't this year's.
-    var dateTitle: String {
+    static func dateTitle(_ date: Date) -> String {
         let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
-        let thisYear = Calendar.current.isDate(createdAt, equalTo: .now, toGranularity: .year)
-        return createdAt.formatted(thisYear ? day : day.year()) + ", " + createdAt.formatted(date: .omitted, time: .shortened)
+        let thisYear = Calendar.current.isDate(date, equalTo: .now, toGranularity: .year)
+        return date.formatted(thisYear ? day : day.year()) + ", " + date.formatted(date: .omitted, time: .shortened)
     }
     var durationText: String {
         guard let duration, duration.isFinite, duration >= 0 else { return "—" }
