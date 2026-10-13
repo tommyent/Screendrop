@@ -19,9 +19,9 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     static let pointerCaptureFileName = "input.json"
     static let captureManifestFileName = "capture.json"
     static let editDocumentFileName = "edit.json"
-    /// The working copy the editor autosaves while you type. `edit.json` is
-    /// only rewritten by an explicit save, so a crash mid-edit costs nothing
-    /// and closing a window still has something meaningful to prompt about.
+    /// The working copy the editor writes while you type. `edit.json` is
+    /// only rewritten by a save (at a pause, on leaving or closing the
+    /// window, on quit or ⌘S), so a crash between saves costs nothing.
     static let draftDocumentFileName = "edit.draft.json"
     static let projectMetadataFileName = "project.json"
     /// The document that produced the current flattened deliverable, so a
@@ -56,7 +56,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     var projectMetadataURL: URL { directoryURL.appendingPathComponent(Self.projectMetadataFileName) }
     var renderStampURL: URL { directoryURL.appendingPathComponent(Self.renderStampFileName) }
 
-    /// True once the project has been committed with an explicit save. Every
+    /// True once the project has been committed to `edit.json`. Every
     /// package written by older builds has an `edit.json` from the previous
     /// silent autosave, so those open as already-saved - no migration.
     var hasSavedProject: Bool {
@@ -204,7 +204,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     }
 
     /// What the editor should actually open: the autosaved draft when one
-    /// survived, otherwise the last explicit save. Every consumer outside the
+    /// survived, otherwise the last save. Every consumer outside the
     /// editor (flattening, uploads) uses this too, so a deliverable always
     /// reflects the edits the user can see.
     func effectiveEditDocument() -> RecordingEditDocument? {

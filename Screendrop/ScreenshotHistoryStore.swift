@@ -364,18 +364,6 @@ final class ScreenshotHistoryStore {
         }
     }
 
-    /// Drops the History row for a recording project. The package itself is
-    /// owned by `RecordingProjectStore`, which calls this so a deleted
-    /// project can't linger in History as a dead entry.
-    func deleteRecordingSession(_ session: RecordingSession) {
-        let standardizedPath = session.directoryURL.standardizedFileURL.path
-        guard items.contains(where: { $0.recordingSessionPath == standardizedPath }) else {
-            return
-        }
-        items.removeAll { $0.recordingSessionPath == standardizedPath }
-        saveMetadata()
-    }
-
     @discardableResult
     func delete(url: URL) -> Bool {
         guard let index = index(for: url) else { return false }

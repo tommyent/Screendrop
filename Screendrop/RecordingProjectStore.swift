@@ -17,7 +17,7 @@ nonisolated struct RecordingProjectSummary: Identifiable, Equatable, Sendable {
     var createdAt: Date
     var duration: TimeInterval
     var pixelSize: CGSize
-    /// Committed with an explicit save at least once.
+    /// Committed to `edit.json` at least once.
     var isSaved: Bool
     /// Autosaved edits sitting on top of the saved state.
     var hasUnsavedDraft: Bool
@@ -61,14 +61,6 @@ final class RecordingProjectStore {
             guard !Task.isCancelled else { return }
             projects = result
         }
-    }
-
-    /// Drop references only after the entire package has safely reached the Trash.
-    func delete(_ session: RecordingSession) throws {
-        try RecordingSessionStore.deleteSession(session)
-        ScreenshotPreviewStack.shared.dismissRecordingSession(session.directoryURL)
-        ScreenshotHistoryStore.shared.deleteRecordingSession(session)
-        reload()
     }
 
     // MARK: - Summaries
@@ -179,7 +171,14 @@ final class StudioProjectRegistry {
         models.values.contains { $0.model?.hasRunningWork == true }
     }
 
-    /// Called before the app goes away. The autosave is debounced, so without
+    /// Quitting saves the projects that save at a pause.
+    func autosaveAll() {
+        for model in models.values.compactMap(\.model) {
+            model.autosave()
+        }
+    }
+
+    /// Called before the app goes away. The draft is debounced, so without
     /// this a quit can drop the last fraction of a second of edits.
     func flushDrafts() {
         for model in models.values.compactMap(\.model) {

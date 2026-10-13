@@ -81,6 +81,7 @@ Editing is non-destructive. The untouched image and an editable sidecar are kept
 - Record a display, a window or an area, with a camera, a microphone and system audio as separate sources, a start timer, and a teleprompter that follows your narration on-device.
 - A floating bar pauses, restarts, stops or discards the recording.
 - Every recording is a non-destructive project. In Studio, cut and trim clips, change speed, add automatic or manual zooms, a reconstructed cursor, click highlights and keystroke captions, move and resize the camera, and pick a background and an aspect ratio for social formats.
+- Studio has no Save button: a project saves after a short pause in editing, when you switch to another window or app, when you close it or quit, and with **File → Save** (**Command + S**). Its subtitle shows **Edited** or **Saved**. To throw a recording away, move it to the Trash from the Library.
 - Transcribe narration on-device, edit captions, or cut the video by deleting words from its transcript.
 - Export the finished composition as MOV, MP4 or GIF, or share it straight to your Worker.
 
