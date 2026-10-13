@@ -496,12 +496,10 @@ struct LibraryCellContent: View {
                     HStack(spacing: 3) {
                         CaptureTagIcon(tag: tag)
                         if item.tags.count > 1 {
-                            Text("\(item.tags.count)").foregroundStyle(.secondary)
+                            Text("\(item.tags.count)")
                         }
                     }
-                    .font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 5).padding(.vertical, 3)
-                    .background(.regularMaterial, in: Capsule())
+                    .cardPill()
                     .padding(6)
                     .help(item.tags.joined(separator: ", "))
                 }
@@ -518,54 +516,87 @@ struct LibraryCellContent: View {
             .overlay(alignment: .bottomTrailing) {
                 if item.isVideo {
                     Label(item.durationText, systemImage: "play.fill")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .padding(.horizontal, 5).padding(.vertical, 3)
-                        .foregroundStyle(.white)
-                        .background(.black.opacity(0.65), in: Capsule())
+                        .cardPill()
+                        .monospacedDigit()
                         .padding(7)
                 }
             }
     }
 }
 
-/// A capture card's cloud state: a white cloud with an up arrow until it's
-/// shared, blue once it is. A click shares it, or copies its link once it's
-/// up; the right-click menu has the same actions.
+/// A capture card's cloud badge. A click shares it, or copies its link once
+/// it's up; the right-click menu has the same actions.
 private struct LibraryCloudBadge: View {
     let item: CaptureLibraryItem
-    /// Shows a tick for a moment after a click copies the link.
+
+    var body: some View {
+        if item.cloudURL != nil || CloudUploader.shared.isConfigured {
+            CardCloudBadge(isShared: item.cloudURL != nil) {
+                let model = CaptureLibraryModel.shared
+                model.selection = [item.id]
+                if item.cloudURL != nil { model.copyLink(item) } else { model.pendingCloudUpload = item }
+            }
+        }
+    }
+}
+
+/// The cloud badge on Library and Uploads cards: a grey outline cloud until
+/// it's shared, a blue filled one once it is, and a tick for a moment after
+/// a click copies the link.
+struct CardCloudBadge: View {
+    let isShared: Bool
+    let action: () -> Void
     @State private var didCopy = false
 
     var body: some View {
-        let isShared = item.cloudURL != nil
-        if isShared || CloudUploader.shared.isConfigured {
-            Button {
-                let model = CaptureLibraryModel.shared
-                model.selection = [item.id]
-                if isShared {
-                    model.copyLink(item)
-                    didCopy = true
-                } else {
-                    model.pendingCloudUpload = item
-                }
-            } label: {
-                Image(systemName: didCopy ? "checkmark" : "icloud.and.arrow.up")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isShared ? Color.blue : Color.white)
-                    .padding(5)
-                    .background(.black.opacity(0.45), in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(6)
-            .help(didCopy ? "Link copied" : isShared ? "Shared to the cloud. Click to copy its link." : "Share to Cloud")
-            .accessibilityLabel(isShared ? "Copy cloud link" : "Share to Cloud")
-            .task(id: didCopy) {
-                guard didCopy else { return }
-                try? await Task.sleep(for: .seconds(1.5))
-                didCopy = false
-            }
+        Button {
+            action()
+            if isShared { didCopy = true }
+        } label: {
+            Image(systemName: didCopy ? "checkmark" : isShared ? "icloud.and.arrow.up.fill" : "icloud.and.arrow.up")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isShared ? CardMark.blue : CardMark.idle)
+                .frame(width: 24, height: 24)
+                .cardMark(Circle())
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .padding(6)
+        .help(didCopy ? "Link copied" : isShared ? "Shared to the cloud. Click to copy its link." : "Share to Cloud")
+        .accessibilityLabel(isShared ? "Copy cloud link" : "Share to Cloud")
+        .task(id: didCopy) {
+            guard didCopy else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            didCopy = false
+        }
+    }
+}
+
+/// Badge style B (the user's pick, 2026-10-13): every mark on a card
+/// thumbnail sits on a near-opaque white ground with a hairline and a small
+/// shadow, in light and dark appearance alike, so none blends into the
+/// screenshot under it.
+enum CardMark {
+    static let text = Color(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255)
+    static let idle = Color(red: 0x48 / 255, green: 0x48 / 255, blue: 0x4A / 255)
+    static let blue = Color(red: 0x0A / 255, green: 0x7A / 255, blue: 1)
+}
+
+extension View {
+    /// A disc or pill of the card marks' white ground. Its contents draw for
+    /// light appearance, since the ground is white either way.
+    func cardMark<S: InsettableShape>(_ shape: S) -> some View {
+        environment(\.colorScheme, .light)
+            .background { shape.fill(.white.opacity(0.94)).shadow(color: .black.opacity(0.25), radius: 1.5, y: 1) }
+            .overlay { shape.strokeBorder(.black.opacity(0.15), lineWidth: 0.5) }
+    }
+
+    /// A small pill of dark text on that ground, such as a video's length.
+    func cardPill(_ tint: Color = CardMark.text) -> some View {
+        font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .foregroundStyle(tint)
+            .cardMark(Capsule())
     }
 }
 

@@ -220,9 +220,7 @@ nonisolated enum TallCapture {
     /// The bottom-left mark on a card showing a tall capture's top: Scrolling Capture's symbol.
     @MainActor static var badge: some View {
         Image(systemName: "rectangle.expand.vertical")
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 5).padding(.vertical, 3)
-            .background(.regularMaterial, in: Capsule())
+            .cardPill()
             .help("A tall capture. The card shows its top.")
             .accessibilityHidden(true)
     }
