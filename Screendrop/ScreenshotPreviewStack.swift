@@ -490,8 +490,15 @@ final class ScreenshotPreviewStack {
         }
     }
 
+    /// Whether an editor has this capture open. Deleting it then would leave
+    /// the editor saving into a file that is gone.
+    func isOpenInEditor(id: ScreenshotPreviewItem.ID) -> Bool {
+        guard let item = items.first(where: { $0.id == id }) else { return false }
+        return CaptureLibraryOpenEditors.isEditing(item.url)
+    }
+
     func deleteScreenshot(id: ScreenshotPreviewItem.ID) {
-        guard let item = items.first(where: { $0.id == id }) else { return }
+        guard let item = items.first(where: { $0.id == id }), !isOpenInEditor(id: id) else { return }
 
         if ScreenshotHistoryStore.shared.delete(url: item.url) {
             // The history store owns this file and has moved it to the Trash.
