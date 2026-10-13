@@ -257,6 +257,13 @@ final class AnnoEditor {
         return shape.id
     }
 
+    /// Drops the shapes and the pasted pictures' pixels, for a closed editor whose scene can
+    /// outlive its window. `replaceDocument` keeps the pixels, since undo and crop go through it.
+    func release() {
+        replaceDocument(shapes: [])
+        imageAssets.removeAll()
+    }
+
     /// Where a pasted picture lands: no more than 40% of the screenshot's width and height (never
     /// enlarged, aspect kept), centred a little right of the screenshot's centre, for the user to
     /// drag out beside it as Shottr does.

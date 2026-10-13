@@ -348,7 +348,7 @@ final class AnnotationEditorModel {
         historyIndex = 0
         inspectorEditingDepth = 0
         croppedInSession = false
-        engine.replaceDocument(shapes: [])
+        engine.release()
         removeOwnedCropFiles()
         RedactionImageProcessor.removeAllCachedPreviewImages()
     }

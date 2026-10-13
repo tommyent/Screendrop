@@ -252,6 +252,13 @@ struct PastedImageTests {
                 "TIFF data on the pasteboard, not a file, too")
     }
 
+    @Test func closingTheEditorReleasesThePixels() {
+        let editor = Self.editor()
+        editor.insertImage(AnnoImageAsset(data: Self.bandedPNG())!, assetID: "p")
+        editor.release()
+        #expect(editor.imageAssets.isEmpty && editor.shapes.isEmpty)
+    }
+
     @Test func sidecarsFromBeforePastingHaveNoImages() throws {
         let document = AnnotationDocument(shapes: [], background: AnnotationBackgroundSettings())
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as! [String: Any]
