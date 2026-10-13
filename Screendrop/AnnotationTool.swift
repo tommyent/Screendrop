@@ -95,7 +95,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         case .ellipse: shortcut = "O"
         case .line: shortcut = "L"
         case .arrow: shortcut = "A"
-        case .numberedCircle: shortcut = "1"
+        case .numberedCircle: shortcut = "N"
         case .text: shortcut = "T"
         case .highlight: return "Highlight: keep this area visible and dim everything outside"
         case .pixelate: shortcut = "P"

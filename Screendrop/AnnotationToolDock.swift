@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The editor's tools in one glass capsule floating over the top of the
 /// canvas (sd-w8c), upstream's dock moved up: the drawing tools grouped by
-/// what they make, then Crop, the eyedropper and the ruler's hint, then the
+/// what they make, then Crop, the eyedropper and the ruler, then the
 /// colour and size pill (sd-z4f). A zoomed-in image slides under it.
 struct AnnotationToolDock: View {
     let model: AnnotationEditorModel
@@ -35,7 +35,7 @@ struct AnnotationToolDock: View {
                         systemImage: tool.systemImage,
                         title: tool.title,
                         help: tool.helpText,
-                        isSelected: model.selectedTool == tool && !probe.isPicking
+                        isSelected: model.selectedTool == tool && !probe.isPicking && !probe.isMeasuringTool
                     ) {
                         onSelectTool(tool)
                     }
@@ -64,7 +64,15 @@ struct AnnotationToolDock: View {
                 if probe.isPicking { NSApp.keyWindow?.makeFirstResponder(nil) }
             }
 
-            AnnotationMeasureHintButton()
+            AnnotationDockButton(
+                systemImage: "ruler",
+                title: "Measure",
+                help: "Measure: point at the image for the width and height under the pointer; a click stamps them. Or hold 1 (height) or 2 (width) with any tool.",
+                isSelected: probe.isMeasuringTool
+            ) {
+                probe.isMeasuringTool.toggle()
+                if probe.isMeasuringTool { NSApp.keyWindow?.makeFirstResponder(nil) }
+            }
 
             separator
 
@@ -115,30 +123,6 @@ struct AnnotationDockButton: View {
         .help(help)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-/// The ruler works by holding a key, so its button only says how.
-private struct AnnotationMeasureHintButton: View {
-    @State private var isPresented = false
-
-    var body: some View {
-        AnnotationDockButton(systemImage: "ruler", title: "Measure", help: "How to measure") {
-            isPresented.toggle()
-        }
-        .closesOnEditorEscape($isPresented)
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Hold an arrow key over the image")
-                    .font(.headline)
-                Text("← or → measures the width under the pointer, ↑ or ↓ the height. Add Shift to include the border. Click while holding to keep the measurement.")
-                Text("With annotations selected, the arrow keys move them instead.")
-                    .foregroundStyle(.secondary)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(width: 260, alignment: .leading)
-            .padding(14)
-        }
     }
 }
 

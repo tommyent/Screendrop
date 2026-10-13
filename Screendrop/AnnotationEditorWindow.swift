@@ -72,7 +72,10 @@ struct AnnotationEditorWindow: View {
                 if !model.isCommitting { model.deleteSelectedAnnotation() }
             }
             .onChange(of: model.isCropping) { _, isCropping in
-                if isCropping { probe.isPicking = false }
+                if isCropping {
+                    probe.isPicking = false
+                    probe.isMeasuringTool = false
+                }
             }
             .onChange(of: model.hasUnsavedChanges) { _, _ in
                 closeGuard.refreshDocumentEdited()
@@ -107,6 +110,7 @@ struct AnnotationEditorWindow: View {
                 onSelectAll: model.selectAllAnnotations,
                 onSelectTool: { tool in
                     probe.isPicking = false
+                    probe.isMeasuringTool = false
                     model.selectTool(tool)
                 },
                 onZoomIn: model.zoomIn,
@@ -125,7 +129,12 @@ struct AnnotationEditorWindow: View {
                 },
                 onEscape: {
                     if EditorPopovers.closeNewest() { return }
-                    if probe.isPicking { probe.isPicking = false } else { model.escapeSelectionOrDisarm() }
+                    if probe.isPicking || probe.isMeasuringTool {
+                        probe.isPicking = false
+                        probe.isMeasuringTool = false
+                    } else {
+                        model.escapeSelectionOrDisarm()
+                    }
                 }
             ))
             .inspector(isPresented: $isInspectorPresented) {
@@ -297,6 +306,7 @@ struct AnnotationEditorWindow: View {
                     onSelectTool: { tool in
                         clearInspectorFocus()
                         probe.isPicking = false
+                        probe.isMeasuringTool = false
                         model.selectTool(tool)
                     },
                     onCrop: enterCrop

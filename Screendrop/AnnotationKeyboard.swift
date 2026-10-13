@@ -253,17 +253,17 @@ final class AnnotationKeyCommandHandlerView: NSView {
         }
 
         localKeyUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyUp) { [weak self] event in
-            // Any arrow released ends a measurement, even with a modifier
-            // pressed since it went down.
-            if Self.isArrow(event), self?.window?.isKeyWindow == true {
+            // Releasing 1, 2 or an arrow ends a measurement, even with a
+            // modifier pressed since it went down.
+            if Self.isMeasureKey(event), self?.window?.isKeyWindow == true {
                 self?.endMeasuring()
             }
             return event
         }
     }
 
-    private static func isArrow(_ event: NSEvent) -> Bool {
-        (123...126).contains(event.keyCode)
+    private static func isMeasureKey(_ event: NSEvent) -> Bool {
+        [18, 19, 123, 124, 125, 126].contains(event.keyCode)
     }
 
     /// An arrow's nudge in points: 1, or 10 with Shift; nil for other keys
@@ -280,13 +280,14 @@ final class AnnotationKeyCommandHandlerView: NSView {
         }
     }
 
-    /// ←/→ measure across, ↑/↓ down; with Command, Option or Control they
-    /// are left alone.
+    /// 1 measures down and 2 across, as in Shottr, so the left hand can hold
+    /// them while the right one is on the mouse; ↑/↓ and ←/→ do the same.
+    /// With Command, Option or Control they are left alone.
     private static func measureAxis(_ event: NSEvent) -> PixelMeasureAxis? {
         guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return nil }
         switch event.keyCode {
-        case 123, 124: return .horizontal
-        case 125, 126: return .vertical
+        case 19, 123, 124: return .horizontal
+        case 18, 125, 126: return .vertical
         default: return nil
         }
     }
@@ -392,7 +393,8 @@ final class AnnotationKeyCommandHandlerView: NSView {
         case "p": return .pixelate
         case "b": return .blur
         case "m": return .magnifier
-        case "1": return .numberedCircle
+        // 1 and 2 measure, so numbering moved to N.
+        case "n": return .numberedCircle
         default: return nil
         }
     }

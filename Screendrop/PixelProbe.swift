@@ -18,9 +18,16 @@ final class PixelProbe {
     private(set) var copiedHex: String?
     /// Set while an arrow key is held over the image.
     private(set) var measuring: PixelMeasureAxis?
-    /// The toolbar's eyedropper is armed: the next click on the canvas
-    /// copies the colour under it instead of drawing.
-    var isPicking = false
+    /// The dock's eyedropper is armed: the next click on the canvas copies
+    /// the colour under it instead of drawing.
+    var isPicking = false {
+        didSet { if isPicking { isMeasuringTool = false } }
+    }
+    /// The dock's ruler is armed: the pointer shows the width and height
+    /// under it, and the next click stamps both.
+    var isMeasuringTool = false {
+        didSet { if isMeasuringTool { isPicking = false } }
+    }
 
     @ObservationIgnored private var previewID: ObjectIdentifier?
     @ObservationIgnored private var generation = UUID()
