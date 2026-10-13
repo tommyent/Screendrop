@@ -49,7 +49,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         super.init()
     }
 
-    /// Quitting (⌘Q, a Sparkle relaunch, logout) never calls
+    /// Quitting (⌘Q, logout) never calls
     /// `windowShouldClose`, so the app delegate saves each annotation editor
     /// through this, one at a time. Returns false when nothing needs saving.
     /// Otherwise `completion(true)` follows once every editor was saved (or,

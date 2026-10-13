@@ -27,12 +27,6 @@
 	<false/>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>Sukusho needs screen recording permission to capture screenshots.</string>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/fayazara/screendrop/main/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>MA/6n0fqT0T2updDlkXr8BjhJKoHWik9uf6Lh5pUG7U=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

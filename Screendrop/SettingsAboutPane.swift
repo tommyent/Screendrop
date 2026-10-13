@@ -7,8 +7,6 @@ import AppKit
 import SwiftUI
 
 struct SettingsAboutPane: View {
-    @ObservedObject private var updaterManager = UpdaterManager.shared
-
     private var versionText: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
@@ -45,20 +43,6 @@ struct SettingsAboutPane: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-            }
-
-            Section("Updates") {
-                Toggle(isOn: Binding(
-                    get: { updaterManager.automaticallyChecksForUpdates },
-                    set: { updaterManager.automaticallyChecksForUpdates = $0 }
-                )) {
-                    Text("Automatically check for updates")
-                }
-
-                Button("Check for Updates…") {
-                    updaterManager.checkForUpdates()
-                }
-                .disabled(!updaterManager.canCheckForUpdates)
             }
 
             Section("Project") {

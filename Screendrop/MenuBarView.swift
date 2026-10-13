@@ -11,7 +11,6 @@ import ScreenCaptureKit
 import SwiftUI
 
 struct MenuBarView: View {
-    @ObservedObject private var updaterManager = UpdaterManager.shared
     @State private var historyStore = ScreenshotHistoryStore.shared
     @State private var projectStore = RecordingProjectStore.shared
 
@@ -115,13 +114,6 @@ struct MenuBarView: View {
             }
             .keyboardShortcut(",", modifiers: [.command])
 
-            Button {
-                updaterManager.checkForUpdates()
-            } label: {
-                Label("Check for Updates…", systemImage: "arrow.down.circle")
-            }
-            .disabled(!updaterManager.canCheckForUpdates)
-            
             Divider()
             
             Button("Quit Sukusho") {
