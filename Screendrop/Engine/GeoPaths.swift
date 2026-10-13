@@ -54,19 +54,6 @@ enum GeoPaths {
             .line(to: Vec(0, height))
             .close()
     }
-
-    /// Leave the two jittered ends apart, with a short tail, as in a sketched oval.
-    static func handDrawnEllipse(_ props: GeoProps) -> PathBuilder {
-        let w = Swift.max(1, props.w), h = Swift.max(1, props.h)
-        let start = -PI / 4, end = start + PI2 - 0.28
-        let arc = CGMutablePath()
-        arc.addArc(center: .zero, radius: 1, startAngle: start, endAngle: end, clockwise: false)
-        var transform = CGAffineTransform(translationX: w / 2, y: h / 2).scaledBy(x: w / 2, y: h / 2)
-        guard let ellipse = arc.copy(using: &transform) else { return path(for: props) }
-        let result = PathBuilder(cgPath: ellipse)
-        let tail = Swift.min(props.strokeWidth, Swift.min(w, h) * 0.02)
-        return result.line(to: Vec(w / 2 + (w / 2 + tail) * cos(end), h / 2 + (h / 2 + tail) * sin(end)))
-    }
 }
 
 /// Hand-drawn shapes drawn the way a marker draws them (sd-drv): one thick stroke that bows a

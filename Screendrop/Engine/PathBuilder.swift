@@ -1,19 +1,12 @@
 import CoreGraphics
 import Foundation
 
-/// Builds a path once and renders it either solid or in old-apps's "draw" style - two jittered
-/// passes with rounded corners, which is what makes a rectangle look hand-drawn.
+/// Builds a path once and renders it solid or dashed. Hand-drawn shapes draw `MarkerPaths`
+/// instead (sd-drv).
 ///
 /// Ported from `packages/old-apps/src/lib/shapes/shared/PathBuilder.tsx`, keeping the parts that
-/// matter for geo shapes and arrows (move / line / cubic / arc, solid and draw rendering).
+/// matter for geo shapes and arrows (move / line / cubic / arc).
 final class PathBuilder {
-    struct CommandOpts {
-        /// How far from the original point a draw-style pass may wander.
-        var offset: Double?
-        /// How much roundness to apply to the corner at the end of this command.
-        var roundness: Double?
-    }
-
     enum Kind {
         case move
         case line
@@ -24,7 +17,6 @@ final class PathBuilder {
         var kind: Kind
         var point: Vec
         var isClose: Bool = false
-        var opts = CommandOpts()
     }
 
     private(set) var commands: [Command] = []
@@ -52,21 +44,21 @@ final class PathBuilder {
     }
 
     @discardableResult
-    func move(to p: Vec, opts: CommandOpts = CommandOpts()) -> PathBuilder {
-        commands.append(Command(kind: .move, point: p, opts: opts))
+    func move(to p: Vec) -> PathBuilder {
+        commands.append(Command(kind: .move, point: p))
         lastMoveToIdx = commands.count - 1
         return self
     }
 
     @discardableResult
-    func line(to p: Vec, opts: CommandOpts = CommandOpts()) -> PathBuilder {
-        commands.append(Command(kind: .line, point: p, opts: opts))
+    func line(to p: Vec) -> PathBuilder {
+        commands.append(Command(kind: .line, point: p))
         return self
     }
 
     @discardableResult
-    func cubic(to p: Vec, cp1: Vec, cp2: Vec, opts: CommandOpts = CommandOpts()) -> PathBuilder {
-        commands.append(Command(kind: .cubic(cp1: cp1, cp2: cp2), point: p, opts: opts))
+    func cubic(to p: Vec, cp1: Vec, cp2: Vec) -> PathBuilder {
+        commands.append(Command(kind: .cubic(cp1: cp1, cp2: cp2), point: p))
         return self
     }
 
@@ -83,20 +75,17 @@ final class PathBuilder {
     }
 
     @discardableResult
-    func circularArc(radius: Double, largeArc: Bool, sweep: Bool, to p: Vec, opts: CommandOpts = CommandOpts()) -> PathBuilder {
-        arc(rx: radius, ry: radius, largeArc: largeArc, sweep: sweep, xAxisRotation: 0, to: p, opts: opts)
+    func circularArc(radius: Double, largeArc: Bool, sweep: Bool, to p: Vec) -> PathBuilder {
+        arc(rx: radius, ry: radius, largeArc: largeArc, sweep: sweep, xAxisRotation: 0, to: p)
     }
 
     /// Approximate an SVG elliptical arc with up to four cubic segments, one per quadrant.
-    ///
-    /// old-apps does this because arc flags make arcs very sensitive to the offsets applied in draw
-    /// mode; cubics jitter predictably.
     @discardableResult
-    func arc(rx: Double, ry: Double, largeArc: Bool, sweep: Bool, xAxisRotation: Double, to p2: Vec, opts: CommandOpts = CommandOpts()) -> PathBuilder {
+    func arc(rx: Double, ry: Double, largeArc: Bool, sweep: Bool, xAxisRotation: Double, to p2: Vec) -> PathBuilder {
         guard let last = commands.last else { return self }
         let p1 = last.point
         if p1.x == p2.x && p1.y == p2.y { return self }
-        if rx == 0 || ry == 0 { return line(to: p2, opts: opts) }
+        if rx == 0 || ry == 0 { return line(to: p2) }
 
         let phi = xAxisRotation
         let sinPhi = sin(phi)
@@ -169,48 +158,12 @@ final class PathBuilder {
             let handleScale = (4.0 / 3.0) * tan((theta2 - theta1) / 4)
             let cp1 = Vec(start.x + handleScale * d1.x, start.y + handleScale * d1.y)
             let cp2 = Vec(end.x - handleScale * d2.x, end.y - handleScale * d2.y)
-            cubic(to: end, cp1: cp1, cp2: cp2, opts: i == 0 ? opts : CommandOpts())
+            cubic(to: end, cp1: cp1, cp2: cp2)
         }
         return self
     }
 
-    // MARK: - Command info
-
-    private struct CommandInfo {
-        var tangentStart: Vec
-        var tangentEnd: Vec
-        var length: Double
-    }
-
-    /// The tangents and lengths that draw-style rendering needs to size its corners.
-    private func commandInfo() -> [CommandInfo?] {
-        var info = [CommandInfo?](repeating: nil, count: commands.count)
-        guard commands.count > 1 else { return info }
-        for i in 1..<commands.count {
-            let previous = commands[i - 1].point
-            let current = commands[i]
-            if case .move = current.kind { continue }
-
-            let tangentStart: Vec
-            let tangentEnd: Vec
-            let length: Double
-            switch current.kind {
-            case .move:
-                continue
-            case .line:
-                let t = Vec.sub(previous, current.point).uni
-                tangentStart = t
-                tangentEnd = t
-                length = Vec.dist(previous, current.point)
-            case let .cubic(cp1, cp2):
-                tangentStart = Vec.sub(cp1, previous).uni
-                tangentEnd = Vec.sub(cp2, current.point).uni
-                length = Self.cubicLength(previous, cp1, cp2, current.point)
-            }
-            info[i] = CommandInfo(tangentStart: tangentStart, tangentEnd: tangentEnd, length: length)
-        }
-        return info
-    }
+    // MARK: - Length
 
     private static func cubicLength(_ p0: Vec, _ p1: Vec, _ p2: Vec, _ p3: Vec, samples: Int = 16) -> Double {
         var length = 0.0
@@ -319,201 +272,6 @@ final class PathBuilder {
             segments.append(DashedSegment(path: path, dashes: props.dashes, phase: props.phase))
         }
         return segments
-    }
-
-    struct DrawOptions {
-        var strokeWidth: Double
-        var randomSeed: String
-        var offset: Double?
-        var roundness: Double?
-        var passes: Int = 2
-    }
-
-    private struct DrawCommand {
-        var command: Command
-        var offsetAmount: Double
-        var roundnessBefore: Double
-        var roundnessAfter: Double
-        var tangentToPrev: Vec?
-        var tangentToNext: Vec?
-    }
-
-    /// Precompute, per command, how far a pass may jitter it and how round its corner may get.
-    /// Roundness falls off as the corner angle approaches a straight line, and both are clamped so
-    /// they can't overrun the shortest adjacent segment.
-    private func drawCommands(_ opts: DrawOptions) -> [DrawCommand] {
-        let defaultOffset = opts.offset ?? opts.strokeWidth / 3
-        let defaultRoundness = opts.roundness ?? opts.strokeWidth * 2
-        let info = commandInfo()
-
-        var result: [DrawCommand] = []
-        var lastMoveCommandIdx: Int?
-        var closeRoundness: [Int: Double] = [:]
-
-        for i in 0..<commands.count {
-            let command = commands[i]
-            let offset = command.opts.offset ?? defaultOffset
-            let roundness = command.opts.roundness ?? defaultRoundness
-
-            if case .move = command.kind { lastMoveCommandIdx = i }
-
-            let nextIdx: Int?
-            if command.isClose {
-                nextIdx = lastMoveCommandIdx.map { $0 + 1 }
-            } else if i + 1 < commands.count, !isMove(commands[i + 1]) {
-                nextIdx = i + 1
-            } else {
-                nextIdx = nil
-            }
-
-            let nextInfo: CommandInfo? = {
-                guard let nextIdx, nextIdx < commands.count, !isMove(commands[nextIdx]) else { return nil }
-                return info[nextIdx]
-            }()
-
-            let currentSupportsRoundness = supportsRoundness(command)
-            let nextSupportsRoundness = nextIdx.map { $0 < commands.count && supportsRoundness(commands[$0]) } ?? false
-
-            let currentInfo = info[i]
-            let tangentToPrev = currentInfo?.tangentEnd
-            let tangentToNext = nextInfo?.tangentStart
-
-            var roundnessClampedForAngle = 0.0
-            if currentSupportsRoundness, nextSupportsRoundness,
-               let tp = tangentToPrev, let tn = tangentToNext,
-               tp.len2 > 0.01, tn.len2 > 0.01 {
-                roundnessClampedForAngle = modulate(
-                    abs(Vec.angleBetween(tp, tn)),
-                    (HALF_PI, PI),
-                    (roundness, 0),
-                    true
-                )
-            }
-
-            let shortestDistance = Swift.min(currentInfo?.length ?? .infinity, nextInfo?.length ?? .infinity)
-            let offsetLimit = shortestDistance - roundnessClampedForAngle * 2
-            let offsetAmount = clamp(offset, 0, Swift.max(0, offsetLimit / 4))
-
-            let roundnessBefore = Swift.min(roundnessClampedForAngle, (currentInfo?.length ?? .infinity) / 4)
-            let roundnessAfter = Swift.min(roundnessClampedForAngle, (nextInfo?.length ?? .infinity) / 4)
-
-            result.append(DrawCommand(
-                command: command,
-                offsetAmount: offsetAmount,
-                roundnessBefore: roundnessBefore,
-                roundnessAfter: roundnessAfter,
-                tangentToPrev: tangentToPrev,
-                tangentToNext: tangentToNext
-            ))
-
-            // A closed path's corner at the move point is the corner the closing segment makes,
-            // so hand the move command that corner's roundness.
-            if command.isClose, let moveIdx = lastMoveCommandIdx {
-                closeRoundness[moveIdx] = roundnessAfter
-            }
-        }
-
-        for (idx, roundness) in closeRoundness where idx < result.count {
-            result[idx].roundnessAfter = roundness
-        }
-        return result
-    }
-
-    private func isMove(_ command: Command) -> Bool {
-        if case .move = command.kind { return true }
-        return false
-    }
-
-    private func supportsRoundness(_ command: Command) -> Bool {
-        switch command.kind {
-        case .move, .line: return true
-        case .cubic: return false
-        }
-    }
-
-    /// The draw-style path: `passes` jittered traversals of the same commands, with corners cut
-    /// into quadratics so the strokes look drawn rather than plotted.
-    func drawPath(_ opts: DrawOptions) -> CGPath {
-        let path = CGMutablePath()
-        forEachDrawSegment(opts) { segment in
-            switch segment {
-            case let .move(p):
-                path.move(to: p.cgPoint)
-            case let .line(p):
-                path.addLine(to: p.cgPoint)
-            case let .quad(control, p):
-                path.addQuadCurve(to: p.cgPoint, control: control.cgPoint)
-            case let .cubic(cp1, cp2, p):
-                path.addCurve(to: p.cgPoint, control1: cp1.cgPoint, control2: cp2.cgPoint)
-            }
-        }
-        return path
-    }
-
-    private enum DrawSegment {
-        case move(Vec)
-        case line(Vec)
-        case quad(Vec, Vec)
-        case cubic(Vec, Vec, Vec)
-    }
-
-    private func forEachDrawSegment(_ opts: DrawOptions, _ emit: (DrawSegment) -> Void) {
-        let draws = drawCommands(opts)
-        guard !draws.isEmpty else { return }
-
-        for pass in 0..<opts.passes {
-            let random = makeRng(opts.randomSeed + String(pass))
-            var lastMoveToOffset = Vec(0, 0)
-
-            for draw in draws {
-                let command = draw.command
-                var offset: Vec
-                if command.isClose {
-                    // The closing point must land exactly where the move point did.
-                    offset = lastMoveToOffset
-                } else {
-                    let direction = Vec(random(), random()).uni
-                    let magnitude = abs(random()).squareRoot() * draw.offsetAmount
-                    offset = Vec.mul(direction, magnitude)
-                }
-
-                if isMove(command) { lastMoveToOffset = offset }
-
-                let offsetPoint = Vec.add(command.point, offset)
-
-                // Pull the segment's ends back along their tangents to leave room for the corner.
-                let endPoint = (draw.tangentToNext.map { $0 } != nil && draw.roundnessAfter > 0)
-                    ? Vec.add(Vec.mul(draw.tangentToNext!, -draw.roundnessAfter), offsetPoint)
-                    : offsetPoint
-                let startPoint = (draw.tangentToPrev.map { $0 } != nil && draw.roundnessBefore > 0)
-                    ? Vec.add(Vec.mul(draw.tangentToPrev!, draw.roundnessBefore), offsetPoint)
-                    : offsetPoint
-
-                let hasCorner = !Vec.equals(endPoint, offsetPoint) && !Vec.equals(startPoint, offsetPoint)
-
-                switch command.kind {
-                case .move:
-                    emit(.move(endPoint))
-                case .line:
-                    if hasCorner {
-                        // Straight to where the corner begins, then round through the true corner.
-                        emit(.line(startPoint))
-                        emit(.quad(offsetPoint, endPoint))
-                    } else {
-                        emit(.line(endPoint))
-                    }
-                case let .cubic(cp1, cp2):
-                    let offsetCp1 = Vec.add(cp1, offset)
-                    let offsetCp2 = Vec.add(cp2, offset)
-                    if hasCorner {
-                        emit(.cubic(offsetCp1, offsetCp2, offsetPoint))
-                        emit(.quad(offsetPoint, endPoint))
-                    } else {
-                        emit(.cubic(offsetCp1, offsetCp2, endPoint))
-                    }
-                }
-            }
-        }
     }
 
 }
