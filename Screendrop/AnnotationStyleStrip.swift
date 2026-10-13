@@ -114,7 +114,7 @@ struct AnnotationStyleStrip: View {
         .accessibilityValue(appliedPreset?.name ?? "None")
         .closesOnEditorEscape($isPickerPresented)
         .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
-            ScrollView {
+            InspectorGridScroll {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
                     ForEach(presetStore.presets) { preset in
                         tile(for: preset)
@@ -122,7 +122,6 @@ struct AnnotationStyleStrip: View {
                     addTile
                 }
             }
-            .frame(maxHeight: 320)
             .padding(14)
             .frame(width: 320)
             .background(Palette.panel)
