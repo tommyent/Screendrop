@@ -88,7 +88,7 @@ Editing is non-destructive. The untouched image and an editable sidecar are kept
 - **Measuring:** hold an arrow key over the image to measure the width or height under the pointer; click to stamp that measurement onto the screenshot. **Tab** copies the colour under the pointer.
 - **Smart Redaction** finds sensitive text and blurs or pixelates it, and the strength stays editable.
 - **Crop** at full resolution with freeform and fixed ratios; annotations follow the crop.
-- **Backgrounds:** colours, gradients, your own images or wallpaper packs, padding, corner radius, shadow, border, watermark, perspective and progressive blur, saved as presets you can share as `.screendroppreset` files.
+- **Backgrounds:** colours, gradients, your own images, padding, corner radius, shadow, border, watermark, perspective and progressive blur, saved as presets you can share as `.screendroppreset` files.
 
 ### Screen recording and Studio
 

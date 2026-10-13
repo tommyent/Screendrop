@@ -267,8 +267,6 @@ struct InspectorBackgroundFillPicker: View {
     private let swatchColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 8)
     private static let maxVisibleRecentWallpapers = 4
     private let recentWallpaperColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 5)
-    private let wallpaperColumns = Array(repeating: GridItem(.flexible(), spacing: 7), count: 3)
-    @State private var selectedWallpaperSourceID = AnnotationWallpaperSource.recentID
     @State private var selectedFillLibrary = AnnotationBackgroundFillLibrary.color
 
     var body: some View {
@@ -378,60 +376,13 @@ struct InspectorBackgroundFillPicker: View {
         }
     }
 
-    @ViewBuilder
     private var wallpaperGroup: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            InspectorSegmented(
-                options: wallpaperSources.map(\.id),
-                isSelected: { $0 == selectedWallpaperSourceID },
-                onTap: { id in
-                    onEditorAction()
-                    withAnimation(.snappy(duration: 0.16)) {
-                        selectedWallpaperSourceID = id
-                    }
-                },
-                label: { id in
-                    Text(title(forSourceID: id))
-                        .font(.inspectorSegment)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-            )
-
-            if selectedWallpaperSourceID == AnnotationWallpaperSource.recentID {
-                recentWallpaperGrid
-            } else if let pack = selectedPack {
-                let wallpapers = wallpaperStore.wallpapers(for: pack)
-                if wallpapers.isEmpty {
-                    AnnotationWallpaperPackInstallView(
-                        pack: pack,
-                        isInstalling: wallpaperStore.isInstalling(pack),
-                        errorMessage: wallpaperStore.errorMessage(for: pack)
-                    ) {
-                        Task { await wallpaperStore.installPack(pack) }
-                    }
-                } else {
-                    wallpaperGrid(wallpapers)
-                }
-
-                AnnotationWallpaperCreditView(pack: pack)
+            recentWallpaperGrid
+            UnsplashWallpaperSearchView(search: UnsplashWallpaperSearch.shared) { url in
+                selectWallpaper(AnnotationCustomWallpaper(url: url))
             }
         }
-    }
-
-    private var wallpaperSources: [AnnotationWallpaperSourceOption] {
-        [AnnotationWallpaperSourceOption.recent]
-        + AnnotationWallpaperPack.builtIn.map { pack in
-            AnnotationWallpaperSourceOption(id: pack.id, title: pack.title)
-        }
-    }
-
-    private func title(forSourceID id: String) -> String {
-        wallpaperSources.first { $0.id == id }?.title ?? id
-    }
-
-    private var selectedPack: AnnotationWallpaperPack? {
-        AnnotationWallpaperPack.builtIn.first { $0.id == selectedWallpaperSourceID }
     }
 
     private var visibleRecentWallpapers: [AnnotationCustomWallpaper] {
@@ -461,13 +412,6 @@ struct InspectorBackgroundFillPicker: View {
                 onPickWallpaper()
             }
                 .help("Choose wallpaper")
-        }
-    }
-
-    @ViewBuilder
-    private func wallpaperGrid(_ wallpapers: [AnnotationCustomWallpaper]) -> some View {
-        LazyVGrid(columns: wallpaperColumns, spacing: 7) {
-            wallpaperTiles(wallpapers)
         }
     }
 
@@ -598,20 +542,6 @@ struct AnnotationWatermarkInspector: View {
 
 }
 
-private enum AnnotationWallpaperSource {
-    static let recentID = "recent"
-}
-
-private struct AnnotationWallpaperSourceOption: Identifiable, Hashable {
-    let id: String
-    let title: String
-
-    static let recent = AnnotationWallpaperSourceOption(
-        id: AnnotationWallpaperSource.recentID,
-        title: "Recent"
-    )
-}
-
 private struct AnnotationAddWallpaperTile: View {
     let action: () -> Void
 
@@ -630,86 +560,6 @@ private struct AnnotationAddWallpaperTile: View {
                 .contentShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// A tiny, unobtrusive credit linking to the wallpaper pack's author.
-private struct AnnotationWallpaperCreditView: View {
-    let pack: AnnotationWallpaperPack
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Link(destination: pack.authorURL) {
-            HStack(spacing: 3) {
-                Text("Wallpapers by \(pack.authorName)")
-                    .underline(isHovering)
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 8, weight: .semibold))
-            }
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .help("Open \(pack.authorName) on X")
-        .onHover { isHovering = $0 }
-        .padding(.top, 2)
-    }
-}
-
-private struct AnnotationWallpaperPackInstallView: View {
-    let pack: AnnotationWallpaperPack
-    let isInstalling: Bool
-    let errorMessage: String?
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button(action: action) {
-                HStack(spacing: 8) {
-                    if isInstalling {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.down.circle")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.accentColor)
-                    }
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Download \(pack.title)")
-                            .font(.inspectorValue)
-                            .foregroundStyle(.primary)
-                        Text(pack.subtitle)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .inspectorField(height: 40)
-                .overlay {
-                    if isHovering && !isInstalling {
-                        RoundedRectangle(cornerRadius: InspectorMetrics.fieldRadius, style: .continuous)
-                            .fill(Color.primary.opacity(0.04))
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(isInstalling)
-            .onHover { isHovering = $0 }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
 
