@@ -40,7 +40,7 @@ struct AnnotationStylePillButton: View {
                     TaperedSlider(
                         title: "Text size",
                         value: model.selectedTextFontSize,
-                        range: AnnotationTextMetrics.minimumFontSize...96,
+                        stops: AnnotationSizeStops.textSizes,
                         onEditing: model.setInspectorEditing
                     ) { model.selectedTextFontSize = $0 }
 
@@ -60,7 +60,7 @@ struct AnnotationStylePillButton: View {
                     TaperedSlider(
                         title: "Line width",
                         value: model.strokeWidth,
-                        range: 1...16,
+                        stops: AnnotationSizeStops.lineWidths,
                         onEditing: model.setInspectorEditing
                     ) { model.setStrokeWidth($0) }
                 }
@@ -72,11 +72,11 @@ struct AnnotationStylePillButton: View {
 }
 
 /// Shottr's size slider: a wedge that widens to the right, under a round
-/// thumb. Whole numbers only.
+/// thumb. Drags and arrow keys use the same discrete size stops.
 private struct TaperedSlider: View {
     let title: String
     let value: CGFloat
-    let range: ClosedRange<CGFloat>
+    let stops: [CGFloat]
     /// One undo step per drag.
     let onEditing: (Bool) -> Void
     let onChange: (CGFloat) -> Void
@@ -89,8 +89,9 @@ private struct TaperedSlider: View {
     private let thumb: CGFloat = 16
 
     var body: some View {
-        let span = range.upperBound - range.lowerBound
-        let fraction = min(max((value - range.lowerBound) / span, 0), 1)
+        let lower = stops.first ?? value
+        let span = (stops.last ?? value) - lower
+        let fraction = span > 0 ? min(max((value - lower) / span, 0), 1) : 0
         ZStack(alignment: .leading) {
             Path { path in
                 path.move(to: CGPoint(x: thumb / 2, y: height / 2 - 1))
@@ -122,7 +123,7 @@ private struct TaperedSlider: View {
                         onEditing(true)
                     }
                     let f = min(max((drag.location.x - thumb / 2) / (width - thumb), 0), 1)
-                    let next = (range.lowerBound + f * span).rounded()
+                    let next = AnnotationSizeStops.nearest(to: lower + f * span, in: stops)
                     if next != value { onChange(next) }
                 }
                 .onEnded { _ in endDrag() }
@@ -153,8 +154,8 @@ private struct TaperedSlider: View {
         }
     }
 
-    private func step(_ delta: CGFloat) {
-        let next = min(max(value + delta, range.lowerBound), range.upperBound)
+    private func step(_ delta: Int) {
+        let next = AnnotationSizeStops.step(from: value, by: delta, in: stops)
         if next != value { onChange(next) }
     }
 
