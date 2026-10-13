@@ -25,6 +25,8 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     let isCropping: () -> Bool
     /// Tab: copies the colour under the pointer; false when it isn't over the image.
     let onCopyColor: () -> Bool
+    /// Cmd-V: adds a pasted picture; false without one, so the key passes on (sd-eec).
+    let onPaste: () -> Bool
     /// A held arrow key measures (an axis); its release, or the window
     /// losing focus, ends that (nil). Returns whether the key was used.
     let onMeasure: (PixelMeasureAxis?) -> Bool
@@ -61,6 +63,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
         view.onCancelCrop = onCancelCrop
         view.isCropping = isCropping
         view.onCopyColor = onCopyColor
+        view.onPaste = onPaste
         view.onMeasure = onMeasure
         view.onNudge = onNudge
         view.onEscape = onEscape
@@ -85,6 +88,7 @@ final class AnnotationKeyCommandHandlerView: NSView {
     var onCancelCrop: (() -> Void)?
     var isCropping: (() -> Bool)?
     var onCopyColor: (() -> Bool)?
+    var onPaste: (() -> Bool)?
     var onMeasure: ((PixelMeasureAxis?) -> Bool)?
     var onNudge: ((CGVector) -> Bool)?
     var onEscape: (() -> Void)?
@@ -196,6 +200,10 @@ final class AnnotationKeyCommandHandlerView: NSView {
 
             if Self.isCopy(event) {
                 self.onCopy?()
+                return nil
+            }
+
+            if Self.isPaste(event), self.onPaste?() == true {
                 return nil
             }
 
@@ -334,6 +342,13 @@ final class AnnotationKeyCommandHandlerView: NSView {
         event.modifierFlags.contains(.command)
             && event.modifierFlags.intersection([.shift, .option, .control]).isEmpty
             && event.charactersIgnoringModifiers?.lowercased() == "c"
+    }
+
+    /// Reached only when no text is being edited, like Cmd-C, so text still pastes into text.
+    private static func isPaste(_ event: NSEvent) -> Bool {
+        event.modifierFlags.contains(.command)
+            && event.modifierFlags.intersection([.shift, .option, .control]).isEmpty
+            && event.charactersIgnoringModifiers?.lowercased() == "v"
     }
 
     private static func isUndo(_ event: NSEvent) -> Bool {

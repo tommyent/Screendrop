@@ -360,7 +360,10 @@ struct AnnotationEditorInspector: View {
             // collapsing to nothing and says what fills it.
             InspectorHint(model.isColorStyleAvailable
                 ? "Colour and size are in the dock's colour pill"
-                : "Pick a tool or select an annotation")
+                : model.selectionCount > 0
+                    // A pasted picture or a highlight has nothing to style.
+                    ? "No style options for this selection"
+                    : "Pick a tool or select an annotation")
                 .frame(minHeight: InspectorMetrics.controlHeight, alignment: .leading)
         }
     }

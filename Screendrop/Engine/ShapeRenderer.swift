@@ -22,6 +22,8 @@ struct RenderElement {
         /// A numbered callout: filled disc, outline, and centred digits.
         case numbered(NumberedProps)
         case magnifier(MagnifierProps)
+        /// A pasted picture, drawn into its box from the target's images.
+        case image(ImageProps)
         /// Glyph outlines, already positioned in the shape's local space.
         case glyphs(CGPath)
     }
@@ -64,6 +66,8 @@ enum AnnoShapeRenderer {
             [RenderElement(content: .numbered(props))]
         case let .magnifier(props):
             props.isValid ? [RenderElement(content: .magnifier(props))] : []
+        case let .image(props):
+            [RenderElement(content: .image(props))]
         }
     }
 

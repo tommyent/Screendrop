@@ -21,6 +21,7 @@ enum AnnotationRenderer {
         sourceURL: URL,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings(),
         destinationURL: URL,
         contentType: UTType
@@ -30,6 +31,7 @@ enum AnnotationRenderer {
                 sourceURL: sourceURL,
                 shapes: shapes,
                 bindings: bindings,
+                images: images,
                 backgroundSettings: backgroundSettings,
                 destinationURL: destinationURL,
                 contentType: contentType
@@ -41,6 +43,7 @@ enum AnnotationRenderer {
         sourceURL: URL,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings()
     ) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
@@ -48,6 +51,7 @@ enum AnnotationRenderer {
                 sourceURL: sourceURL,
                 shapes: shapes,
                 bindings: bindings,
+                images: images,
                 backgroundSettings: backgroundSettings
             )
         }.value
@@ -57,6 +61,7 @@ enum AnnotationRenderer {
         sourceURL: URL,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings()
     ) throws -> URL {
         let destinationURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -65,6 +70,7 @@ enum AnnotationRenderer {
             sourceURL: sourceURL,
             shapes: shapes,
             bindings: bindings,
+            images: images,
             backgroundSettings: backgroundSettings,
             destinationURL: destinationURL,
             contentType: .png
@@ -76,6 +82,7 @@ enum AnnotationRenderer {
         sourceURL: URL,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         backgroundSettings: AnnotationBackgroundSettings = AnnotationBackgroundSettings(),
         destinationURL: URL,
         contentType: UTType
@@ -125,6 +132,7 @@ enum AnnotationRenderer {
                         drawAnnotations(
                             shapes,
                             bindings: bindings,
+                            images: images,
                             in: imageRect,
                             pageSize: CGSize(width: sourceImage.width, height: sourceImage.height),
                             canvasSize: layout.canvasSize,
@@ -143,7 +151,8 @@ enum AnnotationRenderer {
                     }
                 )
             } else {
-                renderedImage = try renderAnnotatedImage(sourceImage, shapes: shapes, bindings: bindings, colorSpace: colorSpace)
+                renderedImage = try renderAnnotatedImage(sourceImage, shapes: shapes, bindings: bindings,
+                                                      images: images, colorSpace: colorSpace)
             }
             // A grown canvas stays opaque, as Shottr's does, even under a
             // border with rounded corners.
@@ -216,6 +225,7 @@ enum AnnotationRenderer {
         _ cgImage: CGImage,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         colorSpace: CGColorSpace
     ) throws -> CGImage {
         let width = cgImage.width
@@ -238,6 +248,7 @@ enum AnnotationRenderer {
         drawAnnotations(
             shapes,
             bindings: bindings,
+            images: images,
             in: fullRect,
             pageSize: fullRect.size,
             canvasSize: fullRect.size,
@@ -261,6 +272,7 @@ enum AnnotationRenderer {
     nonisolated static func drawAnnotations(
         _ shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         in imageRect: CGRect,
         pageSize: CGSize,
         canvasSize: CGSize,
@@ -312,7 +324,8 @@ enum AnnotationRenderer {
             spotlightClip: highlightClipPath,
             isFlippedContext: false,
             sampleScale: scale,
-            fullResolutionSource: sourceImage
+            fullResolutionSource: sourceImage,
+            images: images
         )
 
         _ = canvasSize

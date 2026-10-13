@@ -47,23 +47,9 @@ enum ScreenshotImageLoader {
     /// recognition, compression) decodes through here so they all agree.
     /// Untagged and orientation-1 images take the plain decode, as before.
     nonisolated static func uprightImage(at url: URL) -> CGImage? {
-        let options = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, options) else {
-            return nil
-        }
-        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
-              let orientation = properties[kCGImagePropertyOrientation] as? Int, orientation != 1,
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int else {
-            return CGImageSourceCreateImageAtIndex(source, 0, options)
-        }
-
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-            kCGImageSourceShouldCache: false,
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(width, height)
-        ] as CFDictionary)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { return nil }
+        return UprightImageDecoder.decode(source)
     }
 
     /// The image's EXIF orientation, 1 when it has none.

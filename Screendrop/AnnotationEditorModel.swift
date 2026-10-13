@@ -288,6 +288,8 @@ final class AnnotationEditorModel {
         previewCGImage = previewImage?.cgImage(forProposedRect: nil, context: nil, hints: nil)
 
         engine.viewport = AnnoViewport(imageFrame: .zero, imageSize: imageSize)
+        // Pasted pictures' pixels, before the shapes that show them (sd-eec).
+        engine.imageAssets = (document?.images ?? [:]).compactMapValues(AnnoImageAsset.init(data:))
         var snapshot = AnnoDocument.Snapshot(shapes: document?.shapes ?? [], bindings: document?.bindings ?? [])
         // Before version 3, shapes were placed on the raw pixel grid, while the page is now the
         // upright image. Move them so a mask still covers what it covered in the saved export.
@@ -346,7 +348,7 @@ final class AnnotationEditorModel {
         historyIndex = 0
         inspectorEditingDepth = 0
         croppedInSession = false
-        engine.replaceDocument(shapes: [])
+        engine.release()
         removeOwnedCropFiles()
         RedactionImageProcessor.removeAllCachedPreviewImages()
     }
@@ -404,13 +406,15 @@ final class AnnotationEditorModel {
                 sourceURL: baseURL,
                 shapes: shapes,
                 bindings: bindings,
+                images: engine.images,
                 backgroundSettings: backgroundSettings
             )
             defer { try? FileManager.default.removeItem(at: annotatedURL) }
             let document = AnnotationDocument(
                 shapes: shapes,
                 bindings: bindings,
-                background: backgroundSettings
+                background: backgroundSettings,
+                images: AnnotationDocument.images(for: shapes, from: engine.imageAssets)
             )
             resultURL = try ScreenshotHistoryStore.shared.commitAnnotations(
                 displayURL: sourceURL,
@@ -582,6 +586,17 @@ final class AnnotationEditorModel {
 
     // MARK: - Tools and style
 
+    /// Cmd-V with a picture on the pasteboard adds it as an annotation, selected (sd-eec). False
+    /// without one, or with no screenshot to put it on, so the key passes on.
+    func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard !isCropping, imageSize != .zero,
+              let data = AnnoImageAsset.pasteboardData(pasteboard),
+              let asset = AnnoImageAsset(data: data) else { return false }
+        commitTextEditing()
+        engine.insertImage(asset)
+        return true
+    }
+
     func selectTool(_ tool: AnnotationTool) {
         if tool == .filledRectangle { geoFill = .solid; engine.currentGeoFill = .solid }
         selectedTool = tool.paletteTool
@@ -639,7 +654,7 @@ final class AnnotationEditorModel {
             case var .text(p): p.swatch = swatch; shape.kind = .text(p)
             case var .numbered(p): p.swatch = swatch; shape.kind = .numbered(p)
             case var .magnifier(p): p.swatch = swatch; shape.kind = .magnifier(p)
-            case .redaction, .highlight: break
+            case .redaction, .highlight, .image: break
             }
         }
     }
@@ -1080,6 +1095,9 @@ extension AnnotationEditorModel {
         case var .highlight(p):
             p.w *= sx; p.h *= sy
             shape.kind = .highlight(p)
+        case var .image(p):
+            p.w *= sx; p.h *= sy
+            shape.kind = .image(p)
         case var .numbered(p):
             p.diameter *= uniform
             shape.kind = .numbered(p)

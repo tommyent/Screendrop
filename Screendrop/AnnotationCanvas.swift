@@ -627,6 +627,7 @@ struct AnnotationCanvas: View {
             source: source,
             shapes: key.shapes,
             bindings: key.bindings,
+            images: model.engine.images,
             settings: key.settings,
             contentPixelWidth: key.contentPixelWidth,
             colorSpace: colorSpace

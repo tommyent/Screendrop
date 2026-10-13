@@ -43,6 +43,8 @@ enum AnnoShapeDrawing {
         /// Decoded base pixels, never the composed canvas or another annotation.
         var fullResolutionSource: CGImage? = nil
         var magnifierPreviewCache: AnnoMagnifierPreviewCache? = nil
+        /// Pasted pictures' decoded pixels, by asset ID (sd-eec).
+        var images: [String: CGImage] = [:]
 
         var pageRect: CGRect { CGRect(origin: .zero, size: pageSize) }
     }
@@ -114,11 +116,33 @@ enum AnnoShapeDrawing {
                 drawNumbered(props, in: context)
             case let .magnifier(props):
                 drawMagnifier(props, shape: shape, source: magnifierSource, in: context, pageSize: target.pageSize)
+            case let .image(props):
+                drawImage(props, image: target.images[props.assetID], in: context)
             case .redaction, .spotlight:
                 // Handled by their own passes, which need the screenshot underneath.
                 break
             }
         }
+        context.restoreGState()
+    }
+
+    // MARK: - Pasted image
+
+    /// The picture fills its box. Page space is y-down, so it's flipped upright there, as the
+    /// magnifier draws its source; that holds for the flipped canvas and the export alike.
+    private static func drawImage(_ props: ImageProps, image: CGImage?, in context: CGContext) {
+        let rect = CGRect(x: 0, y: 0, width: props.w, height: props.h)
+        guard let image else {
+            // Pixels missing from the sidecar: a grey box, so the shape can still be seen and removed.
+            context.setFillColor(CGColor(gray: 0.5, alpha: 0.5))
+            context.fill(rect)
+            return
+        }
+        context.saveGState()
+        context.translateBy(x: 0, y: props.h)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = .high
+        context.draw(image, in: rect)
         context.restoreGState()
     }
 

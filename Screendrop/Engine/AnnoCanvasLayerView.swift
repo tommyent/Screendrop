@@ -182,7 +182,8 @@ final class AnnoCanvasNSView: NSView {
             // The preview can be downscaled from the full-resolution image the export samples.
             sampleScale: sourceImage.map { CGFloat($0.width) / imageSize.width } ?? 1,
             fullResolutionSource: fullResolutionSource,
-            magnifierPreviewCache: magnifierCache
+            magnifierPreviewCache: magnifierCache,
+            images: editor.images
         )
 
         // The shape being typed into is drawn by its text overlay instead, so the two don't double

@@ -122,6 +122,12 @@ struct AnnotationEditorWindow: View {
                 onCancelCrop: { withAnimation(.snappy(duration: 0.2)) { model.cancelCrop() } },
                 isCropping: { model.isCropping },
                 onCopyColor: probe.copyHovered,
+                onPaste: {
+                    guard model.pasteImage() else { return false }
+                    probe.isPicking = false
+                    probe.isMeasuringTool = false
+                    return true
+                },
                 onMeasure: probe.measure,
                 // Points of the image, as the ruler measures them.
                 onNudge: { step in
@@ -380,6 +386,7 @@ struct AnnotationEditorWindow: View {
                         sourceURL: baseURL,
                         shapes: model.shapes,
                         bindings: model.bindings,
+                        images: model.engine.images,
                         backgroundSettings: model.backgroundSettings,
                         destinationURL: destinationURL,
                         contentType: ScreenshotFileActions.exportContentType

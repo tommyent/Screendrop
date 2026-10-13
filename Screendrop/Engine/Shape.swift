@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// The shape model, ported from the drawing-app's `Model/Shape.swift` and widened to cover the
 /// tools Screendrop has that a whiteboard doesn't (redactions, the spotlight highlight, numbered
@@ -167,6 +169,97 @@ struct NumberedProps: Codable, Equatable {
     var swatch: AnnotationSwatch = .red
 }
 
+/// A pasted picture (sd-eec), drawn into a `w` x `h` box. Its pixels live in the editor's
+/// `imageAssets` and the sidecar's `images` under `assetID`, so shapes and undo history carry
+/// only this reference, never the megabytes.
+struct ImageProps: Codable, Equatable {
+    var assetID: String
+    var w: Double
+    var h: Double
+}
+
+/// One upright decode for every image the app reads: the EXIF orientation applied, at native
+/// resolution. Untagged and orientation-1 images take the plain decode. Screenshots
+/// (`ScreenshotImageLoader.uprightImage`) and pasted pictures both come through here.
+nonisolated enum UprightImageDecoder {
+    /// `decodeNow` decodes and caches the pixels at once, for an image drawn every frame; without
+    /// it a plain decode stays lazy and uncached, which suits a one-off read of a big screenshot.
+    static func decode(_ source: CGImageSource, decodeNow: Bool = false) -> CGImage? {
+        let options = [kCGImageSourceShouldCache: decodeNow,
+                       kCGImageSourceShouldCacheImmediately: decodeNow] as CFDictionary
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
+              let orientation = properties[kCGImagePropertyOrientation] as? Int, orientation != 1,
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else {
+            return CGImageSourceCreateImageAtIndex(source, 0, options)
+        }
+        // A thumbnail at full size is how ImageIO applies the orientation transform.
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height)
+        ] as CFDictionary)
+    }
+}
+
+/// A pasted picture's pixels: the encoded bytes the sidecar keeps, and the decoded image every
+/// draw uses, made once.
+struct AnnoImageAsset: @unchecked Sendable {
+    let data: Data
+    let image: CGImage
+
+    /// Decoded upright, its EXIF orientation applied, and at once. Nil for bytes ImageIO can't
+    /// decode.
+    init?(data: Data) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = UprightImageDecoder.decode(source, decodeNow: true)
+        else { return nil }
+        self.data = data
+        self.image = image
+    }
+
+    /// A picture on the pasteboard, as bytes worth keeping: a copied image file's own bytes, then
+    /// PNG or JPEG as copied, then any other image (TIFF, PDF) re-encoded as PNG. Nil without one,
+    /// such as for text.
+    static func pasteboardData(_ pasteboard: NSPasteboard) -> Data? {
+        let files = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true,
+                      .urlReadingContentsConformToTypes: [UTType.image.identifier]]
+        ) as? [URL]
+        // Before the image types: Finder puts a copied file's icon there too.
+        if let file = files?.first, let data = try? Data(contentsOf: file) {
+            return reencodedIfNeeded(data)
+        }
+        for type in [NSPasteboard.PasteboardType.png, NSPasteboard.PasteboardType(UTType.jpeg.identifier)] {
+            if let data = pasteboard.data(forType: type) { return data }
+        }
+        // TIFF through ImageIO, so an orientation tag turns it upright before it's re-encoded.
+        if let tiff = pasteboard.data(forType: .tiff) { return reencodedIfNeeded(tiff) }
+        guard let image = NSImage(pasteboard: pasteboard),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        return png(cgImage)
+    }
+
+    /// PNG and JPEG are kept as they are, orientation tag and all, and turned upright when
+    /// decoded. Anything else ImageIO reads becomes PNG, upright, since PNG keeps no tag.
+    private static func reencodedIfNeeded(_ data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let type = CGImageSourceGetType(source) as String? else { return nil }
+        if type == UTType.png.identifier || type == UTType.jpeg.identifier { return data }
+        return UprightImageDecoder.decode(source).flatMap(png)
+    }
+
+    private static func png(_ image: CGImage) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
+    }
+}
+
 // MARK: - Shape
 
 enum AnnoShapeKind: Codable, Equatable {
@@ -178,6 +271,7 @@ enum AnnoShapeKind: Codable, Equatable {
     case highlight(HighlightProps)
     case numbered(NumberedProps)
     case magnifier(MagnifierProps)
+    case image(ImageProps)
 }
 
 struct AnnoShape: Codable, Equatable, Identifiable {
@@ -216,7 +310,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .draw(p): p.strokeWidth
         case let .arrow(p): p.strokeWidth
         case let .magnifier(p): p.strokeWidth
-        case .text, .redaction, .highlight, .numbered: 0
+        case .text, .redaction, .highlight, .numbered, .image: 0
         }
     }
 
@@ -237,6 +331,8 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case .highlight: .highlight
         case .numbered: .numberedCircle
         case .magnifier: .magnifier
+        // No tool makes it; Select is the one that handles it.
+        case .image: .select
         }
     }
 
@@ -248,7 +344,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .text(p): p.swatch
         case let .numbered(p): p.swatch
         case let .magnifier(p): p.swatch
-        case .redaction, .highlight: nil
+        case .redaction, .highlight, .image: nil
         }
     }
 
@@ -259,7 +355,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .draw(p): p.isClosed
         case .arrow: false
         // Text, redactions, the highlight and numbered callouts are solid objects.
-        case .text, .redaction, .highlight, .numbered, .magnifier: true
+        case .text, .redaction, .highlight, .numbered, .magnifier, .image: true
         }
     }
 
@@ -317,6 +413,11 @@ struct AnnoShape: Codable, Equatable, Identifiable {
 
     var numberedProps: NumberedProps? {
         if case let .numbered(p) = kind { return p }
+        return nil
+    }
+
+    var imageProps: ImageProps? {
+        if case let .image(p) = kind { return p }
         return nil
     }
 }

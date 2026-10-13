@@ -201,6 +201,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
         source: CGImage,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         settings: AnnotationBackgroundSettings,
         contentPixelWidth: CGFloat,
         colorSpace: CGColorSpace
@@ -212,6 +213,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
             source: source,
             shapes: shapes,
             bindings: bindings,
+            images: images,
             settings: settings,
             contentPixelWidth: contentPixelWidth,
             colorSpace: colorSpace
@@ -244,6 +246,7 @@ nonisolated enum AnnotationScenePreviewRenderer {
         source: CGImage,
         shapes: [AnnoShape],
         bindings: [ArrowBinding],
+        images: [String: CGImage] = [:],
         settings: AnnotationBackgroundSettings,
         contentPixelWidth: CGFloat,
         colorSpace: CGColorSpace
@@ -261,6 +264,7 @@ nonisolated enum AnnotationScenePreviewRenderer {
                 AnnotationRenderer.drawAnnotations(
                     shapes,
                     bindings: bindings,
+                    images: images,
                     in: imageRect,
                     // Shapes are in the *source* image's pixels; this render may be downscaled.
                     pageSize: CGSize(width: source.width, height: source.height),

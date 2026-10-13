@@ -80,6 +80,8 @@ final class AnnoDocument {
                     page = props.ringRect.union(props.loupeRect)
                         .insetBy(dx: -props.strokeWidth / 2, dy: -props.strokeWidth / 2)
                         .applying(toPage)
+                case let .image(props):
+                    page = CGRect(x: 0, y: 0, width: props.w, height: props.h).applying(toPage)
                 case .redaction, .spotlight:
                     continue
                 }
@@ -284,6 +286,7 @@ extension AnnoDocument.Snapshot {
             case let .geo(props): boxWidth = props.w
             case let .redaction(props): boxWidth = props.w
             case let .highlight(props): boxWidth = props.w
+            case let .image(props): boxWidth = props.w
             case let .numbered(props): boxWidth = props.diameter
             case let .text(props): boxWidth = Double(TextMeasure.measure(props).width)
             }
@@ -347,6 +350,8 @@ enum AnnoShapeGeometry {
         case let .redaction(props):
             return Rectangle2d(width: props.w, height: props.h, isFilled: true)
         case let .highlight(props):
+            return Rectangle2d(width: props.w, height: props.h, isFilled: true)
+        case let .image(props):
             return Rectangle2d(width: props.w, height: props.h, isFilled: true)
         case let .numbered(props):
             return Ellipse2d(width: props.diameter, height: props.diameter, isFilled: true)

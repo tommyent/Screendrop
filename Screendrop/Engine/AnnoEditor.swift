@@ -117,6 +117,11 @@ struct AnnoViewport {
 @MainActor
 final class AnnoEditor {
     private(set) var document = AnnoDocument()
+    /// Pasted pictures' pixels by asset ID (sd-eec). Outside the document and its snapshots, so
+    /// undo and history move only the shapes that point here; an undone paste's pixels stay
+    /// for redo, and a save writes only the ones a shape still uses.
+    var imageAssets: [String: AnnoImageAsset] = [:]
+    var images: [String: CGImage] { imageAssets.mapValues(\.image) }
     var selectedIds: Set<AnnoShapeID> = []
     var viewport = AnnoViewport()
 
@@ -230,6 +235,45 @@ final class AnnoEditor {
     }
 
     var shapes: [AnnoShape] { document.shapes }
+
+    // MARK: - Pasted pictures
+
+    /// Adds a pasted picture as one undo step, selected and with Select armed, so it can be
+    /// dragged out at once (sd-eec).
+    @discardableResult
+    func insertImage(_ asset: AnnoImageAsset, assetID: String = UUID().uuidString) -> AnnoShapeID {
+        imageAssets[assetID] = asset
+        let rect = Self.pastedImageRect(
+            pixelSize: CGSize(width: asset.image.width, height: asset.image.height),
+            pageSize: viewport.imageSize
+        )
+        markUndo()
+        let shape = AnnoShape(x: rect.minX, y: rect.minY,
+                              kind: .image(ImageProps(assetID: assetID, w: rect.width, h: rect.height)))
+        document.add(shape)
+        tool = .select
+        selectedIds = [shape.id]
+        notifyChanged()
+        return shape.id
+    }
+
+    /// Drops the shapes and the pasted pictures' pixels, for a closed editor whose scene can
+    /// outlive its window. `replaceDocument` keeps the pixels, since undo and crop go through it.
+    func release() {
+        replaceDocument(shapes: [])
+        imageAssets.removeAll()
+    }
+
+    /// Where a pasted picture lands: no more than 40% of the screenshot's width and height (never
+    /// enlarged, aspect kept), centred a little right of the screenshot's centre, for the user to
+    /// drag out beside it as Shottr does.
+    static func pastedImageRect(pixelSize: CGSize, pageSize: CGSize) -> CGRect {
+        guard pixelSize.width > 0, pixelSize.height > 0 else { return .zero }
+        let scale = min(1, pageSize.width * 0.4 / pixelSize.width, pageSize.height * 0.4 / pixelSize.height)
+        let size = CGSize(width: max(1, pixelSize.width * scale), height: max(1, pixelSize.height * scale))
+        return CGRect(x: pageSize.width * 0.6 - size.width / 2, y: pageSize.height * 0.5 - size.height / 2,
+                      width: size.width, height: size.height)
+    }
 
     // MARK: - Undo
 
