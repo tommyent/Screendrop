@@ -133,7 +133,11 @@ final class ScreenshotHistoryStore {
     /// The files an edited screenshot keeps beside its display image. They
     /// go wherever the capture goes.
     nonisolated static func companionURLs(for displayURL: URL) -> [URL] {
-        [editDocumentURL(for: displayURL), baseImageURL(for: displayURL), originalImageURL(for: displayURL)]
+        [editDocumentURL(for: displayURL), baseImageURL(for: displayURL), originalImageURL(for: displayURL), sessionSnapshotsURL(for: displayURL)]
+    }
+
+    nonisolated static func sessionSnapshotsURL(for displayURL: URL) -> URL {
+        displayURL.appendingPathExtension("sessions")
     }
 
     nonisolated private static func taggedImageURL(for displayURL: URL, tag: String) -> URL {
@@ -523,8 +527,8 @@ final class ScreenshotHistoryStore {
         return (width, height, duration)
     }
 
-    private func isHistoryURL(_ url: URL) -> Bool {
-        url.standardizedFileURL.path.hasPrefix(Self.historyDirectory.standardizedFileURL.path)
+    func isHistoryURL(_ url: URL) -> Bool {
+        url.standardizedFileURL.path.hasPrefix(Self.historyDirectory.standardizedFileURL.path + "/")
     }
 
 }

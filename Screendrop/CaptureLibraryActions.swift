@@ -352,16 +352,18 @@ nonisolated enum CaptureLibraryFiles {
         throw CocoaError(.fileWriteFileExists)
     }
 
-    static func trash(_ item: CaptureLibraryItem) throws {
+    static func trash(_ item: CaptureLibraryItem, moveToTrash: (URL) throws -> URL? = { url in
+        var destination: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &destination)
+        return destination.map { $0 as URL }
+    }) throws {
         let urls = item.ownedFileURLs
         // Roll back earlier moves if any sidecar can't be moved. Keep the row
         // until every existing part of the capture is safely in Trash.
         var moved: [(URL, URL)] = []
         do {
             for url in urls where FileManager.default.fileExists(atPath: url.path) {
-                var destination: NSURL?
-                try FileManager.default.trashItem(at: url, resultingItemURL: &destination)
-                if let destination { moved.append((url, destination as URL)) }
+                if let destination = try moveToTrash(url) { moved.append((url, destination)) }
             }
         } catch {
             for (original, trashed) in moved.reversed() { try? FileManager.default.moveItem(at: trashed, to: original) }

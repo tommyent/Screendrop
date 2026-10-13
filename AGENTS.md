@@ -79,3 +79,7 @@ Make atomic commits. Each commit should represent exactly one logical change (e.
 - Screen recording permission (`NSScreenCaptureUsageDescription` in Info.plist) is required.
 - Hardened runtime is enabled.
 - No App Sandbox - do not add sandbox entitlements.
+
+## Lessons
+
+- For session-history UI, test rapid open/edit/close cycles and compare dated entries with Last Opened. Disk retention and restore tests do not catch ambiguous labels or duplicate current-session actions.
