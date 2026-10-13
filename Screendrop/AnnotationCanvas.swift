@@ -739,6 +739,7 @@ struct AnnotationCanvas: View {
     /// disarms, instead of drawing. False when the eyedropper is off.
     private func pickColor() -> Bool {
         guard !model.isCropping, let probe, probe.isPicking else { return false }
+        takeKeyboardFocusFromInspector()
         _ = probe.copyHovered()
         probe.isPicking = false
         return true
@@ -753,6 +754,8 @@ struct AnnotationCanvas: View {
               let span = buffer.span(x: pixel.x, y: pixel.y) else { return false }
         let width = CGFloat(buffer.width), height = CGFloat(buffer.height)
         onEditorInteraction()
+        // Return and Escape must reach the crop, not a number field.
+        takeKeyboardFocusFromInspector()
         withAnimation(.snappy(duration: 0.22)) {
             model.beginCropping()
             model.cropRect = CGRect(

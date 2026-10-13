@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The editor's tools in the window toolbar, Shottr's way (sd-w8c): the
@@ -5,7 +6,7 @@ import SwiftUI
 /// ruler's hint in another, then the colour and size pill (sd-z4f).
 struct AnnotationEditorToolbarTools: ToolbarContent {
     let model: AnnotationEditorModel
-    @Bindable var probe: PixelProbe
+    let probe: PixelProbe
     let isDisabled: Bool
     let onSelectTool: (AnnotationTool) -> Void
     let onCrop: () -> Void
@@ -36,7 +37,14 @@ struct AnnotationEditorToolbarTools: ToolbarContent {
                 .help("Crop the screenshot (C). ⌘-click the image to crop to the box under the pointer.")
                 .disabled(model.previewImage == nil || model.imageSize == .zero)
 
-                Toggle(isOn: $probe.isPicking) {
+                Toggle(isOn: Binding(
+                    get: { probe.isPicking },
+                    set: { isOn in
+                        probe.isPicking = isOn
+                        // Escape disarms it only if no inspector field has the keyboard.
+                        if isOn { NSApp.keyWindow?.makeFirstResponder(nil) }
+                    }
+                )) {
                     Label("Pick Color", systemImage: "eyedropper")
                 }
                 .help("Pick a colour: click the image to copy its hex. Tab copies the colour under the pointer any time.")
