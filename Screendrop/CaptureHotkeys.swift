@@ -185,25 +185,26 @@ enum CaptureHotkeyAction: String, CaseIterable, Identifiable {
         }
     }
 
-    /// One-handed ⌃⌥ chords on the number row, picked by the user: the image
-    /// captures in order, then the recording and Capture Text. ⌥ alone typed
-    /// a character in every app; ⌃⌥R was Rectangle's "Center Two Thirds" and
-    /// ⌃⌥O isn't one-handed. Only actions the user never recorded follow a
+    /// ⌘⇧ on the number row, macOS's own screenshot chord, picked by the user
+    /// (2026-10-13): ⌘⇧3, ⌘⇧4 and ⌘⇧5 keep the meanings macOS gives them
+    /// (full screen, area, recording), and the rest take the free numbers
+    /// beside them. macOS's built-in screenshot shortcuts must be off for
+    /// those three to register. Only actions the user never recorded follow a
     /// default, so recorded shortcuts stay.
     var defaultShortcut: HotkeyShortcut {
         switch self {
         case .fullscreen:
-            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_1))
+            HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_3))
         case .window:
-            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_2))
+            HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_2))
         case .area:
-            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_3))
-        case .scrollingCapture:
-            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_4))
+            HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_4))
         case .screenRecording:
-            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_5))
+            HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_5))
         case .textCapture:
-            HotkeyShortcut(modifiers: [.control, .option], keyCode: Int(kVK_ANSI_6))
+            HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_6))
+        case .scrollingCapture:
+            HotkeyShortcut(modifiers: [.command, .shift], keyCode: Int(kVK_ANSI_7))
         }
     }
 

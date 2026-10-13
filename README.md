@@ -41,12 +41,14 @@ Capture a display, a window, an area, a scrolling region, or just the text in an
 
 | Default shortcut | Action |
 | --- | --- |
-| `Control + Option + 1` | Capture full screen |
-| `Control + Option + 2` | Capture a window |
-| `Control + Option + 3` | Capture an area |
-| `Control + Option + 4` | Scrolling Capture |
-| `Control + Option + 5` | Screen recording |
-| `Control + Option + 6` | Capture Text to the clipboard |
+| `Command + Shift + 3` | Capture full screen |
+| `Command + Shift + 4` | Capture an area |
+| `Command + Shift + 5` | Screen recording |
+| `Command + Shift + 2` | Capture a window |
+| `Command + Shift + 6` | Capture Text to the clipboard |
+| `Command + Shift + 7` | Scrolling Capture |
+
+The first three are macOS's own screenshot shortcuts, so turn those off in macOS's keyboard shortcut settings (under Screenshots) for Sukusho to get them.
 
 Change any of them in **Settings → General**. If a shortcut can't be registered, Settings says why and keeps the previous one.
 
@@ -63,7 +65,7 @@ Draw a box over a scrolling view, then scroll through it yourself or click the a
 - **Auto-scroll** moves the view a step at a time, paced by what has been captured, and finishes the capture by itself at the end of the page. It pauses while a frame doesn't fit and carries on once one does. Scrolling yourself or moving the pointer off the bar hands control back to you. Auto-scroll needs the Accessibility permission; the bar offers to open it.
 - **Every frame is checked before it's added.** Apple's Vision framework proposes where the new frame fits, and Sukusho adds it only once an exact pixel match confirms it. A frame that doesn't fit is skipped, not joined in the wrong place.
 - **The capture bar** stays quiet through brief misses. If frames keep failing to fit, it says **Scroll back a little** when the view has moved past where it can line up, or **Something on the page keeps changing** for a video, an animation or a hover.
-- **Done**, or `Control + Option + 4`, keeps everything captured so far. At the height limit the capture stops and waits for **Done**.
+- **Done**, or `Command + Shift + 7`, keeps everything captured so far. At the height limit the capture stops and waits for **Done**.
 
 Draw the box around the part that scrolls: a sidebar or button that stays put inside the box is repeated down the image.
 
