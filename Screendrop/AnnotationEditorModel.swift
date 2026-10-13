@@ -134,6 +134,9 @@ final class AnnotationEditorModel {
     var textBoxStyle: TextBoxStyle = .plain
 
     private var history: [EditSnapshot] = []
+    /// The state this window opened on, for Revert To › Last Opened. Kept
+    /// apart from `history`, which drops its oldest steps.
+    private var openedSnapshot: EditSnapshot?
     private var historyIndex = 0
     private var isRestoringHistory = false
     private var inspectorEditingDepth = 0
@@ -250,6 +253,7 @@ final class AnnotationEditorModel {
         defer { isRestoringHistory = false }
         history.removeAll()
         historyIndex = 0
+        openedSnapshot = nil
         inspectorEditingDepth = 0
         croppedInSession = false
         lastSaveSucceeded = nil
@@ -353,6 +357,7 @@ final class AnnotationEditorModel {
         isCropping = false
         history.removeAll()
         historyIndex = 0
+        openedSnapshot = nil
         inspectorEditingDepth = 0
         croppedInSession = false
         engine.release()
@@ -462,13 +467,18 @@ final class AnnotationEditorModel {
             recordHistoryChange(force: true)
         }
         var committedSnapshot = currentSnapshot()
-        let hasContent = !committedSnapshot.shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
-            || committedSnapshot.baseImageURL != savedSnapshot?.baseImageURL
+        // Revert To › Original: nothing on the kept original, which becomes
+        // the image again rather than a render of it.
+        let originalURL = ScreenshotHistoryStore.originalImageURL(for: sourceURL)
+        let isOriginal = committedSnapshot.baseImageURL == originalURL
+        let baseChanged = committedSnapshot.baseImageURL != savedSnapshot?.baseImageURL
+        let hasContent = !committedSnapshot.shapes.isEmpty || backgroundSettings.hasRenderableContent
+            || (!isOriginal && (self.isCropped || baseChanged))
         // A pre-v2 sidecar has nothing the editor can remove: its marks are the image.
         let hadDocument = !isLegacyDocument && ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
 
         // Nothing drawn and nothing previously saved: there is no work to lose.
-        guard hasContent || hadDocument else {
+        guard hasContent || hadDocument || (isOriginal && baseChanged) else {
             markSaved()
             saved = true
             return nil
@@ -504,8 +514,10 @@ final class AnnotationEditorModel {
             )
         } else {
             // All annotations were cleared on a previously-edited image:
-            // restore the untouched original.
-            resultURL = try ScreenshotHistoryStore.shared.removeAnnotations(displayURL: sourceURL)
+            // restore its base, or the original after a revert.
+            resultURL = try ScreenshotHistoryStore.shared.removeAnnotations(
+                displayURL: sourceURL, restoringFrom: isOriginal ? originalURL : nil
+            )
         }
 
         guard self.sourceURL == sourceURL else { return resultURL }
@@ -589,12 +601,14 @@ final class AnnotationEditorModel {
         hasUnsavedChanges && !isCommitting && !isBlockingCommit && isIdleForSaving
     }
 
-    /// Re-baselines after a successful commit, and at the end of a load.
+    /// Re-baselines after a successful commit, and at the end of a load,
+    /// where the first baseline is also what Last Opened returns to.
     func markSaved() {
         savedSnapshot = currentSnapshot()
         if history.isEmpty {
             history = [currentSnapshot()]
             historyIndex = 0
+            openedSnapshot = savedSnapshot
         }
     }
 
@@ -1238,6 +1252,68 @@ extension AnnotationEditorModel {
         }
     }
 
+    // MARK: - Revert To
+
+    /// Off while cropping or during an explicit save, and when the editor
+    /// already shows the kept original with nothing on it.
+    var canRevertToOriginal: Bool {
+        _ = revision
+        guard let sourceURL, !isCropping, !isBlockingCommit else { return false }
+        return baseImageURL != ScreenshotHistoryStore.originalImageURL(for: sourceURL)
+            || !shapes.isEmpty || backgroundSettings.hasRenderableContent
+    }
+
+    /// Off when nothing changed since the window opened.
+    var canRevertToLastOpened: Bool {
+        _ = revision
+        guard let openedSnapshot, sourceURL != nil, !isCropping, !isBlockingCommit else { return false }
+        return currentSnapshot() != openedSnapshot
+    }
+
+    /// File › Revert To › Original: the capture as captured, with no marks,
+    /// background or crop. One step Undo takes back; the next save writes it.
+    func revertToOriginal() {
+        guard canRevertToOriginal, let sourceURL, prepareRevert() else { return }
+        let original: URL
+        do {
+            original = try ScreenshotHistoryStore.shared.originalImage(for: sourceURL)
+        } catch {
+            errorMessage = "Unable to find the original image: \(error.localizedDescription)"
+            return
+        }
+        guard let size = ScreenshotImageLoader.imageSize(at: original) else {
+            errorMessage = "Unable to read the original image."
+            return
+        }
+        revert(to: EditSnapshot(
+            baseImageURL: original, imageSize: size, isCropped: false, shapes: [], bindings: [],
+            background: StoredBackground(AnnotationBackgroundSettings())
+        ))
+    }
+
+    /// File › Revert To › Last Opened: the state this window opened on.
+    func revertToLastOpened() {
+        guard canRevertToLastOpened, prepareRevert(), let openedSnapshot else { return }
+        revert(to: openedSnapshot)
+    }
+
+    /// Ends text editing, and keeps the image being replaced for Undo, as a
+    /// crop does.
+    private func prepareRevert() -> Bool {
+        commitTextEditing()
+        guard preserveHistoryImage() else {
+            errorMessage = "Unable to preserve the image for undo."
+            return false
+        }
+        return true
+    }
+
+    private func revert(to snapshot: EditSnapshot) {
+        guard snapshot != currentSnapshot() else { return }
+        restore(snapshot)
+        recordHistoryChange(force: true)
+    }
+
     private func preserveHistoryImage() -> Bool {
         guard let baseImageURL else { return true }
         guard let stableURL = stableCropSnapshotURL(for: baseImageURL) else { return false }
@@ -1251,12 +1327,15 @@ extension AnnotationEditorModel {
             history[index].baseImageURL = newURL
         }
         if savedSnapshot?.baseImageURL == oldURL { savedSnapshot?.baseImageURL = newURL }
+        if openedSnapshot?.baseImageURL == oldURL { openedSnapshot?.baseImageURL = newURL }
     }
 
     /// History must never retain a mutable image URL, because annotation commits can
     /// replace that file while this editor stays open.
     private func stableCropSnapshotURL(for url: URL) -> URL? {
         if ownedCropURLs.contains(url) { return url }
+        // The kept original is never replaced, and a revert is found by its URL.
+        if let sourceURL, url == ScreenshotHistoryStore.originalImageURL(for: sourceURL) { return url }
 
         let fileExtension = url.pathExtension.isEmpty ? "png" : url.pathExtension
         let destinationURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -1298,6 +1377,7 @@ extension AnnotationEditorModel {
             retainedURLs.formUnion(history.compactMap(\.baseImageURL))
             if let baseImageURL { retainedURLs.insert(baseImageURL) }
             if let savedURL = savedSnapshot?.baseImageURL { retainedURLs.insert(savedURL) }
+            if let openedURL = openedSnapshot?.baseImageURL { retainedURLs.insert(openedURL) }
         }
         for url in ownedCropURLs.subtracting(retainedURLs) {
             do {

@@ -432,6 +432,23 @@ struct RecordingStudioSaveCommand: View {
     }
 }
 
+/// File › Revert To for the key Studio project. Each is one step Undo
+/// takes back; the project then saves as after any edit.
+struct RecordingStudioRevertCommand: View {
+    @FocusedValue(\.recordingStudio) private var studio
+
+    var body: some View {
+        if let studio, studio.isProject {
+            Menu("Revert To") {
+                Button("Original") { studio.revertToOriginal() }
+                Button("Last Opened") { studio.revertToLastOpened() }
+                    .disabled(!studio.hasEditsSinceOpening)
+            }
+            .disabled(!studio.canRevert)
+        }
+    }
+}
+
 // MARK: - Canvas
 
 private struct StudioCanvas: View {

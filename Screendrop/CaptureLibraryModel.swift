@@ -163,6 +163,8 @@ final class CaptureLibraryModel {
     var pendingCloudUpload: CaptureLibraryItem?
     /// A shared capture waiting on the Delete from Cloud confirmation.
     var pendingCloudDelete: CaptureLibraryItem?
+    /// An edited capture waiting on the Revert to Original confirmation.
+    var pendingRevert: CaptureLibraryItem?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var visibleIndices: [String: Int] = [:]

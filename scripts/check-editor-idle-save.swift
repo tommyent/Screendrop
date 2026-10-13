@@ -243,6 +243,72 @@ struct IdleSaveChecks {
         print("PASS a saved crop keeps the original's bytes after the editor closes and through a later save")
     }
 
+    @MainActor static func revertToOriginalAndLastOpened() async throws {
+        let store = ScreenshotHistoryStore.shared
+        func size(_ url: URL?) -> CGFloat? { url.flatMap { ScreenshotImageLoader.imageSize(at: $0)?.width } }
+
+        // Original: after a saved crop, back to the capture, as one undo step.
+        let gate = Gate(), model = try fixture(gate)
+        gate.hold = false
+        let source = model.sourceURL!, captured = try Data(contentsOf: source)
+        let base = ScreenshotHistoryStore.baseImageURL(for: source)
+        let sidecar = ScreenshotHistoryStore.editDocumentURL(for: source)
+        let original = ScreenshotHistoryStore.originalImageURL(for: source)
+        model.isCropping = true
+        model.cropRect = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        model.applyCrop()
+        _ = try await model.commitEdits()
+        try check(model.canRevertToOriginal, "Original was off after a saved crop")
+        model.revertToOriginal()
+        try check(model.baseImageURL == original && model.shapes.isEmpty && model.imageSize.width == 200
+                  && !model.isCropped && model.hasUnsavedChanges, "Revert to Original didn't show the capture")
+        try check(!model.canRevertToOriginal, "Original stayed on at the original")
+        model.undo()
+        try check(model.imageSize.width == 100 && !model.shapes.isEmpty, "Undo didn't bring the crop and marks back")
+        model.redo()
+        _ = try await model.commitEdits()
+        let display = try Data(contentsOf: source), kept = try Data(contentsOf: original)
+        try check(display == captured && kept == captured, "Saving the revert didn't restore the captured pixels")
+        try check(!FileManager.default.fileExists(atPath: base.path) && !FileManager.default.fileExists(atPath: sidecar.path)
+                  && store.hasEditDocument(for: source) == false, "The revert left edits to open")
+        model.releaseEditorResources()
+
+        // Last Opened: drawn, saved and cropped since opening, back to how it opened.
+        let gate2 = Gate(), opened = try fixture(gate2)
+        gate2.hold = false
+        let source2 = opened.sourceURL!, captured2 = try Data(contentsOf: source2)
+        _ = try await opened.commitEdits()
+        opened.isCropping = true
+        opened.cropRect = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        opened.applyCrop()
+        try check(opened.canRevertToLastOpened, "Last Opened was off after edits")
+        opened.revertToLastOpened()
+        try check(opened.shapes.isEmpty && opened.imageSize.width == 200 && size(opened.baseImageURL) == 200
+                  && !opened.canRevertToLastOpened, "Revert to Last Opened didn't return to the opened state")
+        _ = try await opened.commitEdits()
+        let display2 = try Data(contentsOf: source2)
+        try check(display2 == captured2, "Saving Last Opened didn't restore the opened pixels")
+        opened.undo()
+        try check(opened.imageSize.width == 100, "Undo didn't bring the crop back")
+        opened.releaseEditorResources()
+
+        // The Library's revert, on disk: a saved crop back to the capture.
+        let gate3 = Gate(), library = try fixture(gate3)
+        gate3.hold = false
+        let source3 = library.sourceURL!, captured3 = try Data(contentsOf: source3)
+        library.isCropping = true
+        library.cropRect = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        library.applyCrop()
+        _ = try await library.commitEdits()
+        library.releaseEditorResources()
+        try store.revertToOriginal(displayURL: source3)
+        let display3 = try Data(contentsOf: source3)
+        try check(display3 == captured3 && !store.hasEditDocument(for: source3)
+                  && FileManager.default.fileExists(atPath: ScreenshotHistoryStore.originalImageURL(for: source3).path),
+                  "The Library's revert didn't restore the capture and keep its original")
+        print("PASS Revert To Original and Last Opened: one undo step each, saved as the captured or opened pixels; Library revert on disk")
+    }
+
     @MainActor static func undoDuringRender() async throws {
         let gate = Gate(), model = try fixture(gate)
         model.isCropping = true
@@ -495,6 +561,7 @@ struct IdleSaveChecks {
         try await nativeFieldFocusAndComposition()
         try await cropDuringRender()
         try await savedCropKeepsOriginal()
+        try await revertToOriginalAndLastOpened()
         try await undoDuringRender()
         try await imageDeletionDuringRender()
         try await idleGatesAndUndo()

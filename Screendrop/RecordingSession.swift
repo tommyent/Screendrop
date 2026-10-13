@@ -203,6 +203,17 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         try? FileManager.default.removeItem(at: draftDocumentURL)
     }
 
+    /// Revert to Original: the project's saved edits, its draft and any
+    /// render of them, so it opens as a new recording does. The name and
+    /// tags stay.
+    func removeEdits() throws {
+        if FileManager.default.fileExists(atPath: editDocumentURL.path) {
+            try FileManager.default.removeItem(at: editDocumentURL)
+        }
+        removeDraftDocument()
+        removeFinalVideos()
+    }
+
     /// What the editor should actually open: the autosaved draft when one
     /// survived, otherwise the last save. Every consumer outside the
     /// editor (flattening, uploads) uses this too, so a deliverable always

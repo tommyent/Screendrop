@@ -49,7 +49,7 @@ Sharing is optional and self-hosted: uploads go to a Cloudflare Worker you deplo
 One window for screenshots, recordings and recording projects, with **Uploads**, **Comments** and **Likes** beside them:
 
 - Cards with an adjustable size, search, and filters for screenshots or recordings. Tags have their own colours and icons.
-- A trimmed toolbar: the inspector toggle, with search beside it. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Copy**, **Export…** (and **Export as GIF…** for a recording), the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
+- A trimmed toolbar: the inspector toggle, with search beside it. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Revert to Original…** (on an edited capture, after asking), **Copy**, **Export…** (and **Export as GIF…** for a recording), the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
 - The same capture menu holds its cloud actions: **Share to Cloud…** before upload; **Copy Cloud Link**, **Open Shared Capture** and **Delete from Cloud…** once shared.
 - Right-click between the cards to choose the sort order or **Refresh**, on the captures, Uploads, Comments and Likes pages. **Command + R** refreshes the current page.
 - Capture cards show a cloud badge when Cloud is set up or the capture is already shared. Click it to share an unshared capture or copy an existing share link; shared captures have a green cloud with a tick.
@@ -61,7 +61,7 @@ Normal launches open the Library; launching at login stays quietly in the menu b
 
 ### Editor
 
-Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations and pasted pictures can be reopened and changed later. Exports render at the image's full resolution. There is no Save button: edits save when you close the window or quit, when you switch to another window or app, or with **File → Save** (**Command + S**). The window is titled with the capture's name, and its subtitle shows **Edited**, **Saving…** or **Saved**.
+Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations and pasted pictures can be reopened and changed later. Exports render at the image's full resolution. There is no Save button: edits save when you close the window or quit, when you switch to another window or app, or with **File → Save** (**Command + S**). The window is titled with the capture's name, and its subtitle shows **Edited**, **Saving…** or **Saved**. The capture as taken is always kept: **File → Revert To → Original** goes back to it, and **Last Opened** to how the window opened. Either can be undone while the window is open.
 
 - **Floating tool dock:** Select, rectangle, ellipse, highlight, arrow, straight line, freehand, text, numbered circle, magnifier, pixelate and blur sit above the canvas, followed by **Crop**, the **eyedropper**, **Measure**, and a **colour/size pill**. The pill changes the selected annotation's colour and line width or text size, or the armed tool's settings when nothing is selected.
 - **Place a shape, then adjust it:** shapes, arrows, lines, magnifiers and redactions return to Select with the new annotation selected. Text returns to Select when editing finishes. Freehand and numbered circles stay armed for drawing strokes or placing a run of numbers, with the newest annotation selected.
@@ -81,7 +81,7 @@ Editing is non-destructive. The untouched image and an editable sidecar are kept
 - Record a display, a window or an area, with a camera, a microphone and system audio as separate sources, a start timer, and a teleprompter that follows your narration on-device.
 - A floating bar pauses, restarts, stops or discards the recording.
 - Every recording is a non-destructive project. In Studio, cut and trim clips, change speed, add automatic or manual zooms, a reconstructed cursor, click highlights and keystroke captions, move and resize the camera, and pick a background and an aspect ratio for social formats.
-- Studio has no Save button: a project saves after a short pause in editing, when you switch to another window or app, when you close it or quit, and with **File → Save** (**Command + S**). Its subtitle shows **Edited** or **Saved**. To throw a recording away, move it to the Trash from the Library.
+- Studio has no Save button: a project saves after a short pause in editing, when you switch to another window or app, when you close it or quit, and with **File → Save** (**Command + S**). Its subtitle shows **Edited** or **Saved**. **File → Revert To → Original** resets every edit to how a new recording opens, and **Last Opened** to how the window opened; either can be undone. To throw a recording away, move it to the Trash from the Library.
 - Transcribe narration on-device, edit captions, or cut the video by deleting words from its transcript.
 - Export the finished composition as MOV, MP4 or GIF, or share it straight to your Worker.
 
