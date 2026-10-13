@@ -696,7 +696,9 @@ struct AnnotationCanvas: View {
                 guard !swallowsPress else { return }
                 let startLocation = projection.unproject(value.startLocation)
                 let location = projection.unproject(value.location)
-                if !hasActiveInteraction, pickColor() || imprintMeasurement(at: startLocation, imageFrame: imageFrame) {
+                if !hasActiveInteraction, pickColor()
+                    || cropToRegion(at: startLocation, imageFrame: imageFrame)
+                    || imprintMeasurement(at: startLocation, imageFrame: imageFrame) {
                     swallowsPress = true
                     return
                 }
@@ -739,6 +741,27 @@ struct AnnotationCanvas: View {
         guard !model.isCropping, let probe, probe.isPicking else { return false }
         _ = probe.copyHovered()
         probe.isPicking = false
+        return true
+    }
+
+    /// Command-click with Select starts a crop around the box under the
+    /// pointer, as in Shottr (sd-qid): the run of like pixels through it,
+    /// across and down, which the ruler measures too.
+    private func cropToRegion(at location: CGPoint, imageFrame: CGRect) -> Bool {
+        guard !model.isCropping, model.selectedTool == .select, NSEvent.modifierFlags.contains(.command),
+              let buffer = probe?.buffer, let pixel = buffer.pixel(at: location, imageFrame: imageFrame),
+              let span = buffer.span(x: pixel.x, y: pixel.y) else { return false }
+        let width = CGFloat(buffer.width), height = CGFloat(buffer.height)
+        onEditorInteraction()
+        withAnimation(.snappy(duration: 0.22)) {
+            model.beginCropping()
+            model.cropRect = CGRect(
+                x: CGFloat(span.horizontal.lowerBound) / width,
+                y: CGFloat(span.vertical.lowerBound) / height,
+                width: CGFloat(span.horizontal.count) / width,
+                height: CGFloat(span.vertical.count) / height
+            )
+        }
         return true
     }
 

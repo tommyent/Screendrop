@@ -33,7 +33,7 @@ struct AnnotationEditorToolbarTools: ToolbarContent {
                 Button(action: onCrop) {
                     Label("Crop", systemImage: "crop")
                 }
-                .help("Crop the screenshot (C)")
+                .help("Crop the screenshot (C). ⌘-click the image to crop to the box under the pointer.")
                 .disabled(model.previewImage == nil || model.imageSize == .zero)
 
                 Toggle(isOn: $probe.isPicking) {
