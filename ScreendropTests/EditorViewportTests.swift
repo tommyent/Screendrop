@@ -44,6 +44,24 @@ struct EditorViewportTests {
         }
     }
 
+    /// The tool dock floats over the top of the canvas: a fitted image sits
+    /// below it, and a zoomed-in one scrolled to its top starts below it too.
+    @Test static func topReserve() {
+        let layout = AnnotationCanvasViewport.Layout(
+            canvasSize: CGSize(width: 2000, height: 1000),
+            viewportSize: CGSize(width: 1068, height: 656),
+            displayScale: 2, fitInsets: CGSize(width: 34, height: 28), topReserve: 44
+        )
+        var camera = AnnotationCanvasViewport()
+        camera.configure(layout)
+        sameFrame(camera.frame, CGRect(x: 34, y: 100, width: 1000, height: 500), "Fit below the dock")
+        camera.zoom(to: 2)
+        camera.pan(by: CGSize(width: 0, height: 10_000))
+        near(camera.frame.minY, 44, "Zoomed image scrolled to its top starts below the dock")
+        camera.pan(by: CGSize(width: 0, height: -10_000))
+        near(camera.frame.maxY, 656, "Zoomed image scrolled to its bottom reaches the window edge")
+    }
+
     @Test static func viewport() {
         let layout = AnnotationCanvasViewport.Layout(
             canvasSize: CGSize(width: 2000, height: 1000),

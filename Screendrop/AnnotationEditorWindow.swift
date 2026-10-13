@@ -34,21 +34,7 @@ struct AnnotationEditorWindow: View {
             .modifier(CaptureLibraryEditorRegistration(url: url))
             .navigationTitle("Sukusho Annotate")
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-            // The tools fill the toolbar's middle, as in Shottr; the window
-            // keeps its title for the Window menu.
-            .toolbar(removing: .title)
             .toolbar {
-                AnnotationEditorToolbarTools(
-                    model: model,
-                    probe: probe,
-                    isDisabled: model.isCropping || isBusy,
-                    onSelectTool: { tool in
-                        clearInspectorFocus()
-                        probe.isPicking = false
-                        model.selectTool(tool)
-                    },
-                    onCrop: enterCrop
-                )
                 ToolbarItemGroup(placement: .primaryAction) {
                     if model.isCropping {
                         cropActions
@@ -302,6 +288,22 @@ struct AnnotationEditorWindow: View {
         }
         .frame(minWidth: 760, minHeight: 580)
         .clipped()
+        .overlay(alignment: .top) {
+            if model.previewImage != nil, model.imageSize != .zero {
+                AnnotationToolDock(
+                    model: model,
+                    probe: probe,
+                    isDisabled: model.isCropping || isBusy,
+                    onSelectTool: { tool in
+                        clearInspectorFocus()
+                        probe.isPicking = false
+                        model.selectTool(tool)
+                    },
+                    onCrop: enterCrop
+                )
+                .padding(.top, AnnotationToolDock.topPadding)
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             if model.previewImage != nil, model.imageSize != .zero {
                 HStack(spacing: 8) {
