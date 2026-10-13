@@ -201,7 +201,6 @@ struct CaptureLibraryView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .modifier(LibraryToolbarSeparator())
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: comments.isShown ? "Search comments" : likes.isShown ? "Search likes" : cloud.isShown ? "Search uploads" : "Search captures")
         .toolbar { toolbar }
         .background { refreshShortcut }
         .frame(minWidth: 860, minHeight: 540)
@@ -466,6 +465,16 @@ struct CaptureLibraryView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        // Before the toggle, so the toggle is the last item at the far right.
+        ToolbarItem(placement: .primaryAction) {
+            LibrarySearchField(
+                text: $model.searchText,
+                prompt: comments.isShown ? "Search comments" : likes.isShown ? "Search likes" : cloud.isShown ? "Search uploads" : "Search captures"
+            )
+            // About the width `.searchable` gave it; narrower when the toolbar is tight.
+            .frame(minWidth: 120, idealWidth: 320, maxWidth: 320)
+        }
+        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             Button { inspectorVisible.toggle() } label: {
                 Label(inspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
@@ -474,6 +483,53 @@ struct CaptureLibraryView: View {
             .help(inspectorVisible ? "Hide Inspector" : "Show Inspector")
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+}
+
+/// AppKit's search field in place of `.searchable`, whose system field always
+/// sat at the far right, right of the inspector toggle. The field brings its
+/// own clear button, and Escape clears it.
+private struct LibrarySearchField: NSViewRepresentable {
+    @Binding var text: String
+    let prompt: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.sendsSearchStringImmediately = true
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.search(_:))
+        // ⌘F focuses the field, as with `.searchable`. A monitor rather than
+        // a shortcut: a disabled menu item with ⌘F would take the key first.
+        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak field] event in
+            guard let field, let window = field.window, event.window === window,
+                  event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+                  event.charactersIgnoringModifiers == "f" else { return event }
+            window.makeFirstResponder(field)
+            return nil
+        }
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text { field.stringValue = text }
+        field.placeholderString = prompt
+        field.setAccessibilityLabel(prompt)
+    }
+
+    static func dismantleNSView(_ field: NSSearchField, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor { NSEvent.removeMonitor(monitor) }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject {
+        var text: Binding<String>
+        var monitor: Any?
+
+        init(text: Binding<String>) { self.text = text }
+
+        @objc func search(_ field: NSSearchField) { text.wrappedValue = field.stringValue }
     }
 }
 
