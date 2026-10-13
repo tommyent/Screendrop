@@ -390,6 +390,23 @@ struct IdleSaveChecks {
         print("PASS Revert To Original and Last Opened: one undo step each, saved as the captured or opened pixels; Library revert on disk")
     }
 
+    @MainActor static func editStateIgnoresHover() async throws {
+        let gate = Gate(), model = try fixture(gate)
+        gate.hold = false
+        _ = try await model.commitEdits()
+        let saved = model.editState, revision = model.revision
+        model.engine.setHoveredShape(model.shapes.first?.id)
+        model.engine.selectAll()
+        try check(model.revision != revision && model.editState == saved, "Hover or selection counted as an edit")
+        model.backgroundSettings.padding += 0.05
+        try check(model.editState != saved, "A background change didn't count as an edit")
+        model.backgroundSettings.padding -= 0.05
+        model.engine.replaceDocument(shapes: [rect(x: 60)])
+        try check(model.editState != saved, "A shape change didn't count as an edit")
+        model.releaseEditorResources()
+        print("PASS edit state: hover and selection aren't edits; shape and background changes are")
+    }
+
     @MainActor static func undoDuringRender() async throws {
         let gate = Gate(), model = try fixture(gate)
         model.isCropping = true
@@ -645,6 +662,7 @@ struct IdleSaveChecks {
         try await cropDuringRender()
         try await savedCropKeepsOriginal()
         try await revertToOriginalAndLastOpened()
+        try await editStateIgnoresHover()
         try await undoDuringRender()
         try await imageDeletionDuringRender()
         try await idleGatesAndUndo()

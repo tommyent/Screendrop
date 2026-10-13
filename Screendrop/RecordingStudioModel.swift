@@ -2443,7 +2443,8 @@ final class RecordingStudioModel {
             return
         }
         let session = session
-        let renderedDocument = session == nil ? nil : currentDocument()
+        let sharedDocument = currentDocument()
+        let renderedDocument = session == nil ? nil : sharedDocument
         shareItemID = nil
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
 
@@ -2520,7 +2521,10 @@ final class RecordingStudioModel {
                     ScreenshotHistoryStore.shared.setCloudURL(for: uploadURL, cloudURL: result.url)
                 }
                 ScreenshotPreviewStack.shared.dismissVideo(for: self.sessionURL)
-                self.shareState = .finished(result.url)
+                // An edit made during the render or upload isn't in the link:
+                // the link is still copied, but Upload stays rather than
+                // claiming it's current.
+                self.shareState = self.currentDocument() == sharedDocument ? .finished(result.url) : .idle
             } catch is CancellationError {
                 self?.shareState = .idle
             } catch RecordingStudioExporter.ExportError.cancelled {
