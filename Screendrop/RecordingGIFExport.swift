@@ -90,19 +90,25 @@ nonisolated enum RecordingGIFExport {
         CGImageDestinationSetProperties(gif, [
             kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0, kCGImagePropertyGIFHasGlobalColorMap: false],
         ] as CFDictionary)
-        let frame = [
-            kCGImagePropertyGIFDictionary: [
-                kCGImagePropertyGIFDelayTime: 1 / fps,
-                kCGImagePropertyGIFUnclampedDelayTime: 1 / fps,
-            ],
-        ] as CFDictionary
         for index in 0..<count {
             try Task.checkCancellation()
             let time = CMTime(seconds: Double(index) / fps, preferredTimescale: 600)
             let image = try await generator.image(at: time).image
-            CGImageDestinationAddImage(gif, image, frame)
+            CGImageDestinationAddImage(gif, image, [
+                kCGImagePropertyGIFDictionary: [
+                    kCGImagePropertyGIFDelayTime: frameDelay(index, fps: fps),
+                    kCGImagePropertyGIFUnclampedDelayTime: frameDelay(index, fps: fps),
+                ],
+            ] as CFDictionary)
             progress(Double(index + 1) / Double(count))
         }
         guard CGImageDestinationFinalize(gif) else { throw GIFError.cannotWrite }
+    }
+
+    /// GIF delays are whole centiseconds, so 1/15 s can't be stored. Each
+    /// frame takes its share of the rounded timeline (0.07, 0.07, 0.06 at
+    /// 15 fps), which keeps the loop in real time.
+    static func frameDelay(_ index: Int, fps: Double) -> Double {
+        ((Double(index + 1) * 100 / fps).rounded() - (Double(index) * 100 / fps).rounded()) / 100
     }
 }
