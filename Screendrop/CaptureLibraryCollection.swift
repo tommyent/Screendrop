@@ -470,7 +470,6 @@ struct LibraryCellContent: View {
                     Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.cellSpace)) } action: { onTitleFrame($0) }
                 }
-                if item.cloudURL != nil { Image(systemName: "link").foregroundStyle(.secondary) }
                 if item.hasDraft { Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(.orange) }
             }
             Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -503,6 +502,9 @@ struct LibraryCellContent: View {
                     .help(item.tags.joined(separator: ", "))
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                LibraryCloudBadge(item: item)
+            }
             .overlay(alignment: .bottomTrailing) {
                 if item.isVideo {
                     Label(item.durationText, systemImage: "play.fill")
@@ -513,6 +515,35 @@ struct LibraryCellContent: View {
                         .padding(7)
                 }
             }
+    }
+}
+
+/// A capture card's cloud state: a white cloud with an up arrow until it's
+/// shared, blue once it is. A click shares it, or copies its link once it's
+/// up; the right-click menu has the same actions.
+private struct LibraryCloudBadge: View {
+    let item: CaptureLibraryItem
+
+    var body: some View {
+        let isShared = item.cloudURL != nil
+        if isShared || CloudUploader.shared.isConfigured {
+            Button {
+                let model = CaptureLibraryModel.shared
+                model.selection = [item.id]
+                if isShared { model.copyLink(item) } else { model.pendingCloudUpload = item }
+            } label: {
+                Image(systemName: "icloud.and.arrow.up")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isShared ? Color.blue : Color.white)
+                    .padding(5)
+                    .background(.black.opacity(0.45), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(6)
+            .help(isShared ? "Shared to the cloud. Click to copy its link." : "Share to Cloud")
+            .accessibilityLabel(isShared ? "Copy cloud link" : "Share to Cloud")
+        }
     }
 }
 
