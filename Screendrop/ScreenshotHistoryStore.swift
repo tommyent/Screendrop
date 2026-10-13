@@ -114,17 +114,33 @@ final class ScreenshotHistoryStore {
 
     /// Location of the editable annotation sidecar document for a display image,
     /// e.g. `Screendrop_2026.png` -> `Screendrop_2026.png.screendrop`.
-    static func editDocumentURL(for displayURL: URL) -> URL {
+    nonisolated static func editDocumentURL(for displayURL: URL) -> URL {
         displayURL.appendingPathExtension("screendrop")
     }
 
-    /// Location of the untouched base image for a display image,
-    /// e.g. `Screendrop_2026.png` -> `Screendrop_2026.base.png`.
-    static func baseImageURL(for displayURL: URL) -> URL {
+    /// Location of the base image the annotations are drawn on (cropped, if
+    /// the capture was), e.g. `Screendrop_2026.png` -> `Screendrop_2026.base.png`.
+    nonisolated static func baseImageURL(for displayURL: URL) -> URL {
+        taggedImageURL(for: displayURL, tag: "base")
+    }
+
+    /// Location of the image as captured, kept from the first save of an edit
+    /// and never overwritten, e.g. `Screendrop_2026.png` -> `Screendrop_2026.original.png`.
+    nonisolated static func originalImageURL(for displayURL: URL) -> URL {
+        taggedImageURL(for: displayURL, tag: "original")
+    }
+
+    /// The files an edited screenshot keeps beside its display image. They
+    /// go wherever the capture goes.
+    nonisolated static func companionURLs(for displayURL: URL) -> [URL] {
+        [editDocumentURL(for: displayURL), baseImageURL(for: displayURL), originalImageURL(for: displayURL)]
+    }
+
+    nonisolated private static func taggedImageURL(for displayURL: URL, tag: String) -> URL {
         let ext = displayURL.pathExtension
         let stem = displayURL.deletingPathExtension().lastPathComponent
         let directory = displayURL.deletingLastPathComponent()
-        let fileName = ext.isEmpty ? "\(stem).base" : "\(stem).base.\(ext)"
+        let fileName = ext.isEmpty ? "\(stem).\(tag)" : "\(stem).\(tag).\(ext)"
         return directory.appendingPathComponent(fileName)
     }
 
@@ -246,13 +262,24 @@ final class ScreenshotHistoryStore {
     ) throws -> URL {
         _ = try loadEditDocument(for: displayURL)
         guard isHistoryURL(displayURL) else {
-            let imported = importScreenshot(from: baseURL)
+            // The file as opened, not a crop of it, so History keeps the original.
+            let imported = importScreenshot(from: displayURL)
             guard isHistoryURL(imported) else { throw CocoaError(.fileWriteUnknown) }
             return try commitAnnotations(displayURL: imported, baseURL: baseURL,
                                          renderedURL: renderedURL, document: document)
         }
         let baseDestination = Self.baseImageURL(for: displayURL)
         var replacements: [(source: URL, destination: URL)] = []
+        // The image as captured, kept once and never replaced, so a saved crop
+        // can still be undone after the editor closes. Before the first edit
+        // the display image is the capture; after one, the base is (a crop
+        // saved before originals were kept is already in it). The
+        // transaction stages every source before installing anything.
+        let originalDestination = Self.originalImageURL(for: displayURL)
+        if !FileManager.default.fileExists(atPath: originalDestination.path) {
+            let hasBase = FileManager.default.fileExists(atPath: baseDestination.path)
+            replacements.append((hasBase ? baseDestination : displayURL, originalDestination))
+        }
         // The base is always the image these shapes were drawn on. When that is the display
         // image, an existing base belongs to something else (a pre-v2 sidecar's clean
         // original), and keeping it would drop the marks baked into the display image.
@@ -312,11 +339,7 @@ final class ScreenshotHistoryStore {
         if let recordingSession = item.recordingSession {
             auxiliaryURLs = [recordingSession.directoryURL]
         } else {
-            auxiliaryURLs = [
-                item.url,
-                Self.baseImageURL(for: item.url),
-                Self.editDocumentURL(for: item.url)
-            ]
+            auxiliaryURLs = [item.url] + Self.companionURLs(for: item.url)
         }
 
         // To the Trash, as the Library does, so a capture deleted from its

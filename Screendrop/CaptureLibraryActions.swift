@@ -319,12 +319,7 @@ nonisolated enum CaptureLibraryFiles {
     }
 
     static func trash(_ item: CaptureLibraryItem) throws {
-        var urls = [item.ownedURL]
-        if item.session == nil && !item.isVideo {
-            let url = item.fileURL
-            let baseName = url.deletingPathExtension().lastPathComponent + ".base." + url.pathExtension
-            urls += [url.appendingPathExtension("screendrop"), url.deletingLastPathComponent().appendingPathComponent(baseName)]
-        }
+        let urls = item.ownedFileURLs
         // Roll back earlier moves if any sidecar can't be moved. Keep the row
         // until every existing part of the capture is safely in Trash.
         var moved: [(URL, URL)] = []

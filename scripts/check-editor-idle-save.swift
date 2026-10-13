@@ -171,6 +171,37 @@ struct IdleSaveChecks {
         print("PASS crop during render, saved baseline, undo and redo")
     }
 
+    @MainActor static func savedCropKeepsOriginal() async throws {
+        let gate = Gate(), model = try fixture(gate)
+        gate.hold = false
+        let source = model.sourceURL!, captured = try Data(contentsOf: source)
+        let base = ScreenshotHistoryStore.baseImageURL(for: source)
+        let original = ScreenshotHistoryStore.originalImageURL(for: source)
+        model.isCropping = true
+        model.cropRect = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        model.applyCrop()
+        _ = try await model.commitEdits()
+        model.releaseEditorResources()
+        try check(ScreenshotImageLoader.imageSize(at: source)?.width == 100
+                  && ScreenshotImageLoader.imageSize(at: base)?.width == 100, "The crop wasn't saved")
+        let kept = try Data(contentsOf: original)
+        try check(kept == captured, "Saving a crop lost the original pixels")
+
+        // A later session draws on the cropped base; the original stays as captured.
+        let reopened = AnnotationEditorModel(renderSave: gate.render)
+        reopened.sourceURL = source
+        reopened.baseImageURL = base
+        reopened.imageSize = CGSize(width: 100, height: 100)
+        reopened.updateViewport(imageFrame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        reopened.markSaved()
+        reopened.engine.replaceDocument(shapes: [rect(x: 20)])
+        _ = try await reopened.commitEdits()
+        reopened.releaseEditorResources()
+        let keptAgain = try Data(contentsOf: original)
+        try check(keptAgain == captured, "A later save replaced the original")
+        print("PASS a saved crop keeps the original's bytes after the editor closes and through a later save")
+    }
+
     @MainActor static func undoDuringRender() async throws {
         let gate = Gate(), model = try fixture(gate)
         model.isCropping = true
@@ -418,6 +449,7 @@ struct IdleSaveChecks {
         try await titleRenameIsOnlyMetadata()
         try await nativeFieldFocusAndComposition()
         try await cropDuringRender()
+        try await savedCropKeepsOriginal()
         try await undoDuringRender()
         try await imageDeletionDuringRender()
         try await idleGatesAndUndo()
