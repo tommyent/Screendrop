@@ -229,7 +229,8 @@ struct AnnotationCanvas: View {
             canvasSize: model.canvasPixelSize,
             viewportSize: size,
             displayScale: displayScale,
-            fitInsets: CGSize(width: 34 + cropMargin, height: 28 + cropMargin)
+            fitInsets: CGSize(width: 34 + cropMargin, height: 28 + cropMargin),
+            topReserve: AnnotationToolDock.canvasReserve
         ))
         return viewport
     }

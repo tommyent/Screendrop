@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Colour and size for lines and text in one capsule, as in Shottr (sd-z4f).
-/// The toolbar shows the current colour; clicking it opens the pill, which
+/// The tool dock shows the current colour; clicking it opens the pill, which
 /// styles the selection, or the armed tool when nothing is selected.
 struct AnnotationStylePillButton: View {
     @Bindable var model: AnnotationEditorModel
@@ -18,7 +18,10 @@ struct AnnotationStylePillButton: View {
                 .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5))
                 .frame(width: 16, height: 16)
                 .opacity(isAvailable ? 1 : 0.35)
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
         .disabled(!isAvailable)
         .help("Colour and size")
         .accessibilityLabel("Colour and size, \(model.selectedSwatch.title)")

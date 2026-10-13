@@ -44,6 +44,22 @@ struct EditorViewportTests {
         }
     }
 
+    /// The tool dock floats over the top of the canvas: a fitted image sits
+    /// below it, and a zoomed-in one can still pan up under it.
+    @Test static func topReserve() {
+        let layout = AnnotationCanvasViewport.Layout(
+            canvasSize: CGSize(width: 2000, height: 1000),
+            viewportSize: CGSize(width: 1068, height: 656),
+            displayScale: 2, fitInsets: CGSize(width: 34, height: 28), topReserve: 44
+        )
+        var camera = AnnotationCanvasViewport()
+        camera.configure(layout)
+        sameFrame(camera.frame, CGRect(x: 34, y: 100, width: 1000, height: 500), "Fit below the dock")
+        camera.zoom(to: 2)
+        camera.pan(by: CGSize(width: 0, height: 10_000))
+        near(camera.frame.minY, 0, "Zoomed image pans up to the window edge, under the dock")
+    }
+
     @Test static func viewport() {
         let layout = AnnotationCanvasViewport.Layout(
             canvasSize: CGSize(width: 2000, height: 1000),
