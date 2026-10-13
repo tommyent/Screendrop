@@ -20,7 +20,7 @@ struct AnnotationEditorWindow: View {
     @State private var isFinishing = false
     @State private var isSaving = false
     @State private var isUploading = false
-    @State private var closeGuard = EditorCloseGuard(asksBeforeQuit: true)
+    @State private var closeGuard = EditorCloseGuard(savesWithoutAsking: true)
     @State private var didCopyLink = false
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
@@ -67,6 +67,15 @@ struct AnnotationEditorWindow: View {
                 configureCloseGuard()
                 closeGuard.attach(to: window)
                 closeGuard.refreshDocumentEdited()
+            }
+            // Saves at a pause, so History and the Library keep up without a
+            // Save button. Not on resign key: the editor's own popovers take
+            // key (the Unsplash search, a style's name) but never main.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignMainNotification)) { note in
+                if let window = note.object as? NSWindow, window.delegate === closeGuard { saveAtPause(in: window) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                if let window = NSApp.windows.first(where: { $0.delegate === closeGuard }) { saveAtPause(in: window) }
             }
             .onDeleteCommand {
                 if !model.isCommitting { model.deleteSelectedAnnotation() }
@@ -188,27 +197,6 @@ struct AnnotationEditorWindow: View {
             .help("Upload to the cloud and copy the link")
             .disabled(isUploading)
         }
-
-        Button(action: saveEdits) {
-            if isSaving {
-                ProgressView().controlSize(.small)
-            } else {
-                Label("Save", systemImage: "square.and.arrow.down")
-                    .labelStyle(.iconOnly)
-            }
-        }
-        .keyboardShortcut("s", modifiers: .command)
-        .disabled(!model.hasUnsavedChanges || isSaving || isFinishing)
-        .help("Save annotations (⌘S)")
-
-        // Done is the main action, so it says so. Save As is File › Save As…
-        // (⇧⌘S) now, which leaves one save icon here (design pass choice 9).
-        Button(action: finishEditing) {
-            Label("Done", systemImage: "checkmark.circle")
-                .labelStyle(.titleAndIcon)
-        }
-        .keyboardShortcut(.return, modifiers: .command)
-        .help("Finish editing and save (⌘↩; ⌘C also copies the image)")
 
         Button {
             clearInspectorFocus()
@@ -454,11 +442,21 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    /// Cmd-S. Commits without closing, so long editing sessions have a
-    /// checkpoint that isn't "press Done and start over".
+    /// Cmd-S, kept without a button: saves now rather than at the next pause.
     private func saveEdits() {
         clearInspectorFocus()
-        // Committing re-renders the composite, so a Cmd-S with nothing
+        save()
+    }
+
+    /// Leaves the inspector's focus alone, and skips a window with text
+    /// being typed or a sheet up; closing still saves.
+    private func saveAtPause(in window: NSWindow) {
+        guard model.canSaveInBackground, !(window.firstResponder is NSTextView), window.attachedSheet == nil else { return }
+        save()
+    }
+
+    private func save() {
+        // Committing re-renders the composite, so a save with nothing
         // changed should cost nothing.
         guard model.sourceURL != nil, model.hasUnsavedChanges, !isBusy else { return }
 
@@ -478,18 +476,10 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    private func finishEditing() {
-        finishEditing(copyingResult: false)
-    }
-
-    /// Cmd-C: finishes like Done, then puts the finished image - annotations
+    /// Cmd-C: saves and closes, then puts the finished image - annotations
     /// included - on the clipboard whatever the auto-copy setting, for a
     /// capture, mark up, paste loop that never touches the mouse.
     private func copyAndFinishEditing() {
-        finishEditing(copyingResult: true)
-    }
-
-    private func finishEditing(copyingResult: Bool) {
         clearInspectorFocus()
         guard let sourceURL = model.sourceURL else {
             model.releaseEditorResources()
@@ -513,9 +503,7 @@ struct AnnotationEditorWindow: View {
                     }
                 }
                 // No result means nothing was drawn: the original is the image.
-                if copyingResult {
-                    try await ScreenshotFileActions.copyImageToClipboard(from: resultURL ?? sourceURL)
-                }
+                try await ScreenshotFileActions.copyImageToClipboard(from: resultURL ?? sourceURL)
                 guard !model.hasUnsavedChanges else {
                     isFinishing = false
                     return
@@ -600,8 +588,7 @@ extension FocusedValues {
     @Entry var annotationEditor: AnnotationEditorModel?
 }
 
-/// File › Save As… for the key editor window. It left the toolbar so Save
-/// and Save As are no longer two look-alike icons (design pass choice 9).
+/// File › Save As… for the key editor window.
 struct AnnotationEditorSaveAsCommand: View {
     @FocusedValue(\.annotationEditor) private var editor
 

@@ -95,7 +95,7 @@ enum AnnotationDocumentReadError: LocalizedError {
     case unreadable
 
     var errorDescription: String? {
-        "This capture’s edits could not be read. They may have been made by a newer Sukusho build. Save and Done are blocked to protect the original image and edits. Open the capture in a compatible newer build."
+        "This capture’s edits could not be read. They may have been made by a newer Sukusho build. Saving is blocked to protect the original image and edits. Open the capture in a compatible newer build."
     }
 }
 
