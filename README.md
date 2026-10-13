@@ -49,7 +49,7 @@ Sharing is optional and self-hosted: uploads go to a Cloudflare Worker you deplo
 One window for screenshots, recordings and recording projects, with **Uploads**, **Comments** and **Likes** beside them:
 
 - Cards with an adjustable size, search, and filters for screenshots or recordings. Tags have their own colours and icons.
-- A trimmed toolbar for the view and inspector controls, with search alongside them. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Copy**, **Export…**, the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
+- A trimmed toolbar: the inspector toggle, with search beside it. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Copy**, **Export…** (and **Export as GIF…** for a recording), the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
 - The same capture menu holds its cloud actions: **Share to Cloud…** before upload; **Copy Cloud Link**, **Open Shared Capture** and **Delete from Cloud…** once shared.
 - Right-click between the cards to choose the sort order or **Refresh**, on the captures, Uploads, Comments and Likes pages. **Command + R** refreshes the current page.
 - Capture cards show a cloud badge when Cloud is set up or the capture is already shared. Click it to share an unshared capture or copy an existing share link; shared captures have a blue badge.
@@ -82,7 +82,7 @@ Editing is non-destructive. The untouched image and an editable sidecar are kept
 - A floating bar pauses, restarts, stops or discards the recording.
 - Every recording is a non-destructive project. In Studio, cut and trim clips, change speed, add automatic or manual zooms, a reconstructed cursor, click highlights and keystroke captions, move and resize the camera, and pick a background and an aspect ratio for social formats.
 - Transcribe narration on-device, edit captions, or cut the video by deleting words from its transcript.
-- Export the finished composition, or share it straight to your Worker.
+- Export the finished composition as MOV, MP4 or GIF, or share it straight to your Worker.
 
 ### Capture
 
