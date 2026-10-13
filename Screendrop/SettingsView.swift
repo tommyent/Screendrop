@@ -250,6 +250,9 @@ struct SettingsControlLabel: View {
                 .foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityHint(detail)
     }
 }
 
