@@ -54,8 +54,12 @@ struct AnnotationStyleStrip: View {
         .padding(.top, InspectorMetrics.sectionVerticalPadding / 2 + 3)
         .padding(.bottom, 4)
         .disabled(model.sourceURL == nil)
-        .task(id: model.sourceURL) {
-            thumbnail = await Self.thumbnail(for: model.sourceURL)
+        // The pixels being edited, so the tiles follow a crop and its undo.
+        .task(id: thumbnailURL) {
+            let image = await Self.thumbnail(for: thumbnailURL)
+            // A decode for an earlier image mustn't replace a newer one.
+            guard !Task.isCancelled else { return }
+            thumbnail = image
         }
         .alert(
             "Delete Style?",
@@ -193,6 +197,10 @@ struct AnnotationStyleStrip: View {
                 .foregroundStyle(Palette.tertiaryLabel)
         }
         .frame(width: Self.tileWidth)
+    }
+
+    private var thumbnailURL: URL? {
+        model.baseImageURL ?? model.sourceURL
     }
 
     private var contentAspect: CGFloat {
