@@ -38,7 +38,7 @@ struct EditorInteractionTests {
         guard case .creatingGeo = hollow.interaction else { Issue.record("Hollow interior did not draw"); return }
         hollow.pointerMove(pointer(240, 215, command: true))
         hollow.pointerUp(pointer(240, 215))
-        #expect(hollow.shapes.count == 2 && hollow.tool == .rectangle)
+        #expect(hollow.shapes.count == 2 && hollow.tool == .select)
 
         let filled = editor(fill: .solid)
         filled.pointerDown(pointer(190, 165))
@@ -52,9 +52,9 @@ struct EditorInteractionTests {
         guard case .creatingGeo = forced.interaction else { Issue.record("Command did not force draw"); return }
         forced.pointerMove(pointer(165, 165))
         forced.pointerUp(pointer(165, 165))
-        #expect(forced.shapes.count == 2 && forced.shapes[0].x == 100 && forced.tool == .rectangle)
+        #expect(forced.shapes.count == 2 && forced.shapes[0].x == 100 && forced.tool == .select)
         forced.escapeSelectionOrDisarm()
-        #expect(forced.selectedIds.isEmpty && forced.tool == .rectangle)
+        #expect(forced.selectedIds.isEmpty && forced.tool == .select)
         forced.escapeSelectionOrDisarm()
         #expect(forced.tool == .select && !AnnotationTool.paletteTools.contains(.select))
         forced.pointerDown(pointer(30, 30))
@@ -75,9 +75,9 @@ struct EditorInteractionTests {
         text.tool = .text
         text.pointerDown(pointer(500, 300))
         let textID = text.editingTextId!
-        text.updateEditingText(textID, to: "Keep the text tool armed")
+        text.updateEditingText(textID, to: "Commit text and return to Select")
         text.stopEditingText()
-        #expect(text.tool == .text)
+        #expect(text.tool == .select && text.selectedIds == [textID])
         text.tool = .rectangle
         var double = pointer(text.document.shape(textID)!.x + 10, text.document.shape(textID)!.y + 10)
         double.clickCount = 2
@@ -93,7 +93,76 @@ struct EditorInteractionTests {
         #expect(text.hoveredShapeId == textID && hoverChanges == 1)
         text.setHoveredShape(nil)
         #expect(text.hoveredShapeId == nil && hoverChanges == 2)
-        print("PASS: every tool grabs; hollow interiors draw; Command and intent latch; handles, two-stage Escape, marquee, armed text and hover updates")
+        print("PASS: every tool grabs; hollow interiors draw; Command and intent latch; handles, two-stage Escape, marquee, committed text and hover updates")
+    }
+
+    @Test static func drawingCommitsSelectTheNewShapeAndFinishTheTool() {
+        for tool in AnnotationTool.allCases where tool.createsAnnotation {
+            let engine = editor()
+            engine.replaceDocument(shapes: [])
+            engine.tool = tool
+            engine.pointerDown(pointer(100, 100))
+            engine.pointerMove(pointer(140, 125))
+            engine.pointerMove(pointer(180, 160))
+            engine.pointerUp(pointer(180, 160))
+            if let id = engine.editingTextId {
+                #expect(engine.tool == .text, "Text stays editable until commit")
+                engine.updateEditingText(id, to: "New text")
+                engine.stopEditingText()
+            }
+            #expect(engine.shapes.count == 1, "\(tool) creates one shape")
+            guard let shape = engine.shapes.first else { continue }
+            let nextTool: AnnotationTool = tool == .freehand || tool == .numberedCircle ? tool : .select
+            #expect(engine.tool == nextTool && engine.selectedIds == [shape.id], "\(tool) finishes with the newest shape selected")
+            engine.undo()
+            #expect(engine.shapes.isEmpty)
+            engine.redo()
+            #expect(engine.shapes.map(\.id) == [shape.id])
+        }
+    }
+
+    @Test static func freehandAndNumberedCirclesCanBeDrawnInRuns() {
+        for tool in [AnnotationTool.freehand, .numberedCircle] {
+            let engine = editor()
+            engine.replaceDocument(shapes: [])
+            engine.tool = tool
+            for index in 1...3 {
+                let x = Double(index) * 150
+                engine.pointerDown(pointer(x, 100))
+                engine.pointerMove(pointer(x + 40, 140))
+                engine.pointerUp(pointer(x + 40, 140))
+                #expect(engine.shapes.count == index && engine.tool == tool)
+                #expect(engine.selectedIds == [engine.shapes[index - 1].id])
+            }
+            if tool == .numberedCircle {
+                #expect(engine.shapes.compactMap { $0.numberedProps?.value } == [1, 2, 3])
+            }
+            engine.escapeSelectionOrDisarm()
+            #expect(engine.selectedIds.isEmpty && engine.tool == tool)
+            engine.escapeSelectionOrDisarm()
+            #expect(engine.tool == .select)
+        }
+    }
+
+    @Test static func uncommittedDrawsAndExplicitToolChanges() {
+        for tool in [AnnotationTool.arrow, .line, .freehand] {
+            let engine = editor()
+            engine.replaceDocument(shapes: [])
+            engine.tool = tool
+            engine.pointerDown(pointer(100, 100))
+            engine.pointerUp(pointer(100, 100))
+            #expect(engine.shapes.isEmpty && engine.selectedIds.isEmpty && engine.tool == tool)
+        }
+        let text = editor()
+        text.tool = .text
+        text.pointerDown(pointer(500, 300))
+        text.stopEditingText()
+        #expect(text.shapes.count == 1 && text.selectedIds.isEmpty && text.tool == .select)
+        text.tool = .text
+        text.pointerDown(pointer(500, 300))
+        if let id = text.editingTextId { text.updateEditingText(id, to: "Keep my next tool") }
+        text.tool = .arrow
+        #expect(text.editingTextId == nil && text.tool == .arrow)
     }
 
     static func regionGrabChecks() {
@@ -117,7 +186,7 @@ struct EditorInteractionTests {
                 default: Issue.record("\(drawingTool) must draw inside \(regionTool) without Command"); return
                 }
                 engine.pointerMove(pointer(250, 230)); engine.pointerUp(pointer(250, 230))
-                #expect(engine.shapes.count == 2 && engine.shapes[0] == region && engine.tool == drawingTool)
+                #expect(engine.shapes.count == 2 && engine.shapes[0] == region && engine.tool == .select && engine.selectedIds == [engine.shapes[1].id])
             }
             let edge = editor(); edge.replaceDocument(shapes: [region]); edge.tool = .magnifier
             #expect(edge.hitShape(at: Vec(95, 135))?.id == region.id && edge.hitShape(at: Vec(110, 135)) == nil)

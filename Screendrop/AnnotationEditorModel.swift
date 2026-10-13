@@ -144,6 +144,7 @@ final class AnnotationEditorModel {
         engine.tool = selectedTool
         engine.onChange = { [weak self] in
             guard let self else { return }
+            selectedTool = engine.tool
             recordHistoryChange()
             revision &+= 1
             updateCanvasExpansion()
