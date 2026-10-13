@@ -220,7 +220,9 @@ final class AnnotationEditorModel {
     }
 
     var hasInspectorStyleControls: Bool {
-        isTextStyleAvailable || isColorStyleAvailable || isStrokeStyleAvailable || isRedactionStyleAvailable || isFillStyleAvailable
+        // Colour and width are in the tool dock's pill, not the inspector.
+        isTextStyleAvailable || isRedactionStyleAvailable || isFillStyleAvailable
+            || isHandDrawnStyleAvailable || inspectedTool == .magnifier
     }
 
     private func isStyleAvailable(_ supportsStyle: (AnnotationTool) -> Bool) -> Bool {

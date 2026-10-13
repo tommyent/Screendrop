@@ -358,7 +358,9 @@ struct AnnotationEditorInspector: View {
         } else {
             // Editors open disarmed (sd-k8u); a line here keeps Style from
             // collapsing to nothing and says what fills it.
-            InspectorHint("Pick a tool or select an annotation")
+            InspectorHint(model.isColorStyleAvailable
+                ? "Colour and size are in the dock's colour pill"
+                : "Pick a tool or select an annotation")
                 .frame(minHeight: InspectorMetrics.controlHeight, alignment: .leading)
         }
     }
