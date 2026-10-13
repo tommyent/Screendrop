@@ -3,12 +3,24 @@ import Testing
 
 @MainActor
 struct TaperedSliderStepsTests {
-    @Test func dragSnapsAcrossUnevenGapsAndClampsAtEnds() {
+    @Test func dragStopsHaveEqualSpaceAndClampAtEnds() {
         let widths = AnnotationSizeStops.lineWidths
-        #expect(AnnotationSizeStops.nearest(to: 5, in: widths) == 4)
-        #expect(AnnotationSizeStops.nearest(to: 5.1, in: widths) == 6)
-        #expect(AnnotationSizeStops.nearest(to: -20, in: widths) == 1)
-        #expect(AnnotationSizeStops.nearest(to: 100, in: widths) == 16)
+        #expect(AnnotationSizeStops.value(at: 0.5, in: widths) == 6)
+        #expect(AnnotationSizeStops.value(at: -1, in: widths) == 1)
+        #expect(AnnotationSizeStops.value(at: 2, in: widths) == 16)
+        for stops in [widths, AnnotationSizeStops.textSizes] {
+            for (index, stop) in stops.enumerated() {
+                let fraction = CGFloat(index) / CGFloat(stops.count - 1)
+                #expect(AnnotationSizeStops.value(at: fraction, in: stops) == stop)
+                #expect(abs(AnnotationSizeStops.fraction(for: stop, in: stops) - fraction) < 0.0001)
+            }
+        }
+    }
+
+    @Test func offStopThumbPositionInterpolatesBetweenNeighbours() {
+        #expect(AnnotationSizeStops.fraction(for: 5, in: AnnotationSizeStops.lineWidths) == 0.5)
+        let textFraction = AnnotationSizeStops.fraction(for: 84, in: AnnotationSizeStops.textSizes)
+        #expect(abs(textFraction - 12.5 / 13) < 0.0001)
     }
 
     @Test func keysMoveToAnAdjacentStopFromAnExistingOffStopValue() {

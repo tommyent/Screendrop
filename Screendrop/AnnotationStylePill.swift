@@ -89,9 +89,7 @@ private struct TaperedSlider: View {
     private let thumb: CGFloat = 16
 
     var body: some View {
-        let lower = stops.first ?? value
-        let span = (stops.last ?? value) - lower
-        let fraction = span > 0 ? min(max((value - lower) / span, 0), 1) : 0
+        let fraction = AnnotationSizeStops.fraction(for: value, in: stops)
         ZStack(alignment: .leading) {
             Path { path in
                 path.move(to: CGPoint(x: thumb / 2, y: height / 2 - 1))
@@ -123,7 +121,7 @@ private struct TaperedSlider: View {
                         onEditing(true)
                     }
                     let f = min(max((drag.location.x - thumb / 2) / (width - thumb), 0), 1)
-                    let next = AnnotationSizeStops.nearest(to: lower + f * span, in: stops)
+                    let next = AnnotationSizeStops.value(at: f, in: stops)
                     if next != value { onChange(next) }
                 }
                 .onEnded { _ in endDrag() }

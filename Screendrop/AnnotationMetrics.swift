@@ -24,8 +24,19 @@ enum AnnotationSizeStops {
         + [12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 72, 96]
             .filter { $0 > AnnotationTextMetrics.minimumFontSize }
 
-    static func nearest(to value: CGFloat, in stops: [CGFloat]) -> CGFloat {
-        stops.min { abs($0 - value) < abs($1 - value) } ?? value
+    static func value(at fraction: CGFloat, in stops: [CGFloat]) -> CGFloat {
+        guard stops.count > 1 else { return stops.first ?? 0 }
+        let clamped = min(max(fraction, 0), 1)
+        return stops[Int((clamped * CGFloat(stops.count - 1)).rounded())]
+    }
+
+    /// Off-stop saved values sit between their neighbours without changing the value.
+    static func fraction(for value: CGFloat, in stops: [CGFloat]) -> CGFloat {
+        guard stops.count > 1, let first = stops.first, value > first else { return 0 }
+        guard let upper = stops.firstIndex(where: { $0 >= value }) else { return 1 }
+        let lower = upper - 1
+        let between = (value - stops[lower]) / (stops[upper] - stops[lower])
+        return (CGFloat(lower) + between) / CGFloat(stops.count - 1)
     }
 
     /// An off-stop value moves in the requested direction, without rounding first.
