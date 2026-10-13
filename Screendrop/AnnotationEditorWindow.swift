@@ -564,9 +564,6 @@ struct AnnotationEditorWindow: View {
             guard let model else { return false }
             return model.hasUnsavedChanges || model.isCommitting || model.isBlockingCommit
         }
-        // A screenshot is already in History whether or not it is annotated,
-        // so there is no "delete the whole thing" case here.
-        closeGuard.offersDelete = { false }
         closeGuard.projectName = { [weak model] in model?.sourceURL?.lastPathComponent ?? "this screenshot" }
         // Capture only the model, not this view and its @State close guard.
         closeGuard.onDecision = { [weak model] decision, done in
@@ -593,7 +590,7 @@ struct AnnotationEditorWindow: View {
             case .discard:
                 model.releaseEditorResources()
                 done(true)
-            case .delete, .cancel:
+            case .cancel:
                 done(false)
             }
         }

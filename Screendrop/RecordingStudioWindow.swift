@@ -229,10 +229,9 @@ private struct RecordingStudioContent: View {
     }
 
     private func configureCloseGuard() {
-        closeGuard.savesWithoutAsking = { [weak model] in model?.autosaves ?? false }
+        closeGuard.savesWithoutAsking = { [weak model] in model?.isProject ?? false }
         closeGuard.hasRunningWork = { [weak model] in model?.hasRunningWork ?? false }
         closeGuard.hasUnsavedChanges = { [weak model] in model?.hasUnsavedChanges ?? false }
-        closeGuard.offersDelete = { [weak model] in model?.hasNeverBeenSaved ?? false }
         closeGuard.offersSave = { [weak model] in model?.isProject ?? true }
         closeGuard.projectName = { [weak model] in model?.projectDisplayName ?? "this recording" }
         closeGuard.onDecision = { [weak model] decision, done in
@@ -245,8 +244,6 @@ private struct RecordingStudioContent: View {
                     await model.discardChanges()
                     done(true)
                 }
-            case .delete:
-                done(model.deleteProject())
             case .cancel:
                 break
             }

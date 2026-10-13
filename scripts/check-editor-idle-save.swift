@@ -365,7 +365,7 @@ struct IdleSaveChecks {
             }
         }
         guarder.attach(to: window)
-        // Studio's never-saved recordings ask first; quitting leaves them to their draft.
+        // A plain movie in Studio asks first; quitting leaves it to its own alert.
         try check(!EditorCloseGuard.reviewBeforeQuit { _ in }, "Quit saved an editor that asks first")
         guarder.savesWithoutAsking = { true }
         // The delegate path used by Cmd-W, without displaying or focusing a window.

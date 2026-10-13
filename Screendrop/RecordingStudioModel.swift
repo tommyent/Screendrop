@@ -423,17 +423,15 @@ final class RecordingStudioModel {
             if session.hasUnsavedDraft {
                 // Reopened on a draft that outlived its editor.
                 hasUnsavedChanges = true
-            } else if lastSavedDocument == nil {
-                // A recording that has never been saved is unsaved work by
-                // definition, which is what makes the close prompt offer to
-                // throw the whole thing away.
-                hasUnsavedChanges = true
             } else {
                 hasUnsavedChanges = false
                 // Adopt the loaded document in its normalized in-memory form
                 // as the baseline. Defaults filled in during load (an export
                 // preset an older project never stored, clips normalized to
-                // the real duration) would otherwise read as edits.
+                // the real duration) would otherwise read as edits. A new
+                // recording's defaults (the default style, zoom cues found
+                // in its pointer track) are its baseline too, so opening one
+                // saves nothing until it is edited.
                 lastSavedDocument = currentDocument()
             }
             session.updateProjectMetadata { $0.lastOpenedAt = Date() }
@@ -1174,11 +1172,6 @@ final class RecordingStudioModel {
         scheduleAutosave()
     }
 
-    /// Saved projects save at a pause, as the image editor does. A recording
-    /// that was never saved waits for ⌘S or the close prompt, which can
-    /// still move it to the Trash; a bare movie has nowhere to save.
-    var autosaves: Bool { session?.hasSavedProject == true }
-
     /// Two seconds after the last change. Every keystroke and drag step is a
     /// change, so this waits out typing; a held mouse button (a drag or a
     /// scrub paused mid-way) puts it off again.
@@ -1195,10 +1188,11 @@ final class RecordingStudioModel {
         }
     }
 
-    /// A save nobody asked for. A failure shows Not Saved rather than an
-    /// alert, and the draft keeps the edits.
+    /// A save nobody asked for, as in the image editor; a bare movie has
+    /// nowhere to save. A failure shows Not Saved rather than an alert, and
+    /// the draft keeps the edits.
     func autosave() {
-        guard autosaves, hasUnsavedChanges else { return }
+        guard isProject, hasUnsavedChanges else { return }
         saveProject(reportingFailure: false)
     }
 
@@ -1227,16 +1221,8 @@ final class RecordingStudioModel {
         )
     }
 
-    /// True until the project has been saved at least once. Only these get
-    /// offered "Move to Trash and Close"; saved projects discard only their unsaved edits.
-    var hasNeverBeenSaved: Bool {
-        guard let session else { return false }
-        return !session.hasSavedProject
-    }
-
     /// Persists the working copy. Cheap, debounced, and never touches the
-    /// committed `edit.json`, so a crash costs nothing between saves and a
-    /// recording that was never saved keeps its edits across launches.
+    /// committed `edit.json`, so a crash or a failed save costs nothing.
     private func writeDraftNow() {
         guard isLoaded else { return }
         let document = currentDocument()
@@ -1315,24 +1301,6 @@ final class RecordingStudioModel {
         // Rebuilding the timeline touches published state; let the normal
         // draft path settle the dirty flag rather than assuming it landed.
         flushDraft()
-    }
-
-    /// Moves a never-saved project and its footage to the Trash before closing.
-    @discardableResult
-    func deleteProject() -> Bool {
-        guard let session else { return false }
-        flushDraft()
-        do {
-            try RecordingProjectStore.shared.delete(session)
-            // Teardown must not recreate a draft at the package's former location.
-            isLoaded = false
-            teardown()
-            return true
-        } catch {
-            FailureAlert.present(message: "The recording could not be moved to the Trash", error: error,
-                                 detail: "Your editor will stay open and your footage has been kept.")
-            return false
-        }
     }
 
     /// The parts of a stored project that need the timeline rebuilt around

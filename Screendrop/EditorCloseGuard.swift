@@ -17,7 +17,6 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     enum Decision {
         case save
         case discard
-        case delete
         case cancel
     }
 
@@ -26,8 +25,6 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     var canClose: () -> Bool = { true }
     /// An export or upload that closing would cancel; asked about first.
     var hasRunningWork: () -> Bool = { false }
-    /// Never-saved projects can move to Trash; saved projects revert to their saved state.
-    var offersDelete: () -> Bool = { false }
     /// False when the edits have nowhere to be saved (a plain movie rather
     /// than a project), so the prompt can only warn before discarding them.
     var offersSave: () -> Bool = { true }
@@ -101,7 +98,6 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         savesWithoutAsking = { false }
         canClose = { true }
         hasRunningWork = { false }
-        offersDelete = { false }
         offersSave = { true }
         projectName = { "" }
         onDecision = { _, done in done(true) }
@@ -211,15 +207,11 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = offersDelete()
-            ? "Do you want to save your project before closing or move it to the Trash?"
-            : "Do you want to save the changes to “\(projectName())”?"
-        alert.informativeText = offersDelete()
-            ? "This recording has never been saved. Its footage will move to the Trash, where you can recover it."
-            : "Your changes since the last save will be lost if you don't save them."
+        alert.messageText = "Do you want to save the changes to “\(projectName())”?"
+        alert.informativeText = "Your changes since the last save will be lost if you don't save them."
 
         alert.addButton(withTitle: "Save and Close")
-        alert.addButton(withTitle: offersDelete() ? "Move to Trash and Close" : "Discard Changes")
+        alert.addButton(withTitle: "Discard Changes")
         alert.addButton(withTitle: "Cancel")
         // Escape and ⌘. land on Cancel rather than destroying anything.
         alert.buttons[2].keyEquivalent = "\u{1b}"
@@ -233,7 +225,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
             case .alertFirstButtonReturn:
                 decision = .save
             case .alertSecondButtonReturn:
-                decision = self.offersDelete() ? .delete : .discard
+                decision = .discard
             default:
                 decision = .cancel
             }
@@ -248,8 +240,6 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
                     finished?(false)
                     return
                 }
-                // Deleting already tore the project down; either way the
-                // window is now free to go.
                 self.isCloseApproved = true
                 window.close()
                 finished?(true)

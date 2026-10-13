@@ -16,8 +16,8 @@ nonisolated struct RecordingProjectMetadata: Codable, Sendable, Equatable {
 
     var version: Int?
     var displayName: String?
-    /// Last explicit save. Nil for a project that has only ever autosaved a
-    /// draft, which is what makes "Delete and close" safe to offer.
+    /// Last save to `edit.json`. Nil for a project that has only ever
+    /// written a draft.
     var savedAt: Date?
     var lastOpenedAt: Date?
     /// Library tags. Optional so project files without them still decode.
