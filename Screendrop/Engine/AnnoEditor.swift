@@ -340,11 +340,29 @@ final class AnnoEditor {
             let hit = shape.isRedaction || shape.isHighlight
                 ? abs(geometry.distanceToPoint(localPoint)) <= margin
                 : geometry.hitTestPoint(localPoint, margin: margin, hitInside: shape.isFilled)
+                    // A hand-drawn stroke bows off its shape's own outline (sd-drv); a click on
+                    // what's drawn grabs it too. Bounds, snapping and binding keep the outline.
+                    || (shape.isHandDrawn
+                        && Self.drawnStroke(document.renderElements(shape.id), contains: localPoint, margin: margin))
             if hit {
                 return shape
             }
         }
         return nil
+    }
+
+    /// Whether `point`, in the shape's own space, lands on one of its stroked elements as drawn,
+    /// widened by `margin` on each side.
+    static func drawnStroke(_ elements: [RenderElement], contains point: Vec, margin: Double) -> Bool {
+        elements.contains { element in
+            guard element.stroke != nil, case let .path(path) = element.content else { return false }
+            // Hover calls this on every move: rule out a far click before stroking the path.
+            let reach = element.strokeWidth / 2 + margin
+            guard path.boundingBoxOfPath.insetBy(dx: -reach, dy: -reach).contains(point.cgPoint) else { return false }
+            return path.copy(strokingWithWidth: element.strokeWidth + margin * 2,
+                             lineCap: .round, lineJoin: .round, miterLimit: 10)
+                .contains(point.cgPoint)
+        }
     }
 
     /// Shapes overlapping a page-space box, for brush selection.

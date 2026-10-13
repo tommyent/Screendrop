@@ -137,34 +137,36 @@ enum AnnoShapeRenderer {
             ))
             if props.dash != .draw { return elements }
         }
-        elements.append(strokeElement(
-            path: props.dash == .draw && props.geo == .ellipse ? GeoPaths.handDrawnEllipse(props) : path,
-            dash: props.dash,
-            strokeWidth: props.strokeWidth,
-            color: props.swatch.nsColor,
-            seed: seed
-        ))
+        if props.dash == .draw {
+            elements.append(RenderElement(
+                content: .path(props.geo == .ellipse
+                    ? MarkerPaths.ellipse(props, seed: seed)
+                    : MarkerPaths.rectangle(props, seed: seed)),
+                fill: nil,
+                stroke: props.swatch.nsColor,
+                strokeWidth: props.strokeWidth
+            ))
+        } else {
+            elements.append(strokeElement(
+                path: path,
+                dash: props.dash,
+                strokeWidth: props.strokeWidth,
+                color: props.swatch.nsColor
+            ))
+        }
         return elements
     }
 
-    /// Stroke a path in whichever dash style is asked for.
+    /// Stroke a path in whichever dash style is asked for. Hand-drawn (`.draw`) shapes take their
+    /// own marker paths (`MarkerPaths`) before they get here.
     private static func strokeElement(
         path: PathBuilder,
         dash: DashStyle,
         strokeWidth: Double,
-        color: NSColor,
-        seed: String
+        color: NSColor
     ) -> RenderElement {
         switch dash {
-        case .draw:
-            let opts = PathBuilder.DrawOptions(strokeWidth: strokeWidth, randomSeed: seed)
-            return RenderElement(
-                content: .path(path.drawPath(opts)),
-                fill: nil,
-                stroke: color,
-                strokeWidth: strokeWidth
-            )
-        case .solid:
+        case .solid, .draw:
             return RenderElement(
                 content: .path(path.solidPath()),
                 fill: nil,
@@ -191,29 +193,67 @@ enum AnnoShapeRenderer {
 
     // MARK: - Arrow
 
+    private static func headElements(_ props: ArrowProps, info: ArrowInfo,
+                                     sides: [ArrowTerminal] = [.start, .end]) -> [RenderElement] {
+        sides.compactMap { side in
+            guard let head = Arrowheads.path(info, side, props.strokeWidth) else { return nil }
+            return RenderElement(
+                content: .path(head.path.solidPath()),
+                fill: head.isFilled ? props.swatch.nsColor : nil,
+                stroke: props.swatch.nsColor,
+                strokeWidth: props.strokeWidth
+            )
+        }
+    }
+
+    /// A hand-drawn arrow as a marker draws it (sd-drv): one stroke with a gentle seeded bow, and
+    /// open two-stroke heads, a touch larger, that follow the bow at the tip. A bent arrow keeps
+    /// its arc. Heads other than the arrow and the triangle stay as they are.
+    private static func markerArrowElements(_ props: ArrowProps, info: ArrowInfo, seed: String) -> [RenderElement] {
+        let sw = props.strokeWidth, color = props.swatch.nsColor
+        let body: CGPath
+        var back: [ArrowTerminal: Vec] = [:]
+        switch info.body {
+        case let .straight(start, end):
+            let marker = MarkerPaths.bowedLine(from: start, to: end, strokeWidth: sw, seed: seed)
+            body = marker.path
+            back = [.start: marker.startBack, .end: marker.endBack]
+        case .arc:
+            body = ArrowPath.body(info).solidPath()
+            for side in [ArrowTerminal.start, .end] {
+                let points = Arrowheads.arrowPoints(info, side, sw)
+                back[side] = Vec.sub(points.int, points.point).uni
+            }
+        }
+        var elements = [RenderElement(content: .path(body), fill: nil, stroke: color, strokeWidth: sw)]
+        let length = clamp(Vec.dist(info.start.point, info.end.point) / 4, sw * 2, sw * 4.5)
+        for side in [ArrowTerminal.start, .end] {
+            let type = side == .end ? info.end.arrowhead : info.start.arrowhead
+            switch type {
+            case .none:
+                continue
+            case .arrow, .triangle:
+                let tip = side == .end ? info.end.point : info.start.point
+                guard let direction = back[side], !direction.isNaN else { continue }
+                elements.append(RenderElement(content: .path(MarkerPaths.openHead(tip: tip, back: direction, length: length)),
+                                              fill: nil, stroke: color, strokeWidth: sw))
+            default:
+                elements += headElements(props, info: info, sides: [side])
+            }
+        }
+        return elements
+    }
+
     private static func arrowElements(_ shape: AnnoShape, in document: AnnoDocument) -> [RenderElement] {
         guard let props = shape.arrowProps,
               let info = document.arrowInfo(shape.id),
               info.isValid else { return [] }
 
-        var elements: [RenderElement] = []
-        elements.append(strokeElement(
-            path: ArrowPath.body(info, handDrawn: props.dash == .draw),
-            dash: props.dash,
-            strokeWidth: props.strokeWidth,
-            color: props.swatch.nsColor,
-            seed: shape.id.raw
-        ))
-
-        for side in [ArrowTerminal.start, ArrowTerminal.end] {
-            guard let head = Arrowheads.path(info, side, props.strokeWidth) else { continue }
-            elements.append(RenderElement(
-                content: .path(head.path.solidPath()),
-                fill: head.isFilled ? props.swatch.nsColor : nil,
-                stroke: props.swatch.nsColor,
-                strokeWidth: props.strokeWidth
-            ))
-        }
+        var elements = props.dash == .draw
+            ? markerArrowElements(props, info: info, seed: shape.id.raw)
+            : [strokeElement(path: ArrowPath.body(info), dash: props.dash,
+                             strokeWidth: props.strokeWidth, color: props.swatch.nsColor)]
+                + headElements(props, info: info)
 
         if let label = ArrowLabel.layout(props, midpoint: info.middle, rotation: shape.rotation) {
             var transform = label.transform.cgAffineTransform
