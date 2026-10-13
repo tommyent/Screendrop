@@ -105,13 +105,16 @@ struct AnnotationCanvas: View {
                     && !hasActiveInteraction
                     && !model.isTransformingExistingAnnotation
                     && model.selectionCount == 0
+                    // The settled frame is the saved fill; a hovered one
+                    // shows through the live approximation instead.
+                    && model.previewBackground == nil
             )
 
             ZStack(alignment: .topLeading) {
                 sceneStage(
                     viewportSize: proxy.size,
                     canvasFrame: displayLayout.canvasFrame,
-                    backgroundStyle: model.backgroundSettings.style,
+                    backgroundStyle: model.displayedBackgroundStyle,
                     showsBackground: model.backgroundSettings.isEnabled,
                     screenshotGeometry: screenshotGeometry,
                     allowedBounds: allowedBounds,

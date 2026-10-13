@@ -91,6 +91,10 @@ final class AnnotationEditorModel {
         }
     }
     var appliedBackgroundPresetID: AnnotationBackgroundPreset.ID?
+    /// A fill shown on the canvas while the pointer rests on it in the
+    /// background picker. Never saved, exported or put in history;
+    /// picking it writes the settings.
+    var previewBackground: AnnotationBackgroundStyle?
     var errorMessage: String?
     var isSmartRedacting = false
     var smartRedactionMessage: String?
@@ -1178,5 +1182,29 @@ extension AnnotationEditorModel {
     private var minimumCropHeight: CGFloat {
         guard imageSize.height > 0 else { return 0.05 }
         return min(0.5, max(0.01, minimumCropPixels / imageSize.height))
+    }
+}
+
+// MARK: - Background preview
+
+extension AnnotationEditorModel {
+    /// Shows or clears a hovered fill. Leaving one fill can arrive after
+    /// entering the next, so only the fill being left is cleared.
+    func previewBackground(_ background: AnnotationBackgroundStyle, isHovering: Bool) {
+        if isHovering {
+            previewBackground = background
+        } else if previewBackground == background {
+            previewBackground = nil
+        }
+    }
+
+    /// The fill the canvas draws. A preview only swaps one fill for another:
+    /// adding or removing the background would resize the canvas under the
+    /// pointer, so those wait for the click.
+    var displayedBackgroundStyle: AnnotationBackgroundStyle {
+        guard let previewBackground, previewBackground != .none,
+              backgroundSettings.style != .none
+        else { return backgroundSettings.style }
+        return previewBackground
     }
 }
