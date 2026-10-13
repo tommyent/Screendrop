@@ -22,6 +22,8 @@ final class UnsplashWallpaperSearch {
     }
 
     func setAccessKey(_ key: String) {
+        searchTask?.cancel()
+        isSearching = false
         accessKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if accessKey.isEmpty {
             CloudCredentialStore.deleteKeychainItem(key: Self.keychainKey)
@@ -38,6 +40,7 @@ final class UnsplashWallpaperSearch {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, let request = UnsplashAPI.searchRequest(query: query, accessKey: accessKey) else {
             results = []
+            isSearching = false
             return
         }
         isSearching = true
@@ -69,8 +72,9 @@ final class UnsplashWallpaperSearch {
         defer { downloadingID = nil }
         errorMessage = nil
         do {
-            let ping = UnsplashAPI.authorized(URLRequest(url: photo.downloadLocation), accessKey: accessKey)
-            _ = try? await URLSession.shared.data(for: ping)
+            if let ping = UnsplashAPI.downloadPing(for: photo, accessKey: accessKey) {
+                _ = try? await URLSession.shared.data(for: ping)
+            }
 
             let (data, response) = try await URLSession.shared.data(from: photo.fullURL)
             try UnsplashAPI.check(response)

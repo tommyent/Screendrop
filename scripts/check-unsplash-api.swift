@@ -30,6 +30,12 @@ struct UnsplashAPIChecks {
         // A hostile id can't climb out of the wallpapers folder.
         precondition(UnsplashAPI.fileName(for: photos[1]) == "etc.jpg")
 
+        precondition(UnsplashAPI.downloadPing(for: first, accessKey: "KEY")?.value(forHTTPHeaderField: "Authorization") == "Client-ID KEY")
+        let elsewhere = UnsplashAPI.Photo(id: "x", thumbURL: first.thumbURL, fullURL: first.fullURL,
+                                          downloadLocation: URL(string: "https://example.com/collect")!,
+                                          photographer: "x", profileURL: first.profileURL, altText: "x")
+        precondition(UnsplashAPI.downloadPing(for: elsewhere, accessKey: "KEY") == nil)
+
         let request = UnsplashAPI.searchRequest(query: "sunset & sea", accessKey: "KEY")!
         precondition(request.value(forHTTPHeaderField: "Authorization") == "Client-ID KEY")
         precondition(request.url!.absoluteString.contains("query=sunset%20%26%20sea"))
