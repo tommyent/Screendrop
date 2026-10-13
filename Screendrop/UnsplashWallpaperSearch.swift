@@ -149,6 +149,11 @@ struct UnsplashWallpaperSearchView: View {
     }
 
     private var resultsGrid: some View {
+        ScrollView { resultTiles }
+            .frame(maxHeight: 320)
+    }
+
+    private var resultTiles: some View {
         LazyVGrid(columns: columns, spacing: 7) {
             ForEach(search.results) { photo in
                 VStack(alignment: .leading, spacing: 2) {
@@ -157,16 +162,19 @@ struct UnsplashWallpaperSearchView: View {
                             if let url = await search.use(photo) { onPick(url) }
                         }
                     } label: {
-                        AsyncImage(url: photo.thumbURL) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            Color.secondary.opacity(0.15)
-                        }
-                        .aspectRatio(1.35, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
-                        .overlay {
-                            if search.downloadingID == photo.id { ProgressView().controlSize(.small) }
-                        }
+                        Color.clear
+                            .aspectRatio(1.35, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: photo.thumbURL) { image in
+                                    image.resizable().scaledToFill()
+                                } placeholder: {
+                                    Color.secondary.opacity(0.15)
+                                }
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
+                            .overlay {
+                                if search.downloadingID == photo.id { ProgressView().controlSize(.small) }
+                            }
                     }
                     .buttonStyle(.plain)
                     .disabled(search.downloadingID != nil)
@@ -177,6 +185,9 @@ struct UnsplashWallpaperSearchView: View {
                         .font(.system(size: 9))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 12, alignment: .leading)
                 }
             }
         }
