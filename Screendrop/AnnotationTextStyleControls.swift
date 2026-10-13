@@ -217,7 +217,7 @@ struct AnnotationTextStyleControls: View {
     }
 }
 
-private extension TextBoxStyle {
+extension TextBoxStyle {
     var title: String {
         switch self {
         case .plain: "Plain text"
@@ -228,7 +228,7 @@ private extension TextBoxStyle {
 
 /// A "T" on its own, or knocked out of a filled square, in the segment's own colour so it follows
 /// the selected and hover states like the other segments.
-private struct TextBoxStyleIcon: View {
+struct TextBoxStyleIcon: View {
     let style: TextBoxStyle
 
     var body: some View {

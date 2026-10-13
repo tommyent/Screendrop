@@ -13,15 +13,15 @@ import SwiftUI
 /// row hid the last three behind a fade.
 struct AnnotationSwatchStrip: View {
     let selectedSwatch: AnnotationSwatch
+    /// Six in the inspector; the toolbar's style pill puts them all in one row.
+    var columnCount = 6
     let onSelect: (AnnotationSwatch) -> Void
 
     private static let swatchDiameter: CGFloat = 19
-    private static let columns = Array(
-        repeating: GridItem(.flexible(minimum: 24, maximum: 28), spacing: 2), count: 6
-    )
 
     var body: some View {
-        LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 0) {
+        let columns = Array(repeating: GridItem(.flexible(minimum: 24, maximum: 28), spacing: 2), count: columnCount)
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 0) {
             ForEach(AnnotationSwatch.allCases) { swatch in
                 swatchButton(for: swatch)
             }

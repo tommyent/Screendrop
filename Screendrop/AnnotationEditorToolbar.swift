@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The editor's tools in the window toolbar, Shottr's way (sd-w8c): the
 /// drawing tools in one glass group, then Crop, the eyedropper and the
-/// ruler's hint in another.
+/// ruler's hint in another, then the colour and size pill (sd-z4f).
 struct AnnotationEditorToolbarTools: ToolbarContent {
     let model: AnnotationEditorModel
     @Bindable var probe: PixelProbe
@@ -44,6 +44,13 @@ struct AnnotationEditorToolbarTools: ToolbarContent {
                 AnnotationMeasureHintButton()
             }
             .disabled(isDisabled)
+        }
+
+        ToolbarSpacer(.fixed, placement: .principal)
+
+        ToolbarItem(placement: .principal) {
+            AnnotationStylePillButton(model: model)
+                .disabled(isDisabled)
         }
     }
 }
