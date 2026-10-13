@@ -461,17 +461,24 @@ private struct CloudUploadCard: View {
         // Cells are reused for other uploads.
         .onChange(of: upload.id) { _, _ in isHovering = false }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(CloudUploadText.title(upload, local: local)), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
-            + (CloudUploadText.comments(upload.commentCount).map { ", \($0)" } ?? "")
-            + (CloudUploadText.likes(upload.likeCount).map { ", \($0)" } ?? "")
-            + (upload.hasPassword == true ? ", password protected" : "")
-            + (CloudUploadText.expiry(upload.expiresAt).map { ", \($0)" } ?? "")
-            + (local == nil ? ", cloud only" : ", in Library"))
+        .accessibilityLabel(spokenLabel)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityAction(named: "Quick Look") { act { $0.quickLook(toggling: false) } }
         .accessibilityAction(named: "Open Link") { CloudLibraryModel.shared.open(upload) }
         .accessibilityAction(named: "Copy Link") { CloudLibraryModel.shared.copyLinks([upload]) }
         .accessibilityAction(named: "Delete from Cloud") { CloudLibraryModel.shared.pendingDelete = [upload] }
+    }
+
+    /// The card reads as one element, so this says what its pills show.
+    private var spokenLabel: String {
+        let parts: [String?] = [
+            CloudUploadText.title(upload, local: local), upload.kindTitle, CloudUploadText.subtitle(upload),
+            upload.isVideo ? upload.duration.map(CloudUploadText.duration) : nil,
+            CloudUploadText.comments(upload.commentCount), CloudUploadText.likes(upload.likeCount),
+            upload.hasPassword == true ? "password protected" : nil,
+            CloudUploadText.expiry(upload.expiresAt), local == nil ? "cloud only" : "in Library",
+        ]
+        return parts.compactMap(\.self).joined(separator: ", ")
     }
 
     /// Selects just this upload, then acts on the selection.
@@ -489,7 +496,8 @@ private struct CloudUploadCard: View {
                     Image(systemName: "internaldrive").foregroundStyle(.secondary).help("The capture is in your Library")
                 }
             }
-            Text(CloudUploadText.subtitle(upload)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            // A space when there's no size keeps the line, so cards stay level.
+            Text(CloudUploadText.subtitle(upload) ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
@@ -671,11 +679,9 @@ nonisolated enum CloudUploadText {
         return title.isEmpty || title == upload.filename || title == stem ? local?.customName : title
     }
 
-    static func subtitle(_ upload: CloudUpload) -> String {
-        let date = upload.createdAt.formatted(date: .abbreviated, time: .omitted)
-        if upload.isVideo, let seconds = upload.duration { return "\(date) · \(duration(seconds))" }
-        if let size = upload.size { return "\(date) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))" }
-        return date
+    /// The size alone: the title carries the date and a video's pill its length (sd-8oa).
+    static func subtitle(_ upload: CloudUpload) -> String? {
+        upload.size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
     }
 
     /// "Expires in 3 days" or "Expired"; nil for a link that never expires.

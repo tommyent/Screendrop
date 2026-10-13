@@ -76,7 +76,6 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
         let thisYear = Calendar.current.isDate(createdAt, equalTo: .now, toGranularity: .year)
         return createdAt.formatted(thisYear ? day : day.year()) + ", " + createdAt.formatted(date: .omitted, time: .shortened)
     }
-    var subtitle: String { isVideo ? durationText : dimensions }
     var durationText: String {
         guard let duration, duration.isFinite, duration >= 0 else { return "—" }
         let seconds = Int(min(duration.rounded(), Double(Int.max / 2)))
