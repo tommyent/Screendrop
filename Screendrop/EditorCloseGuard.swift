@@ -2,8 +2,8 @@
 //  EditorCloseGuard.swift
 //  Screendrop
 //
-//  Closing an editor window with uncommitted edits asks first - Studio and
-//  the annotation editor both use this. SwiftUI has no
+//  Closing an editor window with uncommitted edits asks first in Studio and
+//  saves without asking in the annotation editor. SwiftUI has no
 //  `windowShouldClose` hook, so this installs itself as the window delegate
 //  and forwards every other message to the delegate SwiftUI already set -
 //  taking over the window outright would break scene teardown.
@@ -34,41 +34,43 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     /// Call `done(true)` once the work is saved or discarded and the window
     /// may close, or `done(false)` when it must stay open (a failed save).
     var onDecision: (Decision, @escaping (Bool) -> Void) -> Void = { _, done in done(true) }
-    /// Studio keeps unsaved edits as a draft across launches, so quitting
-    /// costs it nothing. The annotation editor has no draft, so it asks.
-    let asksBeforeQuit: Bool
+    /// The annotation editor saves on close and on quit without asking; only
+    /// a failed save asks. Studio keeps unsaved edits as a draft across
+    /// launches, so quitting costs it nothing and closing asks.
+    let savesWithoutAsking: Bool
 
     private weak var attachedWindow: NSWindow?
     private nonisolated(unsafe) weak var previousDelegate: NSWindowDelegate?
     private var isPrompting = false
     private var isCloseApproved = false
 
-    init(asksBeforeQuit: Bool = false) {
-        self.asksBeforeQuit = asksBeforeQuit
+    init(savesWithoutAsking: Bool = false) {
+        self.savesWithoutAsking = savesWithoutAsking
         super.init()
     }
 
     /// Quitting (⌘Q, a Sparkle relaunch, logout) never calls
-    /// `windowShouldClose`, so the app delegate runs the same prompt through
-    /// this, one editor at a time. Returns false when nothing needs asking.
-    /// Otherwise `completion(true)` follows once every editor was saved or
-    /// discarded and closed; `completion(false)` on Cancel or a failed save.
+    /// `windowShouldClose`, so the app delegate saves each annotation editor
+    /// through this, one at a time. Returns false when nothing needs saving.
+    /// Otherwise `completion(true)` follows once every editor was saved (or,
+    /// after a failed save, discarded) and closed; `completion(false)` on
+    /// Cancel or a save that failed again.
     static func reviewBeforeQuit(completion: @escaping (Bool) -> Void) -> Bool {
         let editor = NSApp.windows.lazy
             .compactMap { window in (window.delegate as? EditorCloseGuard).map { (window, $0) } }
-            .first { $0.1.asksBeforeQuit && $0.1.hasUnsavedChanges() }
+            .first { $0.1.savesWithoutAsking && $0.1.hasUnsavedChanges() }
         guard let (window, closeGuard) = editor else { return false }
 
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
         // Already asking about this window, or mid-save: let that finish and
         // leave quitting again to the user.
         guard !closeGuard.isPrompting, closeGuard.canClose() else {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             Task { completion(false) }
             return true
         }
         closeGuard.isPrompting = true
-        closeGuard.present(on: window) { closed in
+        closeGuard.save(on: window) { closed in
             guard closed else { return completion(false) }
             if !reviewBeforeQuit(completion: completion) { completion(true) }
         }
@@ -131,7 +133,11 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         guard !isPrompting else { return false }
 
         isPrompting = true
-        present(on: sender)
+        if savesWithoutAsking {
+            save(on: sender)
+        } else {
+            present(on: sender)
+        }
         return false
     }
 
@@ -166,6 +172,28 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
                 self.isCloseApproved = true
                 window.close()
             }
+        }
+    }
+
+    /// Saves and closes. A failed save falls back to the prompt, whose
+    /// Discard always closes, so a save that keeps failing can't trap the
+    /// window open.
+    private func save(on window: NSWindow, then finished: ((Bool) -> Void)? = nil) {
+        onDecision(.save) { [weak self, weak window] saved in
+            guard let self, let window else {
+                finished?(false)
+                return
+            }
+            guard saved else {
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+                self.present(on: window, then: finished)
+                return
+            }
+            self.isPrompting = false
+            self.isCloseApproved = true
+            window.close()
+            finished?(true)
         }
     }
 

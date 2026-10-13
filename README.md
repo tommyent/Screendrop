@@ -61,7 +61,7 @@ Normal launches open the Library; launching at login stays quietly in the menu b
 
 ### Editor
 
-Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations and pasted pictures can be reopened and changed later. Exports render at the image's full resolution.
+Editing is non-destructive. The untouched image and an editable sidecar are kept side by side, so annotations and pasted pictures can be reopened and changed later. Exports render at the image's full resolution. There is no Save button: edits save when you close the window or quit, when you switch to another window or app, or with **Command + S**.
 
 - **Floating tool dock:** Select, rectangle, ellipse, highlight, arrow, straight line, freehand, text, numbered circle, magnifier, pixelate and blur sit above the canvas, followed by **Crop**, the **eyedropper**, **Measure**, and a **colour/size pill**. The pill changes the selected annotation's colour and line width or text size, or the armed tool's settings when nothing is selected.
 - **Place a shape, then adjust it:** shapes, arrows, lines, magnifiers and redactions return to Select with the new annotation selected. Text returns to Select when editing finishes. Freehand and numbered circles stay armed for drawing strokes or placing a run of numbers, with the newest annotation selected.

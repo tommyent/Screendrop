@@ -352,8 +352,8 @@ final class AnnotationEditorModel {
     /// annotations onto an already-composited picture. Returns nil when there
     /// is nothing to persist.
     ///
-    /// This is the only thing that puts annotations on disk, so every route
-    /// out of the editor - Done, Save, Upload, the close prompt - goes
+    /// This is the only thing that puts annotations on disk, so every save -
+    /// closing, quitting, ⌘C, ⌘S, Upload and the saves at a pause - goes
     /// through it.
     private(set) var isCommitting = false
 
@@ -469,6 +469,15 @@ final class AnnotationEditorModel {
         _ = revision
         guard sourceURL != nil, let savedSnapshot else { return false }
         return currentSnapshot() != savedSnapshot
+    }
+
+    /// Whether a save nobody asked for may run now. Committing locks the
+    /// editor, ends text editing and closes an undo step, so never while
+    /// anything is being drawn, dragged, typed or cropped.
+    var canSaveInBackground: Bool {
+        guard hasUnsavedChanges, !isCommitting, !isCropping, editingTextID == nil,
+              !isPointerDown, !isInspectorEditing, case .idle = engine.interaction else { return false }
+        return true
     }
 
     /// Re-baselines after a successful commit, and at the end of a load.
