@@ -2,16 +2,12 @@
 //  AnnotationStyleStrip.swift
 //  Screendrop
 //
-//  The annotator's saved styles as thumbnails of this screenshot wearing
-//  them, in a pop-out grid. Clicking one applies it; the last tile
-//  saves the current look. A style's menu sets it as the default for new
-//  screenshots, exports it or deletes it, and the pop-out footer imports
-//  styles shared as files.
+//  The annotator's saved styles, in the Styles picker it shares with Studio
+//  (StylePresetPicker). The tiles show this screenshot wearing each style.
 //
 
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct AnnotationStyleStrip: View {
     @Bindable var model: AnnotationEditorModel
@@ -19,66 +15,37 @@ struct AnnotationStyleStrip: View {
     let onEditorAction: () -> Void
 
     @State private var thumbnail: CGImage?
-    @State private var isPickerPresented = false
-    @State private var isNameEditorPresented = false
-    @State private var draftName = ""
-    @State private var presetPendingDeletion: AnnotationBackgroundPreset?
-    @State private var transferAlert: PresetTransferAlert?
-    @FocusState private var isNameFieldFocused: Bool
-
-    private static let tileAspect: CGFloat = 1.5
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .top), count: 3)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-            HStack(spacing: 6) {
-                Text("Styles")
-                    .font(.inspectorSectionHeader)
-                    .foregroundStyle(Palette.label.opacity(0.95))
-                Spacer(minLength: 0)
+        StylePresetPicker(
+            library: presetStore,
+            appliedPreset: appliedPreset,
+            itemNoun: "screenshot",
+            saveMessage: "Saves the background, frame, camera, blur, border and watermark. New screenshots start with it.",
+            hasMissingWallpaper: model.backgroundSettings.hasMissingCustomWallpaper,
+            onEditorAction: onEditorAction,
+            onApply: { model.applyBackgroundPreset($0) },
+            onSave: { name in
+                let preset = presetStore.savePreset(named: name, settings: model.backgroundSettings)
+                if let preset { model.appliedBackgroundPresetID = preset.id }
+                return preset
+            },
+            onDeleted: { preset in
+                if model.appliedBackgroundPresetID == preset.id {
+                    model.appliedBackgroundPresetID = nil
+                }
+            },
+            preview: { preset in
+                AnnotationStylePreview(settings: preset.settings, image: thumbnail, contentAspect: contentAspect)
             }
-            .frame(minHeight: 24)
-            .padding(.horizontal, InspectorMetrics.horizontalPadding)
-
-            pickerRow
-                .padding(.horizontal, InspectorMetrics.horizontalPadding)
-        }
-        .padding(.top, InspectorMetrics.sectionVerticalPadding / 2 + 3)
-        .padding(.bottom, 4)
+        )
         .disabled(model.sourceURL == nil)
-        .onChange(of: isPickerPresented) { _, isShown in
-            if !isShown { isNameEditorPresented = false }
-        }
         // The pixels being edited, so the tiles follow a crop and its undo.
         .task(id: thumbnailURL) {
             let image = await Self.thumbnail(for: thumbnailURL)
             // A decode for an earlier image mustn't replace a newer one.
             guard !Task.isCancelled else { return }
             thumbnail = image
-        }
-        .alert(
-            "Delete Style?",
-            isPresented: Binding(
-                get: { presetPendingDeletion != nil },
-                set: { if !$0 { presetPendingDeletion = nil } }
-            ),
-            presenting: presetPendingDeletion
-        ) { preset in
-            Button("Delete", role: .destructive) {
-                presetStore.deletePreset(id: preset.id)
-                if model.appliedBackgroundPresetID == preset.id {
-                    model.appliedBackgroundPresetID = nil
-                }
-                presetPendingDeletion = nil
-            }
-            Button("Cancel", role: .cancel) {
-                presetPendingDeletion = nil
-            }
-        } message: { preset in
-            Text("“\(preset.name)” will be removed from your styles. This screenshot won’t change.")
-        }
-        .alert(item: $transferAlert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
     }
 
@@ -88,150 +55,6 @@ struct AnnotationStyleStrip: View {
         return preset
     }
 
-    private var pickerRow: some View {
-        Button {
-            onEditorAction()
-            isPickerPresented = true
-        } label: {
-            HStack(spacing: 8) {
-                Text(appliedPreset?.name ?? "None")
-                    .font(.inspectorValue)
-                    .foregroundStyle(appliedPreset == nil ? Palette.secondaryLabel : Palette.label)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, InspectorMetrics.fieldInset)
-            .inspectorField()
-        }
-        .buttonStyle(.plain)
-        .help("Choose a style")
-        .accessibilityLabel("Styles")
-        .accessibilityValue(appliedPreset?.name ?? "None")
-        .closesOnEditorEscape($isPickerPresented)
-        .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
-            VStack(spacing: 8) {
-                InspectorGridScroll {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                        ForEach(presetStore.presets) { preset in
-                            tile(for: preset)
-                        }
-                        addTile
-                    }
-                }
-
-                HStack {
-                    Spacer(minLength: 0)
-                    Button("Import…") {
-                        isPickerPresented = false
-                        importPresets()
-                    }
-                    .buttonStyle(.link)
-                    .help("Import styles")
-                    .accessibilityLabel("Import Styles")
-                }
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-            }
-            .padding(14)
-            .frame(width: 320)
-            .background(Palette.panel)
-            .presentationBackground(Palette.panel)
-        }
-    }
-
-    private func tile(for preset: AnnotationBackgroundPreset) -> some View {
-        let isApplied = model.appliedBackgroundPresetID == preset.id && preset.matches(model.backgroundSettings)
-        let isDefault = presetStore.activePreset?.id == preset.id
-        let isMissing = preset.hasMissingWallpaper
-        return VStack(spacing: 4) {
-            InspectorTile(title: preset.name, aspectRatio: Self.tileAspect, isSelected: isApplied) {
-                guard !isMissing else {
-                    presetPendingDeletion = preset
-                    return
-                }
-                onEditorAction()
-                withAnimation(.morphIfAllowed) { model.applyBackgroundPreset(preset) }
-            } content: {
-                AnnotationStylePreview(
-                    settings: preset.settings,
-                    image: thumbnail,
-                    contentAspect: contentAspect
-                )
-                .overlay {
-                    if isMissing {
-                        Color.black.opacity(0.45)
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
-                }
-            }
-
-            HStack(spacing: 3) {
-                if isDefault {
-                    Circle()
-                        .fill(Palette.label)
-                        .frame(width: 4, height: 4)
-                        .help("Used for new screenshots")
-                }
-                Text(preset.name)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .multilineTextAlignment(.center)
-            }
-            .font(.system(size: 11, weight: isApplied ? .semibold : .regular))
-            .foregroundStyle(isApplied ? Palette.label : Palette.secondaryLabel)
-            .padding(.horizontal, 2)
-            .frame(height: 28, alignment: .top)
-        }
-        .frame(maxWidth: .infinity)
-        .help(isMissing ? "\(preset.name)’s wallpaper can’t be found" : preset.name)
-        .contextMenu {
-            if !isMissing {
-                Button(isDefault ? "Stop Using for New Screenshots" : "Use for New Screenshots") {
-                    presetStore.setActivePreset(id: isDefault ? nil : preset.id)
-                }
-            }
-            Button("Export…") { exportPreset(preset.id) }
-            Divider()
-            Button("Delete…", role: .destructive) {
-                presetPendingDeletion = preset
-            }
-        }
-    }
-
-    private var addTile: some View {
-        Button {
-            onEditorAction()
-            draftName = ""
-            isNameEditorPresented = true
-        } label: {
-            RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
-                .foregroundStyle(.quaternary)
-                .aspectRatio(Self.tileAspect, contentMode: .fit)
-                .overlay {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(2.5)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Save this look as a style")
-        .accessibilityLabel("New Style")
-        .closesOnEditorEscape($isNameEditorPresented)
-        .popover(isPresented: $isNameEditorPresented, arrowEdge: .bottom) {
-            nameEditor
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     private var thumbnailURL: URL? {
         model.baseImageURL ?? model.sourceURL
     }
@@ -239,70 +62,6 @@ struct AnnotationStyleStrip: View {
     private var contentAspect: CGFloat {
         guard model.imageSize.width > 0, model.imageSize.height > 0 else { return 1.6 }
         return model.imageSize.width / model.imageSize.height
-    }
-
-    // MARK: Saving
-
-    private var duplicateNamePreset: AnnotationBackgroundPreset? {
-        presetStore.preset(named: draftName)
-    }
-
-    private var canSaveName: Bool {
-        !AnnotationBackgroundPresetStore.normalizedName(draftName).isEmpty
-            && duplicateNamePreset == nil
-            && !model.backgroundSettings.hasMissingCustomWallpaper
-    }
-
-    private var nameEditor: some View {
-        InspectorPopover(
-            title: "New Style",
-            message: "Saves the background, frame, camera, blur, border and watermark. New screenshots start with it.",
-            confirmTitle: "Save",
-            isConfirmDisabled: !canSaveName,
-            width: 292,
-            onCancel: { isNameEditorPresented = false },
-            onConfirm: savePreset
-        ) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("Style name", text: $draftName)
-                    .inspectorTextField()
-                    .focused($isNameFieldFocused)
-                    .onSubmit(savePreset)
-                    .onChange(of: draftName) { _, newValue in
-                        let limitedName = String(newValue.prefix(AnnotationBackgroundPresetStore.maximumNameLength))
-                        if limitedName != newValue {
-                            draftName = limitedName
-                        }
-                    }
-
-                if model.backgroundSettings.hasMissingCustomWallpaper {
-                    Label(
-                        "The selected wallpaper can’t be found. Choose it again before saving.",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.inspectorLabel)
-                    .foregroundStyle(Palette.record)
-                } else if duplicateNamePreset != nil {
-                    Label("A style with this name already exists.", systemImage: "exclamationmark.circle.fill")
-                        .font(.inspectorLabel)
-                        .foregroundStyle(Palette.record)
-                }
-            }
-        }
-        .onAppear {
-            Task { @MainActor in
-                isNameFieldFocused = true
-            }
-        }
-    }
-
-    private func savePreset() {
-        guard canSaveName,
-              let preset = presetStore.savePreset(named: draftName, settings: model.backgroundSettings)
-        else { return }
-        model.appliedBackgroundPresetID = preset.id
-        presetStore.setActivePreset(id: preset.id)
-        isNameEditorPresented = false
     }
 
     /// A small copy of the screenshot for the thumbnails.
@@ -318,139 +77,6 @@ struct AnnotationStyleStrip: View {
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }.value
     }
-
-    // MARK: Sharing
-
-    private func importPresets() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.screendropPreset]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.title = "Import Screenshot Styles"
-        panel.prompt = "Import"
-
-        panel.begin { response in
-            guard response == .OK else { return }
-            let urls = panel.urls
-
-            Task { @MainActor in
-                var importedPresets: [AnnotationBackgroundPreset] = []
-                var omittedWallpaperCount = 0
-                var failures: [String] = []
-
-                for url in urls {
-                    do {
-                        let transferFile = try AnnotationBackgroundPresetTransferFile.load(from: url)
-                        let result = try presetStore.importTransferFile(transferFile)
-                        importedPresets.append(contentsOf: result.importedPresets)
-                        omittedWallpaperCount += result.omittedWallpaperCount
-                    } catch {
-                        failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
-                    }
-                }
-
-                if let firstImportedPreset = importedPresets.first {
-                    withAnimation(.morphIfAllowed) {
-                        model.applyBackgroundPreset(firstImportedPreset)
-                    }
-                }
-
-                transferAlert = Self.importAlert(
-                    importedCount: importedPresets.count,
-                    omittedWallpaperCount: omittedWallpaperCount,
-                    failures: failures
-                )
-            }
-        }
-    }
-
-    private func exportPreset(_ presetID: AnnotationBackgroundPreset.ID) {
-        do {
-            let transferFile = try presetStore.transferFile(for: presetID)
-            guard let preset = presetStore.preset(id: presetID) else {
-                throw AnnotationBackgroundPresetTransferError.presetNotFound
-            }
-
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.screendropPreset]
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
-            panel.title = "Export Screenshot Style"
-            panel.prompt = "Export"
-            panel.nameFieldStringValue = "\(Self.safeFilename(for: preset.name)).\(AnnotationBackgroundPresetTransferFile.filenameExtension)"
-
-            panel.begin { response in
-                guard response == .OK, let url = panel.url else { return }
-
-                Task { @MainActor in
-                    do {
-                        let data = try transferFile.encodedData()
-                        try data.write(to: url, options: .atomic)
-                        let omittedWallpaper = transferFile.presets.first?.omitted.contains(.wallpaper) == true
-                        transferAlert = PresetTransferAlert(
-                            title: "Style Exported",
-                            message: omittedWallpaper
-                                ? "The local wallpaper was not included. The imported style will use no background."
-                                : "“\(preset.name)” is ready to share."
-                        )
-                    } catch {
-                        transferAlert = PresetTransferAlert(
-                            title: "Export Failed",
-                            message: error.localizedDescription
-                        )
-                    }
-                }
-            }
-        } catch {
-            transferAlert = PresetTransferAlert(
-                title: "Export Failed",
-                message: error.localizedDescription
-            )
-        }
-    }
-
-    private static func importAlert(
-        importedCount: Int,
-        omittedWallpaperCount: Int,
-        failures: [String]
-    ) -> PresetTransferAlert {
-        guard importedCount > 0 else {
-            return PresetTransferAlert(
-                title: "Import Failed",
-                message: failures.joined(separator: "\n")
-            )
-        }
-
-        let presetNoun = importedCount == 1 ? "style" : "styles"
-        var messages = ["Imported \(importedCount) \(presetNoun)."]
-        if omittedWallpaperCount > 0 {
-            let wallpaperNoun = omittedWallpaperCount == 1 ? "wallpaper was" : "wallpapers were"
-            messages.append(
-                "\(omittedWallpaperCount) local \(wallpaperNoun) not included and will use no background."
-            )
-        }
-        if !failures.isEmpty {
-            messages.append("Some files could not be imported:\n\(failures.joined(separator: "\n"))")
-        }
-        return PresetTransferAlert(
-            title: importedCount == 1 ? "Style Imported" : "Styles Imported",
-            message: messages.joined(separator: "\n\n")
-        )
-    }
-
-    private static func safeFilename(for presetName: String) -> String {
-        let forbiddenCharacters = CharacterSet(charactersIn: "/:\n\r")
-        let components = presetName.components(separatedBy: forbiddenCharacters)
-        let sanitized = components.filter { !$0.isEmpty }.joined(separator: "-")
-        return sanitized.isEmpty ? "Screenshot Style" : sanitized
-    }
-}
-
-private struct PresetTransferAlert: Identifiable {
-    let id = UUID()
-    let title: String
-    let message: String
 }
 
 /// A style drawn the way the canvas lays it out: the background, then the

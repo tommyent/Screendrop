@@ -58,6 +58,11 @@ struct AnnotationBackgroundPresetTransferFile: Codable {
             throw AnnotationBackgroundPresetTransferError.fileTooLarge
         }
 
+        // A Studio style shares the file type; say so rather than misread it.
+        struct Header: Decodable { var format: String }
+        if (try? JSONDecoder().decode(Header.self, from: data))?.format == RecordingStudioStyleTransferFile.formatIdentifier {
+            throw AnnotationBackgroundPresetTransferError.recordingStyle
+        }
         do {
             return try JSONDecoder().decode(Self.self, from: data)
         } catch {
@@ -145,14 +150,9 @@ struct PortableBackgroundSettings: Codable {
     }
 
     init(_ settings: AnnotationBackgroundSettings) {
-        switch settings.style {
-        case .none:
-            style = .none
-        case .solid(let color):
-            style = .solid(StoredColor(color))
-        case .gradient(let gradient):
-            style = .gradient(StoredGradient(gradient))
-        case .customWallpaper:
+        if let portable = PortableBackgroundStyle(settings.style) {
+            style = portable
+        } else {
             style = .none
             didOmitWallpaper = true
         }
@@ -171,14 +171,7 @@ struct PortableBackgroundSettings: Codable {
 
     var annotationSettings: AnnotationBackgroundSettings {
         var output = AnnotationBackgroundSettings()
-        switch style {
-        case .none:
-            output.style = .none
-        case .solid(let color):
-            output.style = .solid(Self.sanitizedColor(color))
-        case .gradient(let gradient):
-            output.style = .gradient(Self.sanitizedGradient(gradient))
-        }
+        output.style = style.backgroundStyle
 
         output.padding = CGFloat(Self.clamp(padding, to: 0.04...0.45))
         output.cornerRadius = CGFloat(Self.clamp(cornerRadius, to: 0...0.12))
@@ -235,7 +228,7 @@ struct PortableBackgroundSettings: Codable {
         return output
     }
 
-    private static func sanitizedColor(_ color: StoredColor) -> AnnotationBackgroundColor {
+    static func sanitizedColor(_ color: StoredColor) -> AnnotationBackgroundColor {
         AnnotationBackgroundColor(
             String(color.id.prefix(100)),
             title: String(color.title.prefix(100)),
@@ -246,7 +239,7 @@ struct PortableBackgroundSettings: Codable {
         )
     }
 
-    private static func sanitizedGradient(_ gradient: StoredGradient) -> AnnotationBackgroundGradient {
+    static func sanitizedGradient(_ gradient: StoredGradient) -> AnnotationBackgroundGradient {
         let colors = gradient.colors.prefix(8).map(sanitizedColor)
         return AnnotationBackgroundGradient(
             id: String(gradient.id.prefix(100)),
@@ -263,7 +256,7 @@ struct PortableBackgroundSettings: Codable {
         )
     }
 
-    private static func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
+    static func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
         min(max(value, range.lowerBound), range.upperBound)
     }
 }
@@ -312,10 +305,36 @@ enum PortableBackgroundStyle: Codable {
     }
 }
 
+extension PortableBackgroundStyle {
+    /// Nil for a custom wallpaper: a shared style can't carry a local file.
+    init?(_ style: AnnotationBackgroundStyle) {
+        switch style {
+        case .none: self = .none
+        case .solid(let color): self = .solid(StoredColor(color))
+        case .gradient(let gradient): self = .gradient(StoredGradient(gradient))
+        case .customWallpaper: return nil
+        }
+    }
+
+    /// The fill, its values kept in range since the file came from elsewhere.
+    var backgroundStyle: AnnotationBackgroundStyle {
+        switch self {
+        case .none: .none
+        case .solid(let color): .solid(PortableBackgroundSettings.sanitizedColor(color))
+        case .gradient(let gradient): .gradient(PortableBackgroundSettings.sanitizedGradient(gradient))
+        }
+    }
+}
+
 enum AnnotationBackgroundPresetTransferError: LocalizedError {
     case presetNotFound
     case invalidJSON
     case invalidFormat
+    /// A Studio style opened in the image editor.
+    case recordingStyle
+    case invalidRecordingFormat
+    /// An image editor style opened in Studio.
+    case screenshotStyle
     case unsupportedVersion(Int)
     case emptyFile
     case tooManyPresets
@@ -329,6 +348,12 @@ enum AnnotationBackgroundPresetTransferError: LocalizedError {
             "This is not a valid Sukusho preset file."
         case .invalidFormat:
             "This JSON file is not a Sukusho screenshot preset."
+        case .recordingStyle:
+            "This is a Studio recording style. Import it from Studio's Styles."
+        case .invalidRecordingFormat:
+            "This JSON file is not a Sukusho recording style."
+        case .screenshotStyle:
+            "This is a screenshot style. Import it from the image editor's Styles."
         case .unsupportedVersion(let version):
             "This preset uses unsupported format version \(version)."
         case .emptyFile:

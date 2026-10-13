@@ -178,6 +178,68 @@ struct IdleSaveChecks {
         print("PASS recording rename: trim, no-op, clear to the default name, metadata only")
     }
 
+    @MainActor static func studioStyleTransfer() throws {
+        let store = RecordingStudioStylePresetStore.shared
+        let folder = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("styles-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        func write(_ data: Data, _ name: String) throws -> URL {
+            let url = folder.appendingPathComponent(name)
+            try data.write(to: url)
+            return url
+        }
+
+        let style = RecordingStudioStyle(
+            background: .gradient(AnnotationBackgroundGradient.presets[0]), padding: 0.1, cornerRadius: 0.05,
+            shadow: 0.3, cursorScale: 2.5, hidesCursor: true,
+            camera: RecordingCameraBubbleSettings(isVisible: false, center: CGPoint(x: 0.2, y: 0.7), size: 0.3, roundness: 0.4)
+        )
+        guard let saved = store.savePreset(named: "Dawn \(UUID().uuidString.prefix(4))", style: style) else {
+            throw Failure(description: "Couldn't save the Studio style fixture")
+        }
+        let exported = try store.exportedData(for: saved.id)
+        let imported = try store.importStyles(from: write(exported.data, "dawn.screendroppreset"))
+        try check(!exported.omitsWallpaper && imported.omittedWallpaperCount == 0 && imported.presets.count == 1,
+                  "A Studio style export or import miscounted")
+        try check(imported.presets[0].value == style && imported.presets[0].name != saved.name,
+                  "A Studio style didn't round-trip under a fresh name")
+
+        var walledStyle = style
+        walledStyle.background = .customWallpaper(AnnotationCustomWallpaper(url: folder.appendingPathComponent("wall.png")))
+        let walled = RecordingStudioStyleTransferFile(preset: RecordingStudioStylePreset(name: "Walled", style: walledStyle))
+        let walledImport = try store.importStyles(from: write(walled.encodedData(), "walled.screendroppreset"))
+        try check(walledImport.omittedWallpaperCount == 1 && walledImport.presets[0].value.background == .none,
+                  "A local wallpaper went into a shared Studio style")
+
+        // Each editor names the other's files rather than misreading them.
+        let shot = AnnotationBackgroundPresetTransferFile(
+            preset: AnnotationBackgroundPreset(name: "Shot", settings: AnnotationBackgroundSettings())
+        )
+        do {
+            _ = try store.importStyles(from: write(shot.encodedData(), "shot.screendroppreset"))
+            throw Failure(description: "Studio imported a screenshot style")
+        } catch AnnotationBackgroundPresetTransferError.screenshotStyle {}
+        do {
+            _ = try AnnotationBackgroundPresetStore.shared.importStyles(from: write(exported.data, "dawn-2.screendroppreset"))
+            throw Failure(description: "The image editor imported a Studio style")
+        } catch AnnotationBackgroundPresetTransferError.recordingStyle {}
+
+        // The image editor's own styles still round-trip after the shared background code.
+        let editorStore = AnnotationBackgroundPresetStore.shared
+        var settings = AnnotationBackgroundSettings()
+        settings.style = .gradient(AnnotationBackgroundGradient.presets[0])
+        guard let editorSaved = editorStore.savePreset(named: "Shot \(UUID().uuidString.prefix(4))", settings: settings) else {
+            throw Failure(description: "Couldn't save the screenshot style fixture")
+        }
+        let editorExported = try editorStore.exportedData(for: editorSaved.id)
+        let editorImported = try editorStore.importStyles(from: write(editorExported.data, "shot-2.screendroppreset"))
+        try check(editorImported.presets.count == 1 && editorImported.presets[0].settings.style == settings.style,
+                  "A screenshot style didn't round-trip")
+
+        for preset in [saved] + imported.presets + walledImport.presets { store.deletePreset(id: preset.id) }
+        for preset in [editorSaved] + editorImported.presets { editorStore.deletePreset(id: preset.id) }
+        print("PASS style export and import: Studio and editor round trips, wallpaper left out, each editor refuses the other's file")
+    }
+
     @MainActor static func titleRenameIsOnlyMetadata() async throws {
         let gate = Gate(), model = try fixture(gate), store = ScreenshotHistoryStore.shared
         gate.hold = false
@@ -578,6 +640,7 @@ struct IdleSaveChecks {
         try await titleFieldFocusSelectionAndCommands()
         try await titleRenameIsOnlyMetadata()
         try recordingRenameIsOnlyMetadata()
+        try studioStyleTransfer()
         try await nativeFieldFocusAndComposition()
         try await cropDuringRender()
         try await savedCropKeepsOriginal()
