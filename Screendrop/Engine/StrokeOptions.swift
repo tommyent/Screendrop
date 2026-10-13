@@ -44,7 +44,7 @@ enum FreehandSettings {
             size: strokeWidth,
             thinning: 0.5,
             smoothing: 0.62,
-            streamline: modulate(strokeWidth, (9, 16), (0.64, 0.74), true),
+            streamline: modulate(strokeWidth, (9, 16), (0.72, 0.82), true),
             easing: Easings.easeOutSine,
             simulatePressure: true
         )
@@ -55,7 +55,7 @@ enum FreehandSettings {
             size: 1 + strokeWidth * 1.2,
             thinning: 0.62,
             smoothing: 0.62,
-            streamline: 0.62,
+            streamline: 0.70,
             easing: penEasing,
             simulatePressure: false
         )
@@ -66,7 +66,7 @@ enum FreehandSettings {
             size: strokeWidth,
             thinning: 0,
             smoothing: 0.62,
-            streamline: modulate(strokeWidth, (9, 16), (0.64, 0.74), true),
+            streamline: modulate(strokeWidth, (9, 16), (0.72, 0.82), true),
             easing: Easings.linear,
             simulatePressure: false
         )
@@ -77,7 +77,7 @@ enum FreehandSettings {
             size: strokeWidth,
             thinning: 0,
             smoothing: 0.62,
-            streamline: 0.62,
+            streamline: 0.70,
             easing: Easings.linear,
             simulatePressure: false
         )
