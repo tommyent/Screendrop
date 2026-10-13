@@ -159,7 +159,7 @@ struct EditorSnappingInteractionTests {
             #expect(!draw.snapGuides.isEmpty)
             if let props = created.geoProps { #expect(props.dash == .draw) }
             draw.pointerUp(pointer(Vec(395, 195)))
-            #expect(draw.snapGuides.isEmpty && draw.tool == tool)
+            #expect(draw.snapGuides.isEmpty && draw.tool == .select && draw.selectedIds == [created.id])
         }
         let square = editor([])
         square.pointerDown(pointer(Vec(100, 100)))

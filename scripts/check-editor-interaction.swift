@@ -36,7 +36,7 @@ struct EditorInteractionChecks {
         guard case .creatingGeo = hollow.interaction else { preconditionFailure("Hollow interior did not draw") }
         hollow.pointerMove(pointer(240, 215, command: true))
         hollow.pointerUp(pointer(240, 215))
-        precondition(hollow.shapes.count == 2 && hollow.tool == .rectangle)
+        precondition(hollow.shapes.count == 2 && hollow.tool == .select)
 
         let filled = editor(fill: .solid)
         filled.pointerDown(pointer(190, 165))
@@ -50,9 +50,9 @@ struct EditorInteractionChecks {
         guard case .creatingGeo = forced.interaction else { preconditionFailure("Command did not force draw") }
         forced.pointerMove(pointer(165, 165))
         forced.pointerUp(pointer(165, 165))
-        precondition(forced.shapes.count == 2 && forced.shapes[0].x == 100 && forced.tool == .rectangle)
+        precondition(forced.shapes.count == 2 && forced.shapes[0].x == 100 && forced.tool == .select)
         forced.escapeSelectionOrDisarm()
-        precondition(forced.selectedIds.isEmpty && forced.tool == .rectangle)
+        precondition(forced.selectedIds.isEmpty && forced.tool == .select)
         forced.escapeSelectionOrDisarm()
         precondition(forced.tool == .select && !AnnotationTool.paletteTools.contains(.select))
         forced.pointerDown(pointer(30, 30))
@@ -73,9 +73,9 @@ struct EditorInteractionChecks {
         text.tool = .text
         text.pointerDown(pointer(500, 300))
         let textID = text.editingTextId!
-        text.updateEditingText(textID, to: "Keep the text tool armed")
+        text.updateEditingText(textID, to: "Commit text and return to Select")
         text.stopEditingText()
-        precondition(text.tool == .text)
+        precondition(text.tool == .select && text.selectedIds == [textID])
         text.tool = .rectangle
         var double = pointer(text.document.shape(textID)!.x + 10, text.document.shape(textID)!.y + 10)
         double.clickCount = 2
@@ -91,7 +91,7 @@ struct EditorInteractionChecks {
         precondition(text.hoveredShapeId == textID && hoverChanges == 1)
         text.setHoveredShape(nil)
         precondition(text.hoveredShapeId == nil && hoverChanges == 2)
-        print("PASS: every tool grabs; hollow interiors draw; Command and intent latch; handles, two-stage Escape, marquee, armed text and hover updates")
+        print("PASS: every tool grabs; hollow interiors draw; Command and intent latch; handles, two-stage Escape, marquee, committed text and hover updates")
     }
 
     static func regionGrabChecks() {
@@ -115,7 +115,7 @@ struct EditorInteractionChecks {
                 default: preconditionFailure("\(drawingTool) must draw inside \(regionTool) without Command")
                 }
                 engine.pointerMove(pointer(250, 230)); engine.pointerUp(pointer(250, 230))
-                precondition(engine.shapes.count == 2 && engine.shapes[0] == region && engine.tool == drawingTool)
+                precondition(engine.shapes.count == 2 && engine.shapes[0] == region && engine.tool == .select && engine.selectedIds == [engine.shapes[1].id])
             }
             let edge = editor(); edge.replaceDocument(shapes: [region]); edge.tool = .magnifier
             precondition(edge.hitShape(at: Vec(95, 135))?.id == region.id && edge.hitShape(at: Vec(110, 135)) == nil)
