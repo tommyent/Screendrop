@@ -9,7 +9,7 @@ nonisolated struct CaptureSessionSnapshot: Codable, Identifiable, Equatable, Sen
     var version = 1
 
     var title: String {
-        "Opened \(openedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))"
+        "Opened \(openedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute().second()))"
     }
 }
 

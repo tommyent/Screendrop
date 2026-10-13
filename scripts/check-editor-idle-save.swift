@@ -104,6 +104,7 @@ struct IdleSaveChecks {
         }
         let kept = try store.entries()
         try check(kept.count == 5 && kept.first == published[6] && kept.last == published[2], "Five-session limit/order failed")
+        try check(Set(published.map(\.title)).count == published.count, "Sessions within one minute had identical labels")
         for entry in published.prefix(2) {
             try check(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(entry.id.uuidString).path), "Old session wasn't pruned")
         }
@@ -142,15 +143,18 @@ struct IdleSaveChecks {
 
         let first = try openImage(source)
         first.engine.replaceDocument(shapes: [rect()])
+        try check(first.sessionSnapshots.count == 1 && first.previousSessionSnapshots.isEmpty, "Image menu repeated this session's Last Opened state")
         _ = try await first.commitEdits()
         first.releaseEditorResources()
         try check(try store.entries().count == 1, "Edit/close didn't keep exactly one opening state")
         let originalEntry = try store.entries()[0]
 
         let second = try openImage(source)
+        try check(second.previousSessionSnapshots == [originalEntry], "Reopening didn't expose the earlier image session")
         second.isCropping = true
         second.cropRect = CGRect(x: 0, y: 0, width: 0.5, height: 1)
         second.applyCrop()
+        try check(second.sessionSnapshots.count == 2 && second.previousSessionSnapshots == [originalEntry], "Image menu didn't keep only previous sessions after the crop")
         _ = try await second.commitEdits()
         let croppedShapes = second.shapes
         let croppedPixels = try Data(contentsOf: source)
@@ -182,9 +186,11 @@ struct IdleSaveChecks {
         restored.releaseEditorResources()
         let beforeDedupe = try store.entries()
         let reopened = try openImage(source)
+        try check(reopened.previousSessionSnapshots == beforeDedupe, "Reopening hid an earlier kept session")
         reopened.engine.replaceDocument(shapes: croppedShapes)
         _ = try await reopened.commitEdits()
         try check(try store.entries() == beforeDedupe, "Reopening the newest kept state created a duplicate")
+        try check(reopened.previousSessionSnapshots == beforeDedupe, "Deduplication hid a different session with an identical opening state")
         // Untouched capture snapshots must use the original bytes and clear edits.
         reopened.revertToSession(originalEntry)
         try await until { !reopened.hasUnsavedChanges && reopened.saveStatus == "Saved" }
@@ -293,13 +299,16 @@ struct IdleSaveChecks {
         let originalPadding = first.style.padding
         first.style.padding += 12
         try check(first.sessionSnapshots.count == 1 && first.saveProject(reportingFailure: false), "Studio first real edit wasn't kept/saved")
+        try check(first.previousSessionSnapshots.isEmpty, "Studio menu repeated this session's Last Opened state")
         let firstEntry = first.sessionSnapshots[0]
         first.teardown()
 
         let second = RecordingStudioModel(url: root)
         await second.load()
+        try check(second.previousSessionSnapshots == [firstEntry], "Reopening didn't expose the earlier Studio session")
         second.style.padding += 24
         try check(second.saveProject(reportingFailure: false) && second.sessionSnapshots.count == 2, "Studio second session wasn't kept")
+        try check(second.previousSessionSnapshots == [firstEntry], "Studio menu didn't keep only previous sessions after editing")
         let laterPadding = second.style.padding
         second.revertToSession(firstEntry)
         try check(second.style.padding == originalPadding && second.canUndo, "Studio snapshot restore failed")
@@ -319,6 +328,7 @@ struct IdleSaveChecks {
         try check(third.sessionSnapshots == before, "Studio no-op assignment kept a snapshot")
         third.style.padding += 6
         try check(third.sessionSnapshots == before, "Studio duplicated the newest opening state")
+        try check(third.previousSessionSnapshots == before, "Studio deduplication hid a different session with an identical opening state")
         // Soundtrack cleanup must see saved sessions, even when the current
         // edit no longer references their imported audio.
         var soundtrackDocument = session.loadEditDocument()!

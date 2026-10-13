@@ -688,8 +688,8 @@ struct AnnotationEditorRevertCommand: View {
                     .disabled(!editor.canRevertToOriginal)
                 Button("Last Opened") { editor.revertToLastOpened() }
                     .disabled(!editor.canRevertToLastOpened)
-                if !editor.sessionSnapshots.isEmpty { Divider() }
-                ForEach(editor.sessionSnapshots) { snapshot in
+                if !editor.previousSessionSnapshots.isEmpty { Divider() }
+                ForEach(editor.previousSessionSnapshots) { snapshot in
                     Button(snapshot.title) { editor.revertToSession(snapshot) }
                         .disabled(editor.isCropping || editor.isBlockingCommit)
                 }

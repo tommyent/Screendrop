@@ -141,6 +141,9 @@ final class AnnotationEditorModel {
     private var sessionOpenedAt = Date()
     private var keptOpeningSession = false
     private(set) var sessionSnapshots: [CaptureSessionSnapshot] = []
+    var previousSessionSnapshots: [CaptureSessionSnapshot] {
+        sessionSnapshots.filter { $0.openedAt != sessionOpenedAt }
+    }
     private var historyIndex = 0
     private var isRestoringHistory = false
     private var inspectorEditingDepth = 0

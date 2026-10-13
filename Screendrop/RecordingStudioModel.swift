@@ -234,6 +234,9 @@ final class RecordingStudioModel {
     private var sessionOpenedAt = Date()
     private var keptOpeningSession = false
     private(set) var sessionSnapshots: [CaptureSessionSnapshot] = []
+    var previousSessionSnapshots: [CaptureSessionSnapshot] {
+        sessionSnapshots.filter { $0.openedAt != sessionOpenedAt }
+    }
     private var openedStylePresetID: RecordingStudioStylePreset.ID?
     /// Revert To › Last Opened is off until something changes.
     private(set) var hasEditsSinceOpening = false
