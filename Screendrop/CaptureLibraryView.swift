@@ -198,7 +198,6 @@ struct CaptureLibraryView: View {
             }
             .modifier(LibraryWindowSurface())
             .navigationTitle(comments.isShown ? "Comments" : likes.isShown ? "Likes" : cloud.isShown ? (CloudUploader.shared.isConfigured ? "Uploads" : "Cloud") : model.tagFilter ?? activeFilter.title)
-            .navigationSubtitle("Sukusho")
         }
         .navigationSplitViewStyle(.balanced)
         .modifier(LibraryToolbarSeparator())
