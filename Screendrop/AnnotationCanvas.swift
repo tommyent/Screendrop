@@ -477,6 +477,10 @@ struct AnnotationCanvas: View {
                 // Inside the camera's projection, so the ruler tilts with
                 // the image it measures.
                 PixelMeasureOverlay(probe: probe, axis: axis, imageFrame: imageFrame, pointer: hoveredLocation)
+            } else if let probe, probe.isMeasuringTool {
+                // The dock's ruler: a crosshair, both ways at once.
+                PixelMeasureOverlay(probe: probe, axis: .horizontal, imageFrame: imageFrame, pointer: hoveredLocation)
+                PixelMeasureOverlay(probe: probe, axis: .vertical, imageFrame: imageFrame, pointer: hoveredLocation)
             } else if let probe, probe.isPicking || probe.copiedHex != nil,
                       let color = probe.hovered, let pointer = hoveredLocation {
                 PixelColorBadge(color: color, copied: probe.copiedHex != nil)
@@ -772,17 +776,28 @@ struct AnnotationCanvas: View {
         return true
     }
 
-    /// While an arrow key measures, a click imprints that ruler as an
-    /// annotation instead of drawing. False when nothing is measuring.
+    /// While 1, 2 or an arrow key measures, a click imprints that ruler as
+    /// an annotation instead of drawing; with the dock's ruler armed, it
+    /// imprints both and disarms. False when nothing is measuring.
     private func imprintMeasurement(at location: CGPoint, imageFrame: CGRect) -> Bool {
-        guard !model.isCropping, let probe, let axis = probe.measuring, let buffer = probe.buffer,
-              let ruler = PixelRuler(buffer: buffer, imageFrame: imageFrame, pointer: location, axis: axis,
-                                     includingBorder: NSEvent.modifierFlags.contains(.shift),
-                                     pixelsPerPoint: probe.pixelsPerPoint)
-        else { return false }
+        guard !model.isCropping, let probe, let buffer = probe.buffer else { return false }
+        let axes: [PixelMeasureAxis] = probe.measuring.map { [$0] }
+            ?? (probe.isMeasuringTool ? [.horizontal, .vertical] : [])
+        let rulers = axes.compactMap { axis in
+            PixelRuler(buffer: buffer, imageFrame: imageFrame, pointer: location, axis: axis,
+                       includingBorder: NSEvent.modifierFlags.contains(.shift),
+                       pixelsPerPoint: probe.pixelsPerPoint)
+        }
+        guard !rulers.isEmpty else { return false }
         onEditorInteraction()
-        model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd), label: ruler.label,
-                                        clickCount: NSApp.currentEvent?.clickCount ?? 1)
+        takeKeyboardFocusFromInspector()
+        model.engine.imprintMeasurements(rulers.map { (Vec($0.pageStart), Vec($0.pageEnd), $0.label) },
+                                         clickCount: NSApp.currentEvent?.clickCount ?? 1)
+        if probe.isMeasuringTool {
+            // The dock's ruler is one shape like any other: it ends on Select.
+            probe.isMeasuringTool = false
+            model.selectTool(.select)
+        }
         return true
     }
 
@@ -811,7 +826,7 @@ struct AnnotationCanvas: View {
             return
         }
 
-        if probe?.isPicking == true {
+        if probe?.isPicking == true || probe?.isMeasuringTool == true {
             setCursor(.crosshair)
         } else if hasActiveInteraction {
             setCursor(model.isTransformingExistingAnnotation ? .closedHand : .placement)

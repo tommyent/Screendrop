@@ -47,6 +47,17 @@ struct MeasurementImprintTests {
         #expect(Self.geometry(after)?.end == Vec(0, 120))
     }
 
+    @Test func rulerStampsWidthAndHeightAsOneUndoStep() {
+        let engine = Self.editor()
+        engine.imprintMeasurements([
+            (Vec(100, 200), Vec(300, 200), "200 pt · 400 px"),
+            (Vec(200, 130), Vec(200, 270), "140 pt · 280 px"),
+        ])
+        #expect(engine.shapes.count == 2 && engine.selectedIds.isEmpty)
+        engine.undo()
+        #expect(engine.shapes.isEmpty)
+    }
+
     @Test func measurementHasNoBendOrEndpointHandles() throws {
         let engine = Self.editor()
         engine.imprintMeasurement(from: Vec(100, 200), to: Vec(300, 200), label: "200 pt · 400 px")
