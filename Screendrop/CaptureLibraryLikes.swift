@@ -282,14 +282,6 @@ struct LikeInspector: View {
             .padding(.horizontal, InspectorMetrics.horizontalPadding)
             .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 0) {
-                    action("Copy Links", symbol: "link") { likes.copyLinks(selected) }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .modifier(LibraryInspectorBarSurface())
-            }
         } else if let like = selected.first {
             single(like)
         } else {
@@ -329,30 +321,6 @@ struct LikeInspector: View {
             .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack(spacing: 0) {
-                action("Open on Share Page", symbol: "arrow.up.right") { likes.open(like) }
-                action("Copy Link", symbol: "link") { likes.copyLinks([like]) }
-                action("Show Upload in Cloud", symbol: "cloud") { cloud.showUpload(id: like.uploadId) }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .modifier(LibraryInspectorBarSurface())
-        }
     }
 
-    private func action(_ title: String, symbol: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                .frame(minWidth: 40, maxWidth: .infinity)
-                .frame(height: 36)
-                .contentShape(.rect)
-        }
-        .buttonStyle(BarButtonStyle())
-        .help(title)
-        .accessibilityLabel(title)
-    }
 }

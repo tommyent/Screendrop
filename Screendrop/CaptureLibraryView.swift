@@ -232,6 +232,22 @@ struct CaptureLibraryView: View {
         } message: {
             Text("The local files and their edits will move to Trash. Exported copies and cloud links will remain available.")
         }
+        .sheet(item: $model.pendingCloudUpload) { item in
+            CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
+                model.upload(item, options: options)
+            }
+        }
+        .alert("Delete from cloud?", isPresented: Binding(
+            get: { model.pendingCloudDelete != nil }, set: { if !$0 { model.pendingCloudDelete = nil } }
+        ), presenting: model.pendingCloudDelete) { item in
+            Button("Delete", role: .destructive) {
+                model.deleteCloudCopy(item)
+                model.pendingCloudDelete = nil
+            }
+            Button("Cancel", role: .cancel) { model.pendingCloudDelete = nil }
+        } message: { _ in
+            Text("This permanently removes the cloud copy and breaks its share link. Your local capture stays in the Library.")
+        }
         .alert("The Library action could not be completed", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
@@ -294,7 +310,7 @@ struct CaptureLibraryView: View {
                 cell: { [layout] item, selected, onTitleFrame in
                     AnyView(LibraryCellContent(item: item, layout: layout, selected: selected, onTitleFrame: onTitleFrame))
                 },
-                menu: { [model] in CaptureLibraryAction.menu(selected: $0, perform: model.perform) },
+                menu: { [model] in model.menuItems(selected: $0) },
                 onAction: model.perform)
         }
     }
