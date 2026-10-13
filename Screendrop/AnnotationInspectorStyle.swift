@@ -35,8 +35,12 @@ enum InspectorMetrics {
     /// steppers, pickers, segmented controls).
     static let controlHeight: CGFloat = 28
     static let sliderHeight: CGFloat = controlHeight
-    /// Corner radius for fields and segmented tracks.
-    static let fieldRadius: CGFloat = DS.Radius.s
+    /// Corner radius for fields and segmented tracks: half the control
+    /// height, so every field is a pill like the segmented controls.
+    static let fieldRadius: CGFloat = controlHeight / 2
+    /// Room inside a pill field at each end, so labels and values clear its
+    /// rounded ends.
+    static let fieldInset: CGFloat = 12
     static let sliderRadius: CGFloat = fieldRadius
     /// Shared inner inset for compound controls such as segmented pickers,
     /// tool grids, and placement surfaces.
@@ -956,7 +960,7 @@ extension View {
     func inspectorTextField() -> some View {
         textFieldStyle(.plain)
             .font(.inspectorValue)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, InspectorMetrics.fieldInset)
             .inspectorField()
     }
 }

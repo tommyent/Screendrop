@@ -142,13 +142,11 @@ struct BackgroundSwatch: View {
     var body: some View {
         switch style {
         case .none:
-            Rectangle()
-                .fill(Color.primary.opacity(0.06))
-                .overlay {
-                    Image(systemName: "slash.circle")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                }
+            // The symbol alone; no tile behind it.
+            Image(systemName: "slash.circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .solid(let color):
             Rectangle().fill(color.color)
         case .gradient(let gradient):
@@ -187,12 +185,16 @@ struct InspectorBackgroundRow: View {
             isPickerPresented = true
         } label: {
             HStack(spacing: 8) {
+                // Concentric with the pill: 5 pt in from its edge, so its
+                // radius is the pill's 14 minus 5, a capsule at 18 pt tall.
                 BackgroundSwatch(style: style)
-                    .frame(width: 26, height: 18)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .frame(width: 30, height: 18)
+                    .clipShape(Capsule())
                     .overlay {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        if style != .none {
+                            Capsule()
+                                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        }
                     }
 
                 Text(style.displayTitle)
@@ -207,8 +209,8 @@ struct InspectorBackgroundRow: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.leading, 7)
-            .padding(.trailing, 10)
+            .padding(.leading, 5)
+            .padding(.trailing, InspectorMetrics.fieldInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .inspectorField()
             .overlay {
@@ -526,7 +528,7 @@ struct AnnotationWatermarkInspector: View {
             .onSubmit(finishTextEditing)
             .textFieldStyle(.plain)
             .font(.inspectorValue)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, InspectorMetrics.fieldInset)
             .inspectorField()
             .onClickOutside(enabled: focusedField.wrappedValue == .watermarkText, perform: finishTextEditing)
     }
