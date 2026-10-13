@@ -178,17 +178,42 @@ struct ImageProps: Codable, Equatable {
     var h: Double
 }
 
+/// One upright decode for every image the app reads: the EXIF orientation applied, at native
+/// resolution. Untagged and orientation-1 images take the plain decode. Screenshots
+/// (`ScreenshotImageLoader.uprightImage`) and pasted pictures both come through here.
+nonisolated enum UprightImageDecoder {
+    /// `decodeNow` decodes and caches the pixels at once, for an image drawn every frame; without
+    /// it a plain decode stays lazy and uncached, which suits a one-off read of a big screenshot.
+    static func decode(_ source: CGImageSource, decodeNow: Bool = false) -> CGImage? {
+        let options = [kCGImageSourceShouldCache: decodeNow,
+                       kCGImageSourceShouldCacheImmediately: decodeNow] as CFDictionary
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
+              let orientation = properties[kCGImagePropertyOrientation] as? Int, orientation != 1,
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else {
+            return CGImageSourceCreateImageAtIndex(source, 0, options)
+        }
+        // A thumbnail at full size is how ImageIO applies the orientation transform.
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height)
+        ] as CFDictionary)
+    }
+}
+
 /// A pasted picture's pixels: the encoded bytes the sidecar keeps, and the decoded image every
 /// draw uses, made once.
 struct AnnoImageAsset: @unchecked Sendable {
     let data: Data
     let image: CGImage
 
-    /// Nil for bytes ImageIO can't decode.
+    /// Decoded upright, its EXIF orientation applied, and at once. Nil for bytes ImageIO can't
+    /// decode.
     init?(data: Data) {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(
-                  source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+              let image = UprightImageDecoder.decode(source, decodeNow: true)
         else { return nil }
         self.data = data
         self.image = image
@@ -210,17 +235,20 @@ struct AnnoImageAsset: @unchecked Sendable {
         for type in [NSPasteboard.PasteboardType.png, NSPasteboard.PasteboardType(UTType.jpeg.identifier)] {
             if let data = pasteboard.data(forType: type) { return data }
         }
+        // TIFF through ImageIO, so an orientation tag turns it upright before it's re-encoded.
+        if let tiff = pasteboard.data(forType: .tiff) { return reencodedIfNeeded(tiff) }
         guard let image = NSImage(pasteboard: pasteboard),
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         return png(cgImage)
     }
 
-    /// PNG and JPEG are kept as they are; anything else ImageIO reads becomes PNG.
+    /// PNG and JPEG are kept as they are, orientation tag and all, and turned upright when
+    /// decoded. Anything else ImageIO reads becomes PNG, upright, since PNG keeps no tag.
     private static func reencodedIfNeeded(_ data: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source) as String? else { return nil }
         if type == UTType.png.identifier || type == UTType.jpeg.identifier { return data }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil).flatMap(png)
+        return UprightImageDecoder.decode(source).flatMap(png)
     }
 
     private static func png(_ image: CGImage) -> Data? {

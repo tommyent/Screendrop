@@ -182,6 +182,76 @@ struct PastedImageTests {
         #expect(document.renderedPageBounds() == CGRect(x: 700, y: 100, width: 300, height: 200))
     }
 
+    // MARK: Orientation (Sol's review)
+
+    /// A picture stored 4x2, left half red and right half blue, tagged orientation 6 ("rotate a
+    /// quarter turn clockwise to show"). Upright it is 2x4 with red on top.
+    static func orientedFixture(_ type: UTType) -> Data {
+        let context = CGContext(data: nil, width: 4, height: 2, bitsPerComponent: 8, bytesPerRow: 16,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 2, y: 0, width: 2, height: 2))
+        let data = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!,
+                                   [kCGImagePropertyOrientation: 6, kCGImageDestinationLossyCompressionQuality: 1] as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
+
+    /// The top and bottom rows' colours of a decoded asset, by dominant channel.
+    static func isUprightRedOverBlue(_ asset: AnnoImageAsset?) -> Bool {
+        guard let image = asset?.image, image.width == 2, image.height == 4 else { return false }
+        let context = CGContext(data: nil, width: 2, height: 4, bitsPerComponent: 8, bytesPerRow: 8,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 2, height: 4))
+        let bytes = context.data!.assumingMemoryBound(to: UInt8.self)
+        // Memory row 0 is the top row.
+        let top = (bytes[0], bytes[2]), bottom = (bytes[3 * 8], bytes[3 * 8 + 2])
+        return top.0 > 200 && top.1 < 60 && bottom.1 > 200 && bottom.0 < 60
+    }
+
+    static func pasteboard(withFile data: Data, extension ext: String) throws -> (NSPasteboard, URL) {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sd-eec-\(UUID().uuidString).\(ext)")
+        try data.write(to: url)
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("sd-eec-test-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        pasteboard.writeObjects([url as NSURL])
+        return (pasteboard, url)
+    }
+
+    @Test func anOrientedJPEGFileIsKeptAndShownUpright() throws {
+        let jpeg = Self.orientedFixture(.jpeg)
+        let (pasteboard, url) = try Self.pasteboard(withFile: jpeg, extension: "jpg")
+        defer { pasteboard.releaseGlobally(); try? FileManager.default.removeItem(at: url) }
+        let pasted = try #require(AnnoImageAsset.pasteboardData(pasteboard))
+        #expect(pasted == jpeg, "the JPEG's own bytes, tag and all")
+        #expect(Self.isUprightRedOverBlue(AnnoImageAsset(data: pasted)))
+
+        // Reopened from the sidecar, it decodes upright again.
+        let document = AnnotationDocument(shapes: [], background: AnnotationBackgroundSettings(), images: ["p": pasted])
+        let reopened = try JSONDecoder().decode(AnnotationDocument.self, from: JSONEncoder().encode(document))
+        #expect(Self.isUprightRedOverBlue(reopened.images["p"].flatMap(AnnoImageAsset.init(data:))))
+    }
+
+    @Test func anOrientedTIFFIsTurnedUprightBeforeItBecomesPNG() throws {
+        let tiff = Self.orientedFixture(.tiff)
+        let (pasteboard, url) = try Self.pasteboard(withFile: tiff, extension: "tiff")
+        defer { pasteboard.releaseGlobally(); try? FileManager.default.removeItem(at: url) }
+        let fromFile = try #require(AnnoImageAsset.pasteboardData(pasteboard))
+        #expect(fromFile.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+        #expect(Self.isUprightRedOverBlue(AnnoImageAsset(data: fromFile)), "PNG keeps no tag, so it's baked in")
+
+        pasteboard.clearContents()
+        pasteboard.setData(tiff, forType: .tiff)
+        #expect(Self.isUprightRedOverBlue(AnnoImageAsset.pasteboardData(pasteboard).flatMap(AnnoImageAsset.init(data:))),
+                "TIFF data on the pasteboard, not a file, too")
+    }
+
     @Test func sidecarsFromBeforePastingHaveNoImages() throws {
         let document = AnnotationDocument(shapes: [], background: AnnotationBackgroundSettings())
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as! [String: Any]
