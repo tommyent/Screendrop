@@ -271,7 +271,26 @@ final class RecordingStudioModel {
     /// What the window title, share sheet, and Projects browser call this
     /// project. A bare movie falls back to its file name.
     var projectDisplayName: String {
-        session?.displayName ?? sessionURL.deletingPathExtension().lastPathComponent
+        _ = nameRevision
+        return session?.displayName ?? sessionURL.deletingPathExtension().lastPathComponent
+    }
+
+    /// The name given in the Library or the title bar, if any.
+    var customName: String? {
+        _ = nameRevision
+        return session?.customName
+    }
+
+    /// The names above are read from disk; a rename here bumps this so the
+    /// title shows the new one at once.
+    private var nameRevision = 0
+
+    /// Renames the project as the Library does; an empty name restores the
+    /// default one.
+    func rename(to name: String) {
+        guard let session else { return }
+        RecordingProjectStore.shared.rename(session, to: name)
+        nameRevision += 1
     }
 
     func load() async {

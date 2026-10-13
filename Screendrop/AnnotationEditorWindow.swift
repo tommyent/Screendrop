@@ -43,7 +43,13 @@ struct AnnotationEditorWindow: View {
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    AnnotationEditorTitle(title: windowTitle, status: model.saveStatus, item: historyItem)
+                    AnnotationEditorTitle(
+                        title: windowTitle,
+                        status: model.saveStatus,
+                        customName: historyItem?.displayName,
+                        defaultName: historyItem.map { CaptureLibraryItem.dateTitle($0.createdAt) } ?? windowTitle,
+                        onRename: historyItem.map { item in { AnnotationEditorTitle.rename(item, to: $0) } }
+                    )
                         .id(historyID)
                 }
                 .sharedBackgroundVisibility(.hidden)

@@ -2,10 +2,16 @@ import AppKit
 import Foundation
 import SwiftUI
 
+/// The editor's and Studio's title: double-click to rename in place.
 struct AnnotationEditorTitle: View {
     let title: String
     let status: String
-    let item: ScreenshotHistoryItem?
+    /// The name being edited; nil while the default one shows.
+    let customName: String?
+    /// Shown greyed in the empty field: what clearing the name goes back to.
+    let defaultName: String
+    /// Nil when there is nowhere to store a name.
+    let onRename: ((String) -> Void)?
     @State private var isRenaming = false
     @State private var draft = ""
 
@@ -15,12 +21,12 @@ struct AnnotationEditorTitle: View {
                 if isRenaming {
                     AnnotationTitleNameField(
                         text: $draft,
-                        placeholder: item.map { CaptureLibraryItem.dateTitle($0.createdAt) } ?? title,
+                        placeholder: defaultName,
                         onCommit: { finishRename(commit: true) },
                         onCancel: { finishRename(commit: false) }
                     )
                         .onClickOutside { finishRename(commit: true) }
-                } else if item != nil {
+                } else if onRename != nil {
                     titleText
                         .onTapGesture(count: 2, perform: beginRename)
                         .focusable(interactions: .activate)
@@ -58,15 +64,15 @@ struct AnnotationEditorTitle: View {
     }
 
     private func beginRename() {
-        guard let item, !isRenaming else { return }
-        draft = item.displayName ?? ""
+        guard onRename != nil, !isRenaming else { return }
+        draft = customName ?? ""
         isRenaming = true
     }
 
     private func finishRename(commit: Bool) {
         guard isRenaming else { return }
         isRenaming = false
-        if commit { Self.rename(item, to: draft) }
+        if commit { onRename?(draft) }
     }
 
     static func rename(_ item: ScreenshotHistoryItem?, to draft: String) {

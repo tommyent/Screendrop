@@ -77,7 +77,21 @@ private struct RecordingStudioContent: View {
         .inspector(isPresented: $isInspectorPresented) {
             StudioInspector(model: model)
         }
+        .toolbar(removing: .title)
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                AnnotationEditorTitle(
+                    title: windowTitle,
+                    status: windowSubtitle,
+                    customName: model.customName,
+                    defaultName: Self.friendlyTitle(for: model.sessionURL.deletingPathExtension().lastPathComponent),
+                    // A bare movie has no project to keep a name in.
+                    onRename: model.isProject ? { model.rename(to: $0) } : nil
+                )
+                .id(model.sessionURL)
+            }
+            .sharedBackgroundVisibility(.hidden)
+            ToolbarSpacer(.flexible, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
                 if model.isCroppingVideo {
                     videoCropActions
@@ -200,6 +214,9 @@ private struct RecordingStudioContent: View {
     /// AppKit already paints the unsaved dot in the close button; the title
     /// says it in words for anyone who reads the title bar first.
     private var windowTitle: String {
+        // A rename in the Library reloads the project store; reading it here
+        // re-reads the name then.
+        _ = RecordingProjectStore.shared.projects
         let name = Self.friendlyTitle(for: model.projectDisplayName)
         return model.hasUnsavedChanges ? "\(name) - Edited" : name
     }
