@@ -78,6 +78,7 @@ private struct TaperedSlider: View {
     let onChange: (CGFloat) -> Void
 
     @State private var isDragging = false
+    @FocusState private var isFocused: Bool
 
     private let width: CGFloat = 120
     private let height: CGFloat = 20
@@ -103,6 +104,11 @@ private struct TaperedSlider: View {
                 .offset(x: fraction * (width - thumb))
         }
         .frame(width: width, height: height)
+        .overlay {
+            if isFocused {
+                Capsule().stroke(Color.accentColor.opacity(0.72), lineWidth: 1).padding(-3)
+            }
+        }
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -115,21 +121,42 @@ private struct TaperedSlider: View {
                     let next = (range.lowerBound + f * span).rounded()
                     if next != value { onChange(next) }
                 }
-                .onEnded { _ in
-                    isDragging = false
-                    onEditing(false)
-                }
+                .onEnded { _ in endDrag() }
         )
+        // A drag cut short when the popover closes still ends its undo step.
+        .onDisappear(perform: endDrag)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($isFocused)
+        .onKeyPress(.leftArrow) {
+            step(-1)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            step(1)
+            return .handled
+        }
         .help("\(title): \(Int(value))")
         .accessibilityElement()
         .accessibilityLabel(title)
         .accessibilityValue("\(Int(value))")
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: onChange(min(value + 1, range.upperBound))
-            case .decrement: onChange(max(value - 1, range.lowerBound))
+            case .increment: step(1)
+            case .decrement: step(-1)
             @unknown default: break
             }
         }
+    }
+
+    private func step(_ delta: CGFloat) {
+        let next = min(max(value + delta, range.lowerBound), range.upperBound)
+        if next != value { onChange(next) }
+    }
+
+    private func endDrag() {
+        guard isDragging else { return }
+        isDragging = false
+        onEditing(false)
     }
 }
