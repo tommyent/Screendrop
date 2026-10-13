@@ -351,7 +351,7 @@ struct IdleSaveChecks {
         model.engine.replaceDocument(shapes: [rect(x: 80)])
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 160, height: 120), styleMask: [.titled, .closable], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
-        let guarder = EditorCloseGuard(savesWithoutAsking: true)
+        let guarder = EditorCloseGuard()
         var closeFinished = false, quitFinished: Bool?
         guarder.hasUnsavedChanges = { model.hasUnsavedChanges || model.isCommitting || model.isBlockingCommit }
         guarder.onDecision = { _, done in
@@ -365,6 +365,9 @@ struct IdleSaveChecks {
             }
         }
         guarder.attach(to: window)
+        // Studio's never-saved recordings ask first; quitting leaves them to their draft.
+        try check(!EditorCloseGuard.reviewBeforeQuit { _ in }, "Quit saved an editor that asks first")
+        guarder.savesWithoutAsking = { true }
         // The delegate path used by Cmd-W, without displaying or focusing a window.
         try check(!guarder.windowShouldClose(window), "Close didn't wait for the pending save")
         try await until { model.isBlockingCommit }

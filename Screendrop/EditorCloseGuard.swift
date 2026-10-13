@@ -2,8 +2,9 @@
 //  EditorCloseGuard.swift
 //  Screendrop
 //
-//  Closing an editor window with uncommitted edits asks first in Studio and
-//  saves without asking in the annotation editor. SwiftUI has no
+//  Closing an editor window with uncommitted edits saves without asking in
+//  the annotation editor and in saved Studio projects, and asks first in
+//  the rest of Studio. SwiftUI has no
 //  `windowShouldClose` hook, so this installs itself as the window delegate
 //  and forwards every other message to the delegate SwiftUI already set -
 //  taking over the window outright would break scene teardown.
@@ -34,10 +35,9 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     /// Call `done(true)` once the work is saved or discarded and the window
     /// may close, or `done(false)` when it must stay open (a failed save).
     var onDecision: (Decision, @escaping (Bool) -> Void) -> Void = { _, done in done(true) }
-    /// The annotation editor saves on close and on quit without asking; only
-    /// a failed save asks. Studio keeps unsaved edits as a draft across
-    /// launches, so quitting costs it nothing and closing asks.
-    let savesWithoutAsking: Bool
+    /// Closing saves without asking while this is true; only a failed save
+    /// asks. True for the annotation editor and for saved Studio projects.
+    var savesWithoutAsking: () -> Bool = { false }
 
     private weak var attachedWindow: NSWindow?
     private nonisolated(unsafe) weak var previousDelegate: NSWindowDelegate?
@@ -45,21 +45,16 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     private var isCloseApproved = false
     private var waitingForClose: [(Bool) -> Void] = []
 
-    init(savesWithoutAsking: Bool = false) {
-        self.savesWithoutAsking = savesWithoutAsking
-        super.init()
-    }
-
-    /// Quitting (⌘Q, logout) never calls
-    /// `windowShouldClose`, so the app delegate saves each annotation editor
-    /// through this, one at a time. Returns false when nothing needs saving.
+    /// Quitting (⌘Q, logout) never calls `windowShouldClose`, so the app
+    /// delegate saves each editor that saves without asking through this,
+    /// one at a time. Returns false when nothing needs saving.
     /// Otherwise `completion(true)` follows once every editor was saved (or,
     /// after a failed save, discarded) and closed; `completion(false)` on
     /// Cancel or a save that failed again.
     static func reviewBeforeQuit(completion: @escaping (Bool) -> Void) -> Bool {
         let editor = NSApp.windows.lazy
             .compactMap { window in (window.delegate as? EditorCloseGuard).map { (window, $0) } }
-            .first { $0.1.savesWithoutAsking && $0.1.hasUnsavedChanges() }
+            .first { $0.1.savesWithoutAsking() && $0.1.hasUnsavedChanges() }
         guard let (window, closeGuard) = editor else { return false }
 
         // A close already saving this editor also satisfies a subsequent quit.
@@ -103,6 +98,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     func detach() {
         detachFromWindow()
         hasUnsavedChanges = { false }
+        savesWithoutAsking = { false }
         canClose = { true }
         hasRunningWork = { false }
         offersDelete = { false }
@@ -121,12 +117,6 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         previousDelegate = nil
     }
 
-    /// Mirrors the dirty state onto the close button's dot, so the prompt is
-    /// never the first hint that something is unsaved.
-    func refreshDocumentEdited() {
-        attachedWindow?.isDocumentEdited = hasUnsavedChanges()
-    }
-
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard canClose() else { return false }
         if isCloseApproved { return true }
@@ -140,7 +130,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
         guard !isPrompting else { return false }
 
         isPrompting = true
-        if savesWithoutAsking {
+        if savesWithoutAsking() {
             save(on: sender)
         } else {
             present(on: sender)
@@ -174,7 +164,11 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
             // window itself, so this approval can't outlive it.
             if self.hasUnsavedChanges() {
                 self.isPrompting = true
-                self.present(on: window)
+                if self.savesWithoutAsking() {
+                    self.save(on: window)
+                } else {
+                    self.present(on: window)
+                }
             } else {
                 self.isCloseApproved = true
                 window.close()

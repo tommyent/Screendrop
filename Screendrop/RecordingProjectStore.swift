@@ -179,7 +179,14 @@ final class StudioProjectRegistry {
         models.values.contains { $0.model?.hasRunningWork == true }
     }
 
-    /// Called before the app goes away. The autosave is debounced, so without
+    /// Quitting saves the projects that save at a pause.
+    func autosaveAll() {
+        for model in models.values.compactMap(\.model) {
+            model.autosave()
+        }
+    }
+
+    /// Called before the app goes away. The draft is debounced, so without
     /// this a quit can drop the last fraction of a second of edits.
     func flushDrafts() {
         for model in models.values.compactMap(\.model) {

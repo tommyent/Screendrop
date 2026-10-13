@@ -22,7 +22,7 @@ struct AnnotationEditorWindow: View {
     @State private var isUploading = false
     /// No close-button dot: Apple's HIG says that with autosave on, a dot
     /// implies people must act to keep their work. The subtitle says it instead.
-    @State private var closeGuard = EditorCloseGuard(savesWithoutAsking: true)
+    @State private var closeGuard = EditorCloseGuard()
     @State private var didCopyLink = false
     /// Found once per load: matching by URL probes each recording on disk,
     /// and the title is read on every edit.
@@ -559,6 +559,7 @@ struct AnnotationEditorWindow: View {
     }
 
     private func configureCloseGuard() {
+        closeGuard.savesWithoutAsking = { true }
         closeGuard.hasUnsavedChanges = { [weak model] in
             guard let model else { return false }
             return model.hasUnsavedChanges || model.isCommitting || model.isBlockingCommit
