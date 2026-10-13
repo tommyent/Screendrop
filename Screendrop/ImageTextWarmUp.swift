@@ -8,6 +8,7 @@ import Vision
 final class ImageTextWarmUp {
     static let shared = ImageTextWarmUp()
     private var task: Task<Void, Never>?
+    private var isFinished = false
     private let recognize: @Sendable () async -> Void
 
     init(recognize: @escaping @Sendable () async -> Void = ImageTextWarmUp.recognizeSample) {
@@ -18,17 +19,40 @@ final class ImageTextWarmUp {
     func start() -> Task<Void, Never> {
         if let task { return task }
         let recognize = recognize
-        let task = Task.detached(priority: .background) { await recognize() }
+        let task = Task(priority: .background) {
+            await recognize()
+            isFinished = true
+        }
         self.task = task
         return task
     }
 
+    /// A stalled warm-up must not prevent a real recognition request.
+    @discardableResult
+    func waitUntilReady(timeout: Duration = .seconds(30)) async -> Bool {
+        start()
+        let deadline = ContinuousClock.now + timeout
+        while !isFinished, ContinuousClock.now < deadline {
+            do {
+                try await Task.sleep(for: min(.milliseconds(50), ContinuousClock.now.duration(to: deadline)))
+            } catch { return false }
+        }
+        return isFinished
+    }
+
     nonisolated private static func recognizeSample() async {
-        guard let image = sampleImage() else { return }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        await withCheckedContinuation { continuation in
+            // Vision's synchronous cold work belongs off the cooperative pool.
+            DispatchQueue.global(qos: .utility).async {
+                if let image = sampleImage() {
+                    let request = VNRecognizeTextRequest()
+                    request.recognitionLevel = .accurate
+                    request.usesLanguageCorrection = true
+                    try? VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+                }
+                continuation.resume()
+            }
+        }
     }
 
     nonisolated static func sampleImage() -> CGImage? {

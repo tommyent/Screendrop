@@ -26,6 +26,21 @@ struct ImageTextWarmUpTests {
         #expect(ink > 100)
         #expect(ink < image.width * image.height / 2)
     }
+
+    @Test @MainActor func stalledWarmUpStopsBlockingWithoutStartingAnother() async {
+        let calls = WarmUpCalls()
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        let warmUp = ImageTextWarmUp {
+            await calls.record()
+            for await _ in stream { }
+        }
+        #expect(await warmUp.waitUntilReady(timeout: .milliseconds(10)) == false)
+        #expect(await warmUp.waitUntilReady(timeout: .milliseconds(10)) == false)
+        #expect(await calls.count == 1)
+        continuation.finish()
+        await warmUp.start().value
+        #expect(await warmUp.waitUntilReady(timeout: .zero))
+    }
 }
 
 private actor WarmUpCalls {

@@ -115,12 +115,10 @@ final class CaptureTextFeedbackPresenter {
         }
 
         self.panel = panel
-        if !isReading {
-            dismissTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.visibleDuration)
-                guard !Task.isCancelled else { return }
-                await self?.fadeOutAndDismiss()
-            }
+        dismissTask = Task { [weak self] in
+            try? await Task.sleep(for: isReading ? .seconds(60) : Self.visibleDuration)
+            guard !Task.isCancelled else { return }
+            await self?.fadeOutAndDismiss()
         }
     }
 
