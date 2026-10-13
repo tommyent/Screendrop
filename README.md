@@ -52,7 +52,7 @@ One window for screenshots, recordings and recording projects, with **Uploads**,
 - A trimmed toolbar: the inspector toggle, with search beside it. Right-click a capture for **Quick Look**, **Edit**, **Rename**, **Copy**, **Export…** (and **Export as GIF…** for a recording), the system **Share…** sheet, **Reveal in Finder** and **Move to Trash**.
 - The same capture menu holds its cloud actions: **Share to Cloud…** before upload; **Copy Cloud Link**, **Open Shared Capture** and **Delete from Cloud…** once shared.
 - Right-click between the cards to choose the sort order or **Refresh**, on the captures, Uploads, Comments and Likes pages. **Command + R** refreshes the current page.
-- Capture cards show a cloud badge when Cloud is set up or the capture is already shared. Click it to share an unshared capture or copy an existing share link; shared captures have a blue badge.
+- Capture cards show a cloud badge when Cloud is set up or the capture is already shared. Click it to share an unshared capture or copy an existing share link; shared captures have a green cloud with a tick.
 - An inspector with dimensions, dates, duration, disk use and tags. **Space** opens Quick Look, **Return** renames, and multi-selection supports copying, exporting, sharing, revealing and moving captures to Trash.
 - Cloud uploads open their share links; comments and likes arrive from your share pages, newest first by default, with the capture each belongs to.
 - A storage bar beside the sidebar's Settings gear shows cloud use against the **Storage threshold** in **Settings → Cloud**. It turns amber at 80% and red at the threshold; it warns without limiting uploads.

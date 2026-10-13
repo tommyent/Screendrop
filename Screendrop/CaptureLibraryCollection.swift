@@ -541,8 +541,8 @@ private struct LibraryCloudBadge: View {
 }
 
 /// The cloud badge on Library and Uploads cards: a grey outline cloud until
-/// it's shared, a blue filled one once it is, and a tick for a moment after
-/// a click copies the link.
+/// it's shared, a green cloud with a tick once it is, and a plain tick for
+/// a moment after a click copies the link.
 struct CardCloudBadge: View {
     let isShared: Bool
     let action: () -> Void
@@ -553,9 +553,9 @@ struct CardCloudBadge: View {
             action()
             if isShared { didCopy = true }
         } label: {
-            Image(systemName: didCopy ? "checkmark" : isShared ? "icloud.and.arrow.up.fill" : "icloud.and.arrow.up")
+            Image(systemName: didCopy ? "checkmark" : isShared ? "checkmark.icloud.fill" : "icloud.and.arrow.up")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isShared ? CardMark.blue : CardMark.idle)
+                .foregroundStyle(isShared ? CardMark.green : CardMark.idle)
                 .frame(width: 24, height: 24)
                 .cardMark(Circle())
                 .contentShape(Circle())
@@ -579,7 +579,8 @@ struct CardCloudBadge: View {
 enum CardMark {
     static let text = Color(red: 0x1D / 255, green: 0x1D / 255, blue: 0x1F / 255)
     static let idle = Color(red: 0x48 / 255, green: 0x48 / 255, blue: 0x4A / 255)
-    static let blue = Color(red: 0x0A / 255, green: 0x7A / 255, blue: 1)
+    /// #1E9E4A: 3.5:1 on the white ground, where systemGreen is 2.2:1.
+    static let green = Color(red: 0x1E / 255, green: 0x9E / 255, blue: 0x4A / 255)
 }
 
 extension View {
