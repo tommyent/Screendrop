@@ -123,7 +123,7 @@ macOS asks for **Screen & System Audio Recording** for captures and recordings, 
 
 Requirements:
 
-- macOS 26.4 or newer.
+- macOS 27 or newer.
 - Xcode 27 beta (installed as `Xcode-beta.app`), with its Metal Toolchain for the Studio motion-blur shader:
 
   ```bash
