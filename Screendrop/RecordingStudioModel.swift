@@ -461,6 +461,7 @@ final class RecordingStudioModel {
         isLoaded = true
         rebuildPreviewReframe()
         loadTimelineThumbnails()
+        loadStylePoster()
 
         if let session {
             if session.hasUnsavedDraft {
@@ -550,6 +551,7 @@ final class RecordingStudioModel {
         transcriptionTask = nil
         projectSaveTask = nil
         timelineThumbnails.releaseResources()
+        stylePoster = nil
         pause()
         if let timeObserver {
             screenPlayer.removeTimeObserver(timeObserver)
@@ -923,6 +925,34 @@ final class RecordingStudioModel {
         }
         editUndoManager.setActionName(actionName)
         undoRevision &+= 1
+    }
+
+    /// A small frame from early in the recording, for the Styles tiles.
+    private(set) var stylePoster: CGImage?
+
+    /// Once the recording has loaded, so the file is known to be readable.
+    private func loadStylePoster() {
+        let url = screenURL
+        let duration = sourceDuration
+        Task { [weak self] in
+            let poster = await Self.posterFrame(url: url, duration: duration)
+            guard let self, !self.isTornDown else { return }
+            self.stylePoster = poster
+        }
+    }
+
+    /// About a second in, past a blank first frame; the first frame if that
+    /// fails.
+    nonisolated private static func posterFrame(url: URL, duration: TimeInterval) async -> CGImage? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 360, height: 360)
+        for seconds in [min(1, duration / 2), 0] where seconds.isFinite {
+            if let image = try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image {
+                return image
+            }
+        }
+        return nil
     }
 
     private func loadTimelineThumbnails() {

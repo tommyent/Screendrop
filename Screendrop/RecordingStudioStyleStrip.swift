@@ -7,14 +7,11 @@
 //  wearing each style. After upstream v0.35's Studio Look.
 //
 
-import AVFoundation
 import SwiftUI
 
 struct RecordingStudioStyleStrip: View {
     @Bindable var model: RecordingStudioModel
     @Bindable var presetStore: RecordingStudioStylePresetStore
-
-    @State private var poster: CGImage?
 
     var body: some View {
         StylePresetPicker(
@@ -36,18 +33,10 @@ struct RecordingStudioStyleStrip: View {
                 }
             },
             preview: { preset in
-                StudioStylePreview(
-                    style: preset.value,
-                    poster: poster,
-                    contentAspect: model.sourceVideoAspect,
-                    showsCamera: model.hasCameraVideo
-                )
+                StudioStyleTilePreview(model: model, style: preset.value)
             }
         )
         .disabled(!model.isLoaded)
-        .task(id: model.screenURL) {
-            poster = await Self.poster(for: model.screenURL)
-        }
     }
 
     private var appliedPreset: RecordingStudioStylePreset? {
@@ -56,15 +45,21 @@ struct RecordingStudioStyleStrip: View {
         return preset
     }
 
-    /// One small frame from early in the recording, for the thumbnails.
-    nonisolated private static func poster(for url: URL) async -> CGImage? {
-        let asset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 360, height: 360)
-        let duration = (try? await asset.load(.duration))?.seconds ?? 0
-        let seconds = duration.isFinite ? min(1, duration / 2) : 0
-        return try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+}
+
+/// Reads the model's poster frame itself, so a tile drawn before the frame
+/// arrives redraws when it does.
+private struct StudioStyleTilePreview: View {
+    let model: RecordingStudioModel
+    let style: RecordingStudioStyle
+
+    var body: some View {
+        StudioStylePreview(
+            style: style,
+            poster: model.stylePoster,
+            contentAspect: model.sourceVideoAspect,
+            showsCamera: model.hasCameraVideo
+        )
     }
 }
 
