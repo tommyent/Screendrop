@@ -128,7 +128,6 @@ struct ScreendropApp: App {
 // MARK: - App Delegate
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let updaterManager = UpdaterManager.shared
     private var openedFilesAtLaunch = false
 
     /// Files handed to us via Finder's "Open With" (or `open -a Sukusho`)
@@ -161,7 +160,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The Library's Grid/List choice, saved before List view went (sd-vkd).
         UserDefaults.standard.removeObject(forKey: "captureLibrary.layout")
         ImageTextWarmUp.shared.start()
-        updaterManager.start()
         RecordingRecoveryCoordinator.recoverInterruptedRecordings()
         let launchEvent = NSAppleEventManager.shared().currentAppleEvent
         let launchReason = launchEvent?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue
@@ -193,8 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Guard against silently losing captures. Screenshots that were never
     /// saved to disk (Auto Save off and not manually saved) only live in the
-    /// temporary directory, so quitting - including a Sparkle update relaunch,
-    /// which terminates the app - discards them. Warn before that happens.
+    /// temporary directory, so quitting discards them. Warn before that
+    /// happens.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Annotation edits have no draft, so ask about each dirty editor
         // first. Once all are saved or discarded (their windows closed), run

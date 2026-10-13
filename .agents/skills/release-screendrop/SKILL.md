@@ -121,9 +121,8 @@ active developer dir is the Command Line Tools.
 
 ## Sparkle Configuration
 
-- **SUFeedURL**: `https://raw.githubusercontent.com/fayazara/screendrop/main/appcast.xml`
-- **SUPublicEDKey**: `MA/6n0fqT0T2updDlkXr8BjhJKoHWik9uf6Lh5pUG7U=`
-- **UpdaterManager.swift**: Singleton, starts at launch (Release builds only), menu bar + Settings UI integration.
+- This fork's `Screendrop/Info.plist` no longer has `SUFeedURL` or `SUPublicEDKey`, and the app has no updater code or Check for Updates controls; the Sparkle package stays linked. A fork-only feed is tracked as bead `sd-4ba`.
+- The original project's values, for reference: **SUFeedURL** `https://raw.githubusercontent.com/fayazara/screendrop/main/appcast.xml`, **SUPublicEDKey** `MA/6n0fqT0T2updDlkXr8BjhJKoHWik9uf6Lh5pUG7U=`.
 
 ## After releasing
 
