@@ -36,6 +36,30 @@ func resolveTaper(_ taper: Double?, _ size: Double, _ totalLength: Double) -> Do
 
 /// The freehand settings used for the draw shape.
 enum FreehandSettings {
+    /// A finished freehand stroke's points, eased once so hand jitter the
+    /// live streamline lets through doesn't stay in the saved line: two
+    /// passes of a 1-2-3-2-1 moving average, the ends kept where they were
+    /// drawn, pressure (z) averaged with them.
+    static func smoothedPoints(_ points: [Vec]) -> [Vec] {
+        guard points.count > 4 else { return points }
+        let weights: [Double] = [1, 2, 3, 2, 1]
+        var current = points
+        for _ in 0..<2 {
+            var next = current
+            for index in 1..<(current.count - 1) {
+                var x = 0.0, y = 0.0, z = 0.0, total = 0.0
+                for (offset, weight) in zip(-2...2, weights) {
+                    let neighbour = current[min(max(index + offset, 0), current.count - 1)]
+                    x += neighbour.x * weight; y += neighbour.y * weight; z += neighbour.z * weight
+                    total += weight
+                }
+                next[index] = Vec(x / total, y / total, z / total)
+            }
+            current = next
+        }
+        return current
+    }
+
     /// `(t) => t * 0.65 + SIN((t * PI) / 2) * 0.35`
     static let penEasing: (Double) -> Double = { t in t * 0.65 + sin((t * PI) / 2) * 0.35 }
 
@@ -43,8 +67,8 @@ enum FreehandSettings {
         StrokeOptions(
             size: strokeWidth,
             thinning: 0.5,
-            smoothing: 0.62,
-            streamline: modulate(strokeWidth, (9, 16), (0.72, 0.82), true),
+            smoothing: 0.70,
+            streamline: modulate(strokeWidth, (9, 16), (0.80, 0.88), true),
             easing: Easings.easeOutSine,
             simulatePressure: true
         )
@@ -54,8 +78,8 @@ enum FreehandSettings {
         StrokeOptions(
             size: 1 + strokeWidth * 1.2,
             thinning: 0.62,
-            smoothing: 0.62,
-            streamline: 0.70,
+            smoothing: 0.70,
+            streamline: 0.78,
             easing: penEasing,
             simulatePressure: false
         )
@@ -65,8 +89,8 @@ enum FreehandSettings {
         StrokeOptions(
             size: strokeWidth,
             thinning: 0,
-            smoothing: 0.62,
-            streamline: modulate(strokeWidth, (9, 16), (0.72, 0.82), true),
+            smoothing: 0.70,
+            streamline: modulate(strokeWidth, (9, 16), (0.80, 0.88), true),
             easing: Easings.linear,
             simulatePressure: false
         )
@@ -76,8 +100,8 @@ enum FreehandSettings {
         StrokeOptions(
             size: strokeWidth,
             thinning: 0,
-            smoothing: 0.62,
-            streamline: 0.70,
+            smoothing: 0.70,
+            streamline: 0.78,
             easing: Easings.linear,
             simulatePressure: false
         )

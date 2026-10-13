@@ -232,6 +232,7 @@ struct CommentsLibraryPage: View {
                                            deleting: deleting.contains(comment.id)))
                     },
                     menu: { _ in comments.menuItems() },
+                    backgroundMenu: { CaptureLibraryModel.shared.backgroundMenuItems { comments.refresh() } },
                     onAction: comments.perform
                 )
             }

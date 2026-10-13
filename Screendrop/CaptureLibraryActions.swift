@@ -149,6 +149,14 @@ extension CaptureLibraryModel {
         }
     }
 
+    /// A right-click between the cards, on any Library page: Sort By, as the
+    /// toolbar's sort menu offered it, then Refresh.
+    func backgroundMenuItems(refresh: @escaping () -> Void) -> [LibraryMenuItem] {
+        CaptureLibrarySort.allCases.map { order in
+            LibraryMenuItem(title: order.title, isChecked: sortOrder == order) { self.sortOrder = order }
+        } + [LibraryMenuItem(title: "Refresh", startsGroup: true, perform: refresh)]
+    }
+
     /// The captures' right-click menu: the shared actions, then the
     /// selected capture's cloud actions, which moved here from the
     /// inspector's bar, then Move to Trash.

@@ -24,7 +24,7 @@ final class PixelProbe {
         didSet { if isPicking { isMeasuringTool = false } }
     }
     /// The dock's ruler is armed: the pointer shows the width and height
-    /// under it, and the next click stamps both.
+    /// under it until Escape or another tool.
     var isMeasuringTool = false {
         didSet { if isMeasuringTool { isPicking = false } }
     }

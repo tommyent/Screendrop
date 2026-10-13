@@ -245,6 +245,7 @@ extension AnnoEditor {
                        Vec.distMin(props.points[0], props.points[props.points.count - 1], props.strokeWidth * 2) {
                         props.isClosed = true
                     }
+                    props.points = FreehandSettings.smoothedPoints(props.points)
                     shape.kind = .draw(props)
                 }
             }

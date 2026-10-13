@@ -37,8 +37,8 @@ struct AnnotationCanvas: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(PixelProbe.self) private var probe: PixelProbe?
     @State private var hasActiveInteraction = false
-    /// A click that imprinted the ruler or picked a colour, kept from the
-    /// drawing tools until the mouse comes up.
+    /// A click that picked a colour, cropped or landed while measuring, kept
+    /// from the drawing tools until the mouse comes up.
     @State private var swallowsPress = false
     @State private var hoveredLocation: CGPoint?
     @State private var currentCursor: AnnotationCanvasCursor = .arrow
@@ -706,7 +706,7 @@ struct AnnotationCanvas: View {
                 let location = projection.unproject(value.location)
                 if !hasActiveInteraction, pickColor()
                     || cropToRegion(at: startLocation, imageFrame: imageFrame)
-                    || imprintMeasurement(at: startLocation, imageFrame: imageFrame) {
+                    || swallowsMeasuringClick() {
                     swallowsPress = true
                     return
                 }
@@ -776,28 +776,14 @@ struct AnnotationCanvas: View {
         return true
     }
 
-    /// While 1, 2 or an arrow key measures, a click imprints that ruler as
-    /// an annotation instead of drawing; with the dock's ruler armed, it
-    /// imprints both and disarms. False when nothing is measuring.
-    private func imprintMeasurement(at location: CGPoint, imageFrame: CGRect) -> Bool {
-        guard !model.isCropping, let probe, let buffer = probe.buffer else { return false }
-        let axes: [PixelMeasureAxis] = probe.measuring.map { [$0] }
-            ?? (probe.isMeasuringTool ? [.horizontal, .vertical] : [])
-        let rulers = axes.compactMap { axis in
-            PixelRuler(buffer: buffer, imageFrame: imageFrame, pointer: location, axis: axis,
-                       includingBorder: NSEvent.modifierFlags.contains(.shift),
-                       pixelsPerPoint: probe.pixelsPerPoint)
-        }
-        guard !rulers.isEmpty else { return false }
+    /// While 1, 2 or an arrow key measures, or the dock's ruler is armed, a
+    /// click does nothing: measuring only shows the numbers (the user,
+    /// 2026-10-13), and it mustn't draw either. False when nothing measures.
+    private func swallowsMeasuringClick() -> Bool {
+        guard !model.isCropping, let probe, probe.measuring != nil || probe.isMeasuringTool else { return false }
+        // Still the canvas's click: Escape and Tab must come here, not stay in an inspector field.
         onEditorInteraction()
         takeKeyboardFocusFromInspector()
-        model.engine.imprintMeasurements(rulers.map { (Vec($0.pageStart), Vec($0.pageEnd), $0.label) },
-                                         clickCount: NSApp.currentEvent?.clickCount ?? 1)
-        if probe.isMeasuringTool {
-            // The dock's ruler is one shape like any other: it ends on Select.
-            probe.isMeasuringTool = false
-            model.selectTool(.select)
-        }
         return true
     }
 
