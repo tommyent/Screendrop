@@ -224,6 +224,7 @@ struct InspectorBackgroundRow: View {
         .help("Choose a background")
         .accessibilityLabel("Background")
         .accessibilityValue(style.displayTitle)
+        .closesOnEditorEscape($isPickerPresented)
         .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
             // No title: the row it hangs off already says Background, and
             // the picker's own No Background tile replaces upstream's None.

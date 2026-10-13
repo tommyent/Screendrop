@@ -138,6 +138,7 @@ struct AnnotationEditorWindow: View {
                     model.nudgeSelection(dx: step.dx * probe.pixelsPerPoint, dy: step.dy * probe.pixelsPerPoint)
                 },
                 onEscape: {
+                    if EditorPopovers.closeNewest() { return }
                     if probe.isPicking { probe.isPicking = false } else { model.escapeSelectionOrDisarm() }
                 }
             ))

@@ -74,6 +74,7 @@ private struct AnnotationMeasureHintButton: View {
             Label("Measure", systemImage: "ruler")
         }
         .help("How to measure")
+        .closesOnEditorEscape($isPresented)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Hold an arrow key over the image")
@@ -118,5 +119,44 @@ extension Color {
     nonisolated init(_ pixel: PixelColor) {
         self.init(.sRGB, red: Double(pixel.red) / 255, green: Double(pixel.green) / 255,
                   blue: Double(pixel.blue) / 255, opacity: Double(pixel.alpha) / 255)
+    }
+}
+
+/// An editor popover doesn't take the keyboard, so Escape reaches the
+/// editor while one is open and used to disarm the tool or clear the
+/// selection behind it. Open popovers register here, and Escape closes
+/// the newest one instead.
+enum EditorPopovers {
+    private static var open: [(id: UUID, close: () -> Void)] = []
+
+    static func closeNewest() -> Bool {
+        guard let newest = open.popLast() else { return false }
+        newest.close()
+        return true
+    }
+
+    fileprivate static func set(_ id: UUID, close: (() -> Void)?) {
+        open.removeAll { $0.id == id }
+        if let close { open.append((id, close)) }
+    }
+}
+
+extension View {
+    /// Lets Escape in the editor close this popover first.
+    func closesOnEditorEscape(_ isPresented: Binding<Bool>) -> some View {
+        modifier(EditorPopoverEscape(isPresented: isPresented))
+    }
+}
+
+private struct EditorPopoverEscape: ViewModifier {
+    @Binding var isPresented: Bool
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isPresented, initial: true) { _, isShown in
+                EditorPopovers.set(id, close: isShown ? { isPresented = false } : nil)
+            }
+            .onDisappear { EditorPopovers.set(id, close: nil) }
     }
 }
