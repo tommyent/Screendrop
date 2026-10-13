@@ -406,16 +406,6 @@ struct CommentInspector: View {
             .padding(.horizontal, InspectorMetrics.horizontalPadding)
             .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 0) {
-                    action("Copy Text", symbol: "doc.on.doc") { comments.copyText(selected) }
-                    action("Delete Comments…", symbol: "trash") { comments.pendingDelete = selected }
-                        .disabled(comments.isBusy)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .modifier(LibraryInspectorBarSurface())
-            }
         } else if let comment = selected.first {
             single(comment)
         } else {
@@ -463,32 +453,6 @@ struct CommentInspector: View {
             .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack(spacing: 0) {
-                action("Open on Share Page", symbol: "arrow.up.right") { comments.open(comment) }
-                action("Copy Text", symbol: "doc.on.doc") { comments.copyText([comment]) }
-                action("Show Upload in Cloud", symbol: "cloud") { cloud.showUpload(id: comment.uploadId) }
-                action("Delete Comment…", symbol: "trash") { comments.pendingDelete = [comment] }
-                    .disabled(comments.deletingIDs.contains(comment.id))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .modifier(LibraryInspectorBarSurface())
-        }
     }
 
-    private func action(_ title: String, symbol: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                .frame(minWidth: 40, maxWidth: .infinity)
-                .frame(height: 36)
-                .contentShape(.rect)
-        }
-        .buttonStyle(BarButtonStyle())
-        .help(title)
-        .accessibilityLabel(title)
-    }
 }

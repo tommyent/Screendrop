@@ -836,17 +836,6 @@ struct CloudUploadInspector: View {
             .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 0) {
-                    action("Open Link", symbol: "arrow.up.right") { cloud.open(upload) }
-                    action("Copy Link", symbol: "link") { cloud.copyLinks([upload]) }
-                    action("Delete from Cloud…", symbol: "trash") { cloud.pendingDelete = [upload] }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .disabled(cloud.deletingIDs.contains(upload.id))
-                .modifier(LibraryInspectorBarSurface())
-            }
         } else {
             LibraryInspectorPlaceholder(
                 symbol: "cloud", title: "Upload details",
@@ -953,33 +942,8 @@ struct CloudUploadInspector: View {
             .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            HStack(spacing: 0) {
-                action("Quick Look", symbol: "eye") { cloud.quickLook(toggling: false) }
-                action("Copy Links", symbol: "link") { cloud.copyLinks(uploads) }
-                action("Delete from Cloud…", symbol: "trash") { cloud.pendingDelete = uploads }
-                    .disabled(cloud.isBusy)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .modifier(LibraryInspectorBarSurface())
-        }
     }
 
-    private func action(_ title: String, symbol: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, height: 22)
-                .frame(minWidth: 40, maxWidth: .infinity)
-                .frame(height: 36)
-                .contentShape(.rect)
-        }
-        .buttonStyle(BarButtonStyle())
-        .help(title)
-        .accessibilityLabel(title)
-    }
 
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
