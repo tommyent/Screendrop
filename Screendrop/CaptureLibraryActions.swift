@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension CaptureLibraryModel {
     func perform(_ action: CaptureLibraryAction) {
@@ -162,6 +163,10 @@ extension CaptureLibraryModel {
     /// inspector's bar, then Move to Trash.
     func menuItems(selected count: Int) -> [LibraryMenuItem] {
         var items = CaptureLibraryAction.menu(selected: count, perform: perform)
+        if count == 1, let item = selectedItems.first, item.isVideo,
+           let export = items.firstIndex(where: { $0.title == CaptureLibraryAction.export.rawValue }) {
+            items.insert(LibraryMenuItem(title: "Export as GIF…", isEnabled: !isBusy) { self.exportGIF(item) }, at: export + 1)
+        }
         let trash = items.removeLast()
         items += cloudMenuItems()
         items.append(trash)
@@ -253,6 +258,32 @@ extension CaptureLibraryModel {
                 if !exported.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(exported) }
                 if !failures.isEmpty { self.errorMessage = failures.joined(separator: "\n\n") }
                 self.refresh()
+            }
+        }
+    }
+
+    /// A recording as a GIF, with the GIF settings last confirmed in the
+    /// Studio's export options (sd-ahk).
+    private func exportGIF(_ item: CaptureLibraryItem) {
+        let panel = NSSavePanel()
+        panel.title = "Export as GIF"
+        panel.allowedContentTypes = [.gif]
+        panel.nameFieldStringValue = (item.name as NSString).deletingPathExtension + ".gif"
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else { return }
+            self.run("Exporting GIF…") {
+                StudioProjectRegistry.shared.flushDrafts()
+                let movie = try await RecordingDeliverable.resolve(for: item.fileURL)
+                let settings = RecordingExportPreferences.lastSettings
+                // Written beside the destination, then renamed over it, so a failure leaves no half GIF.
+                let staging = destination.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).gif")
+                defer { try? FileManager.default.removeItem(at: staging) }
+                try await RecordingGIFExport.write(movie: movie, to: staging, frameRate: settings.effectiveGIFFrameRate,
+                                                   width: settings.effectiveGIFWidth)
+                try ScreenshotFileActions.installExport(from: staging, at: destination)
+                ScreenshotPreviewStack.shared.dismissVideo(for: item.ownedURL)
+                NSWorkspace.shared.activateFileViewerSelecting([destination])
             }
         }
     }
