@@ -68,7 +68,7 @@ struct CaptureLibraryInspector: View {
             }
             .buttonStyle(.plain)
             .disabled(model.isBusy)
-            .accessibilityLabel("Quick Look \(item.name)")
+            .accessibilityLabel("Quick Look \(item.title)")
             .help("Open a large preview")
 
             VStack(alignment: .leading, spacing: 7) {
@@ -92,6 +92,11 @@ struct CaptureLibraryInspector: View {
         VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
             sectionTitle("Information")
             VStack(spacing: InspectorMetrics.rowSpacing) {
+                // The name on disk, which exports and drags keep; the title above may be a date.
+                detailRow("File", value: item.ownedURL.lastPathComponent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(item.ownedURL.lastPathComponent)
                 detailRow("Dimensions", value: item.dimensions)
                 if item.isVideo { detailRow("Duration", value: item.durationText) }
                 detailRow("Size on disk", value: sizeText)
@@ -214,14 +219,14 @@ private struct LibraryInspectorTitle: View {
 
     var body: some View {
         if model.renameSession?.id == item.id, model.renameSession?.location == .inspector {
-            CaptureNameField(id: item.id, location: .inspector, font: .system(size: 16, weight: .semibold))
+            CaptureNameField(id: item.id, location: .inspector, font: .system(size: 16, weight: .semibold), placeholder: item.dateTitle)
         } else {
             // A plain button rather than a tap gesture, so assistive
             // technologies can press it too.
             Button {
                 model.beginRename(item, at: .inspector)
             } label: {
-                Text(item.name)
+                Text(item.title)
                     .font(.system(size: 16, weight: .semibold))
                     .lineLimit(3)
                     .truncationMode(.middle)

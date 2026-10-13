@@ -87,7 +87,8 @@ extension CaptureLibraryModel {
             }
             commitRename(edit.id, at: edit.location)
         }
-        renameSession = CaptureRenameSession(id: item.id, location: location, draft: savedNames[item.id] ?? item.name)
+        // Starts from the custom name; an unnamed capture starts empty, its date as the placeholder.
+        renameSession = CaptureRenameSession(id: item.id, location: location, draft: savedNames[item.id] ?? item.customName ?? "")
     }
 
     /// Saves the draft for the capture the session was opened on, whatever
@@ -98,10 +99,11 @@ extension CaptureLibraryModel {
         guard let edit = renameSession, edit.id == id, edit.location == location else { return }
         renameSession = nil
         let name = edit.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, let item = items.first(where: { $0.id == id }),
-              name != (savedNames[id] ?? item.name) else { return }
+        guard let item = items.first(where: { $0.id == id }),
+              name != (savedNames[id] ?? item.customName ?? "") else { return }
+        // An empty name clears the custom one, and the date shows again.
         if let session = item.session {
-            session.updateProjectMetadata { $0.displayName = name }
+            session.updateProjectMetadata { $0.displayName = name.isEmpty ? nil : name }
             RecordingProjectStore.shared.reload()
         } else if let historyID = item.historyIDs.first {
             ScreenshotHistoryStore.shared.rename(id: historyID, to: name)
@@ -126,7 +128,7 @@ extension CaptureLibraryModel {
             var failures: [String] = []
             for item in targets {
                 guard !CaptureLibraryOpenEditors.isEditing(item.ownedURL) else {
-                    failures.append("\(item.name): close its editor before moving it to Trash.")
+                    failures.append("\(item.title): close its editor before moving it to Trash.")
                     continue
                 }
                 do {
@@ -139,7 +141,7 @@ extension CaptureLibraryModel {
                         let cards = ScreenshotPreviewStack.shared.items.filter { $0.url.standardizedFileURL == item.fileURL.standardizedFileURL }
                         for card in cards { ScreenshotPreviewStack.shared.dismiss(id: card.id) }
                     }
-                } catch { failures.append("\(item.name): \(error.localizedDescription)") }
+                } catch { failures.append("\(item.title): \(error.localizedDescription)") }
             }
             await CaptureLibraryThumbnails.shared.remove(for: targets.filter { removedEntries.contains($0.id) }.map(\.ownedURL))
             ScreenshotHistoryStore.shared.removeTrashedItems(ids: removedIDs)
@@ -253,7 +255,7 @@ extension CaptureLibraryModel {
                         }.value
                         exported.append(destination)
                         if item.isVideo { ScreenshotPreviewStack.shared.dismissVideo(for: item.ownedURL) }
-                    } catch { failures.append("\(item.name): \(error.localizedDescription)") }
+                    } catch { failures.append("\(item.title): \(error.localizedDescription)") }
                 }
                 if !exported.isEmpty { NSWorkspace.shared.activateFileViewerSelecting(exported) }
                 if !failures.isEmpty { self.errorMessage = failures.joined(separator: "\n\n") }
@@ -394,6 +396,8 @@ struct CaptureNameField: View {
     let id: String
     let location: CaptureRenameSession.Location
     let font: Font
+    /// Shown while the field is empty: the date the capture falls back to.
+    let placeholder: String
     @FocusState private var isFocused: Bool
 
     private var model: CaptureLibraryModel { .shared }
@@ -402,7 +406,7 @@ struct CaptureNameField: View {
         TextField("Name", text: Binding(
             get: { ownsSession ? model.renameSession?.draft ?? "" : "" },
             set: { if ownsSession { model.renameSession?.draft = $0 } }
-        ))
+        ), prompt: Text(placeholder))
         .textFieldStyle(.plain)
         .font(font)
         .focused($isFocused)

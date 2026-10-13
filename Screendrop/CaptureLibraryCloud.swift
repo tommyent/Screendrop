@@ -54,12 +54,23 @@ final class CloudLibraryModel {
     var visibleUploads: [CloudUpload] {
         let library = CaptureLibraryModel.shared
         let query = library.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let local = localItems
         let matching = query.isEmpty ? uploads : uploads.filter {
             $0.name.localizedStandardContains(query) || $0.filename.localizedStandardContains(query)
+                || CloudUploadText.title($0, local: local[$0.id]).localizedStandardContains(query)
         }
         switch library.sortOrder {
         case .oldest: return matching.sorted { $0.createdAt < $1.createdAt }
-        case .name: return matching.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .name:
+            // As the Library sorts: named ones A to Z, then the rest newest first.
+            return matching.sorted { lhs, rhs in
+                switch (CloudUploadText.customTitle(lhs, local: local[lhs.id]), CloudUploadText.customTitle(rhs, local: local[rhs.id])) {
+                case let (left?, right?) where left != right: left.localizedStandardCompare(right) == .orderedAscending
+                case (_?, nil): true
+                case (nil, _?): false
+                default: lhs.createdAt > rhs.createdAt
+                }
+            }
         case .newest, .modified: return matching.sorted { $0.createdAt > $1.createdAt }
         }
     }
@@ -207,7 +218,7 @@ final class CloudLibraryModel {
                     })
                 } catch {
                     if Task.isCancelled { return }
-                    failures.append("\(upload.name): \(error.localizedDescription)")
+                    failures.append("\(CloudUploadText.title(upload, local: self.localItems[upload.id])): \(error.localizedDescription)")
                 }
             }
             if Task.isCancelled { return }
@@ -300,7 +311,7 @@ final class CloudLibraryModel {
                     selection.remove(upload.id)
                     CloudPreviewCache.shared.remove(upload.id)
                 } catch {
-                    failures.append("\(upload.name): \(error.localizedDescription)")
+                    failures.append("\(CloudUploadText.title(upload, local: self.localItems[upload.id])): \(error.localizedDescription)")
                 }
                 deletingIDs.remove(upload.id)
             }
@@ -450,17 +461,24 @@ private struct CloudUploadCard: View {
         // Cells are reused for other uploads.
         .onChange(of: upload.id) { _, _ in isHovering = false }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(upload.name), \(upload.kindTitle), \(CloudUploadText.subtitle(upload))"
-            + (CloudUploadText.comments(upload.commentCount).map { ", \($0)" } ?? "")
-            + (CloudUploadText.likes(upload.likeCount).map { ", \($0)" } ?? "")
-            + (upload.hasPassword == true ? ", password protected" : "")
-            + (CloudUploadText.expiry(upload.expiresAt).map { ", \($0)" } ?? "")
-            + (local == nil ? ", cloud only" : ", in Library"))
+        .accessibilityLabel(spokenLabel)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityAction(named: "Quick Look") { act { $0.quickLook(toggling: false) } }
         .accessibilityAction(named: "Open Link") { CloudLibraryModel.shared.open(upload) }
         .accessibilityAction(named: "Copy Link") { CloudLibraryModel.shared.copyLinks([upload]) }
         .accessibilityAction(named: "Delete from Cloud") { CloudLibraryModel.shared.pendingDelete = [upload] }
+    }
+
+    /// The card reads as one element, so this says what its pills show.
+    private var spokenLabel: String {
+        let parts: [String?] = [
+            CloudUploadText.title(upload, local: local), upload.kindTitle, CloudUploadText.subtitle(upload),
+            upload.isVideo ? upload.duration.map(CloudUploadText.duration) : nil,
+            CloudUploadText.comments(upload.commentCount), CloudUploadText.likes(upload.likeCount),
+            upload.hasPassword == true ? "password protected" : nil,
+            CloudUploadText.expiry(upload.expiresAt), local == nil ? "cloud only" : "in Library",
+        ]
+        return parts.compactMap(\.self).joined(separator: ", ")
     }
 
     /// Selects just this upload, then acts on the selection.
@@ -473,12 +491,13 @@ private struct CloudUploadCard: View {
     private var labels: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
-                Text(upload.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                Text(CloudUploadText.title(upload, local: local)).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
                 if local != nil {
                     Image(systemName: "internaldrive").foregroundStyle(.secondary).help("The capture is in your Library")
                 }
             }
-            Text(CloudUploadText.subtitle(upload)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            // A space when there's no size keeps the line, so cards stay level.
+            Text(CloudUploadText.subtitle(upload) ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
@@ -644,11 +663,25 @@ private struct CloudCardPill: ViewModifier {
 }
 
 nonisolated enum CloudUploadText {
-    static func subtitle(_ upload: CloudUpload) -> String {
-        let date = upload.createdAt.formatted(date: .abbreviated, time: .omitted)
-        if upload.isVideo, let seconds = upload.duration { return "\(date) · \(duration(seconds))" }
-        if let size = upload.size { return "\(date) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))" }
-        return date
+    /// What an upload's card and inspector call it (sd-8oa): a title set on
+    /// the upload, else its Library capture's title, else when it went up.
+    /// Renaming the capture never renames the upload.
+    static func title(_ upload: CloudUpload, local: CaptureLibraryItem?) -> String {
+        customTitle(upload, local: local) ?? local?.dateTitle
+            ?? "Uploaded " + upload.createdAt.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    /// A name someone gave it. Uploads used to send the file's name as the
+    /// title, so a title that is just the file name doesn't count.
+    static func customTitle(_ upload: CloudUpload, local: CaptureLibraryItem?) -> String? {
+        let title = upload.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let stem = (upload.filename as NSString).deletingPathExtension
+        return title.isEmpty || title == upload.filename || title == stem ? local?.customName : title
+    }
+
+    /// The size alone: the title carries the date and a video's pill its length (sd-8oa).
+    static func subtitle(_ upload: CloudUpload) -> String? {
+        upload.size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) }
     }
 
     /// "Expires in 3 days" or "Expired"; nil for a link that never expires.
@@ -791,10 +824,10 @@ struct CloudUploadInspector: View {
                                 }
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Quick Look \(upload.name)")
+                        .accessibilityLabel("Quick Look \(CloudUploadText.title(upload, local: local))")
                         .help("Open a large preview")
                         VStack(alignment: .leading, spacing: 7) {
-                            Text(upload.name)
+                            Text(CloudUploadText.title(upload, local: local))
                                 .font(.system(size: 16, weight: .semibold))
                                 .lineLimit(3)
                                 .truncationMode(.middle)
@@ -825,7 +858,7 @@ struct CloudUploadInspector: View {
                     VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing) {
                         sectionTitle("On This Mac")
                         if let local {
-                            detailRow("Capture", value: local.name)
+                            detailRow("Capture", value: local.title)
                             Button("Show in Library") { cloud.showInLibrary(local) }
                                 .controlSize(.small)
                         } else {

@@ -438,7 +438,8 @@ struct LibraryCellContent: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
                 .accessibilityElement(children: isRenaming(item) ? .contain : .ignore)
-                .accessibilityLabel("\(item.name), \(item.kindTitle), \(item.subtitle)"
+                .accessibilityLabel("\(item.title), \(item.kindTitle), \(item.dimensions)"
+                    + (item.isVideo ? ", \(item.durationText)" : "")
                     + (item.cloudURL != nil ? ", shared" : "")
                     + (item.tags.isEmpty ? "" : ", tags: \(item.tags.joined(separator: ", "))"))
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
@@ -468,14 +469,15 @@ struct LibraryCellContent: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 5) {
                 if isRenaming(item) {
-                    CaptureNameField(id: item.id, location: .card, font: .system(size: 13, weight: .medium))
+                    CaptureNameField(id: item.id, location: .card, font: .system(size: 13, weight: .medium), placeholder: item.dateTitle)
                 } else {
-                    Text(item.name).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                    Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.cellSpace)) } action: { onTitleFrame($0) }
                 }
                 if item.hasDraft { Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(.orange) }
             }
-            Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            // The dimensions for every capture; a video's pill shows its length.
+            Text(item.dimensions).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
