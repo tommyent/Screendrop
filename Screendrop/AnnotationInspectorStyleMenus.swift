@@ -90,34 +90,6 @@ struct AnnotationSwatchStrip: View {
     }
 }
 
-/// Stroke width as a segmented dot scale, using the same segmented control as
-/// every other choice picker in the inspector.
-struct AnnotationStrokePicker: View {
-    let strokeWidth: CGFloat
-    let onSelect: (CGFloat) -> Void
-
-    private static let widths: [CGFloat] = [2, 4, 6, 8, 12]
-
-    var body: some View {
-        InspectorSegmented(
-            options: Self.widths,
-            isSelected: { $0 == strokeWidth },
-            onTap: onSelect,
-            label: { width in
-                Circle()
-                    .frame(width: dotDiameter(for: width), height: dotDiameter(for: width))
-                    .help("\(Int(width)) px")
-                    .accessibilityLabel("\(Int(width)) pixels")
-            },
-            height: InspectorMetrics.controlHeight
-        )
-    }
-
-    private func dotDiameter(for width: CGFloat) -> CGFloat {
-        min(width + 2, 13)
-    }
-}
-
 /// Routes the shared `NSColorPanel` to whichever swatch strip opened it last.
 /// The panel sends continuous `changeColor` actions while the user scrubs, so
 /// annotations update live just like the old popover's embedded picker.

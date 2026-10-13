@@ -16,13 +16,6 @@ struct AnnotationTextStyleControls: View {
             fontFamilyMenu
                 .frame(minWidth: 0, maxWidth: .infinity)
 
-            // Labelled like every other tool's colours, so they line up.
-            InspectorRow("Color") {
-                AnnotationSwatchStrip(selectedSwatch: model.selectedSwatch) { swatch in
-                    model.setSwatch(swatch)
-                }
-            }
-
             HStack(spacing: 6) {
                 fontSizeStepper
 

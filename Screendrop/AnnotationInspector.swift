@@ -328,23 +328,7 @@ struct AnnotationEditorInspector: View {
                     }
                 }
 
-                if model.isColorStyleAvailable {
-                    InspectorRow("Color") {
-                        AnnotationSwatchStrip(selectedSwatch: model.selectedSwatch) { swatch in
-                            onEditorAction()
-                            model.setSwatch(swatch)
-                        }
-                    }
-                }
-
-                if model.isStrokeStyleAvailable {
-                    InspectorRow("Stroke") {
-                        AnnotationStrokePicker(strokeWidth: model.strokeWidth) { strokeWidth in
-                            onEditorAction()
-                            model.setStrokeWidth(strokeWidth)
-                        }
-                    }
-                }
+                // Colour and width live in the tool dock's colour pill.
 
                 if model.isHandDrawnStyleAvailable {
                     InspectorToggleRow("Hand-drawn", isOn: Binding(
