@@ -443,9 +443,10 @@ struct LibraryCellContent: View {
                     + (item.cloudURL != nil ? ", shared" : "")
                     + (item.tags.isEmpty ? "" : ", tags: \(item.tags.joined(separator: ", "))"))
                 .accessibilityAddTraits(selected ? [.isSelected] : [])
-                .accessibilityAction(named: "Rename") { CaptureLibraryModel.shared.beginRename(item, at: .card) }
-                // The cloud badge's click, for VoiceOver, which reads the card as one element.
                 .accessibilityActions {
+                    Button("Open") { act(.edit, on: item) }
+                    Button("Quick Look") { act(.preview, on: item) }
+                    Button("Rename") { CaptureLibraryModel.shared.beginRename(item, at: .card) }
                     if item.cloudURL != nil {
                         Button("Copy Cloud Link") { CaptureLibraryModel.shared.copyLink(item) }
                     } else if CloudUploader.shared.isConfigured {
@@ -459,6 +460,12 @@ struct LibraryCellContent: View {
     }
 
     private static let cellSpace = "LibraryCell"
+
+    private func act(_ action: CaptureLibraryAction, on item: CaptureLibraryItem) {
+        let model = CaptureLibraryModel.shared
+        model.selection = [item.id]
+        model.perform(action)
+    }
 
     private func isRenaming(_ item: CaptureLibraryItem) -> Bool {
         let session = CaptureLibraryModel.shared.renameSession
