@@ -104,22 +104,20 @@ enum AnnotationRenderer {
             // down to device RGB. Previews already render this way.
             let colorSpace = exportColorSpace(for: sourceImage)
             // Annotations past the screenshot's edge grow the canvas rather
-            // than being cut off. A background, camera or bleeding blur
-            // already gives them a stage to land on, so only without one.
+            // than being cut off. A background then lays out around the
+            // grown canvas, padding and all.
             var growthFill: CGColor?
-            if !backgroundSettings.usesCanvasLayout {
-                let expansion = AnnotationCanvasExpansion(
-                    shapes: shapes,
-                    imageSize: CGSize(width: sourceImage.width, height: sourceImage.height),
-                    pixelsPerPoint: source.pixelsPerPoint
-                )
-                if !expansion.isEmpty {
-                    let fill = AnnotationCanvasExpansion.edgeColor(of: sourceImage, colorSpace: colorSpace)
-                    if let grown = expansion.apply(to: sourceImage, fill: fill, colorSpace: colorSpace) {
-                        sourceImage = grown
-                        shapes = expansion.shifted(shapes)
-                        growthFill = fill
-                    }
+            let expansion = AnnotationCanvasExpansion(
+                shapes: shapes,
+                imageSize: CGSize(width: sourceImage.width, height: sourceImage.height),
+                pixelsPerPoint: source.pixelsPerPoint
+            )
+            if !expansion.isEmpty {
+                let fill = AnnotationCanvasExpansion.edgeColor(of: sourceImage, colorSpace: colorSpace)
+                if let grown = expansion.apply(to: sourceImage, fill: fill, colorSpace: colorSpace) {
+                    sourceImage = grown
+                    shapes = expansion.shifted(shapes)
+                    growthFill = fill
                 }
             }
             var renderedImage: CGImage
@@ -155,8 +153,8 @@ enum AnnotationRenderer {
                                                       images: images, colorSpace: colorSpace)
             }
             // A grown canvas stays opaque, as Shottr's does, even under a
-            // border with rounded corners.
-            if let growthFill, backgroundSettings.hasRenderableContent,
+            // border with rounded corners. A background keeps its own edges.
+            if let growthFill, backgroundSettings.hasRenderableContent, !backgroundSettings.usesCanvasLayout,
                let flattened = AnnotationCanvasExpansion().apply(to: renderedImage, fill: growthFill, colorSpace: colorSpace) {
                 renderedImage = flattened
             }

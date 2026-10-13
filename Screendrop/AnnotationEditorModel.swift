@@ -157,12 +157,6 @@ final class AnnotationEditorModel {
 
     // MARK: - Canvas growth
 
-    /// The growth on show. None with a background, camera or bleeding blur,
-    /// which give annotations a stage already, matching the export.
-    var displayedCanvasExpansion: AnnotationCanvasExpansion {
-        backgroundSettings.usesCanvasLayout ? AnnotationCanvasExpansion() : canvasExpansion
-    }
-
     /// The screenshot's edge color, which fills the grown area.
     var canvasGrowthFill: CGColor {
         if let cachedGrowthFill { return cachedGrowthFill }

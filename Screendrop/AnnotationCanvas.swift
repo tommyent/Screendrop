@@ -56,7 +56,7 @@ struct AnnotationCanvas: View {
             let canvasFrame = viewport.frame
             let displayLayout = backgroundLayout.scaled(to: canvasFrame)
             // The layout's content is the grown canvas; the screenshot sits inside it.
-            let imageFrame = model.displayedCanvasExpansion.imageFrame(in: displayLayout.imageFrame, imageSize: model.imageSize)
+            let imageFrame = model.canvasExpansion.imageFrame(in: displayLayout.imageFrame, imageSize: model.imageSize)
             let boundaryFrame = model.backgroundSettings.usesCanvasLayout ? displayLayout.canvasFrame : displayLayout.imageFrame
             let allowedBounds = model.annotationBounds(for: imageFrame, boundaryFrame: boundaryFrame)
             let screenshotGeometry = AnnotationScreenshotFrameGeometry(
@@ -68,9 +68,10 @@ struct AnnotationCanvas: View {
             let effectiveCamera = model.isCropping || model.editingTextID != nil
                 ? AnnotationCameraSettings()
                 : model.backgroundSettings.camera
+            // Pivots on the grown canvas, as the export's camera does, not the screenshot inside it.
             let projection = AnnotationCameraGeometry.projection(
                 sourceRect: CGRect(origin: .zero, size: proxy.size),
-                imageRect: imageFrame,
+                imageRect: displayLayout.imageFrame,
                 canvasSize: displayLayout.canvasFrame.size,
                 settings: effectiveCamera
             )
@@ -100,6 +101,7 @@ struct AnnotationCanvas: View {
                 shapes: model.shapes,
                 bindings: model.bindings,
                 settings: model.backgroundSettings,
+                expansion: model.canvasExpansion,
                 contentPixelWidth: previewPixelWidth,
                 isEligible: usesSceneBlur
                     && !hasActiveInteraction
@@ -414,14 +416,15 @@ struct AnnotationCanvas: View {
         clipCorners: RectangleCornerRadii,
         displayedImage: NSImage
     ) -> some View {
-        let expansion = model.displayedCanvasExpansion
+        let expansion = model.canvasExpansion
         let canvasRect = screenshotGeometry.imageRect
         let imageFrame = expansion.imageFrame(in: canvasRect, imageSize: model.imageSize)
 
         return ZStack(alignment: .topLeading) {
             // The export flattens a grown canvas onto its edge color, rounded
-            // corners included, so they show that color here too.
-            if !expansion.isEmpty {
+            // corners included, so they show that color here too. Not over a
+            // background, which shows at the corners instead.
+            if !expansion.isEmpty, !model.backgroundSettings.usesCanvasLayout {
                 Rectangle()
                     .fill(Color(cgColor: model.canvasGrowthFill))
                     .frame(width: screenshotGeometry.cardRect.width, height: screenshotGeometry.cardRect.height)
@@ -629,6 +632,7 @@ struct AnnotationCanvas: View {
             bindings: key.bindings,
             images: model.engine.images,
             settings: key.settings,
+            expansion: key.expansion,
             contentPixelWidth: key.contentPixelWidth,
             colorSpace: colorSpace
         ), !Task.isCancelled else {

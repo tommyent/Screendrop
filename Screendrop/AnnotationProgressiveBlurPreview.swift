@@ -203,6 +203,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
         bindings: [ArrowBinding],
         images: [String: CGImage] = [:],
         settings: AnnotationBackgroundSettings,
+        expansion: AnnotationCanvasExpansion,
         contentPixelWidth: CGFloat,
         colorSpace: CGColorSpace
     ) -> CGImage? {
@@ -215,6 +216,7 @@ actor AnnotationProgressiveBlurPreviewWorker {
             bindings: bindings,
             images: images,
             settings: settings,
+            expansion: expansion,
             contentPixelWidth: contentPixelWidth,
             colorSpace: colorSpace
         )
@@ -229,6 +231,7 @@ struct AnnotationSceneSettleKey: Equatable {
     let shapes: [AnnoShape]
     let bindings: [ArrowBinding]
     let settings: AnnotationBackgroundSettings
+    let expansion: AnnotationCanvasExpansion
     let contentPixelWidth: CGFloat
     let isEligible: Bool
 }
@@ -248,10 +251,21 @@ nonisolated enum AnnotationScenePreviewRenderer {
         bindings: [ArrowBinding],
         images: [String: CGImage] = [:],
         settings: AnnotationBackgroundSettings,
+        expansion: AnnotationCanvasExpansion = AnnotationCanvasExpansion(),
         contentPixelWidth: CGFloat,
         colorSpace: CGColorSpace
     ) throws -> CGImage {
+        // `contentPixelWidth` is the screenshot's own width on screen.
         let scale = min(1, contentPixelWidth / CGFloat(source.width))
+        // Annotations past the edge grow the canvas first, as the export does.
+        var source = source
+        var shapes = shapes
+        if !expansion.isEmpty,
+           let grown = expansion.apply(to: source, fill: AnnotationCanvasExpansion.edgeColor(of: source, colorSpace: colorSpace),
+                                       colorSpace: colorSpace) {
+            source = grown
+            shapes = expansion.shifted(shapes)
+        }
         let contentImage = scale < 1
             ? try downscaled(source, scale: scale, colorSpace: colorSpace)
             : source
