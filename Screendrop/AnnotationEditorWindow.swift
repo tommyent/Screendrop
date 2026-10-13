@@ -23,7 +23,8 @@ struct AnnotationEditorWindow: View {
     /// No close-button dot: Apple's HIG says that with autosave on, a dot
     /// implies people must act to keep their work. The subtitle says it instead.
     @State private var closeGuard = EditorCloseGuard()
-    @State private var didCopyLink = false
+    /// The uploaded link, until the next edit brings Upload back.
+    @State private var copiedLink: String?
     /// Found once per load: matching by URL probes each recording on disk,
     /// and the title is read on every edit.
     @State private var historyID: UUID?
@@ -121,10 +122,10 @@ struct AnnotationEditorWindow: View {
                 }
             }
             .onChange(of: model.revision) { _, _ in
-                if didCopyLink { withAnimation(.snappy(duration: 0.2)) { didCopyLink = false } }
+                if copiedLink != nil { withAnimation(.snappy(duration: 0.2)) { copiedLink = nil } }
             }
             .onChange(of: model.backgroundSettings) { _, _ in
-                if didCopyLink { withAnimation(.snappy(duration: 0.2)) { didCopyLink = false } }
+                if copiedLink != nil { withAnimation(.snappy(duration: 0.2)) { copiedLink = nil } }
             }
             .focusedSceneValue(\.annotationEditor, model)
             .onChange(of: model.saveAsRequest) { _, _ in saveAs() }
@@ -196,7 +197,18 @@ struct AnnotationEditorWindow: View {
     /// The standard trailing actions shown when not cropping.
     @ViewBuilder
     private var editingActions: some View {
-        if CloudUploader.shared.isConfigured {
+        if let copiedLink {
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(copiedLink, forType: .string)
+            } label: {
+                Label("Link Copied", systemImage: "checkmark.icloud")
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 6)
+            }
+            .help("Copy the share link again")
+        } else if CloudUploader.shared.isConfigured {
             CloudUploadButton(
                 suggestedTitle: model.sourceURL?.deletingPathExtension().lastPathComponent ?? "",
                 onUpload: uploadAnnotation
@@ -208,10 +220,6 @@ struct AnnotationEditorWindow: View {
                         Text("Uploading...")
                     }
                     .padding(.horizontal, 6)
-                } else if didCopyLink {
-                    Label("Link copied", systemImage: "checkmark.icloud")
-                        .labelStyle(.titleAndIcon)
-                        .padding(.horizontal, 6)
                 } else {
                     Label("Upload", systemImage: "icloud.and.arrow.up")
                         .labelStyle(.titleAndIcon)
@@ -474,7 +482,7 @@ struct AnnotationEditorWindow: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(result.url, forType: .string)
                 ScreenshotHistoryStore.shared.setCloudURL(for: resultURL, cloudURL: result.url)
-                withAnimation(.snappy(duration: 0.2)) { didCopyLink = true }
+                withAnimation(.snappy(duration: 0.2)) { copiedLink = result.url }
             } catch {
                 model.errorMessage = "Upload failed: \(error.localizedDescription)"
             }
