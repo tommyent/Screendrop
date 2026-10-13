@@ -474,7 +474,9 @@ struct CaptureLibraryView: View {
             // About the width `.searchable` gave it; narrower when the toolbar is tight.
             .frame(minWidth: 120, idealWidth: 320, maxWidth: 320)
         }
-        .sharedBackgroundVisibility(.hidden)
+        // The toolbar's glass is the field's resting pill: in a toolbar the
+        // field draws no bezel of its own until it's focused.
+        .sharedBackgroundVisibility(.visible)
         ToolbarItem(placement: .primaryAction) {
             Button { inspectorVisible.toggle() } label: {
                 Label(inspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
