@@ -84,7 +84,7 @@ private struct RecordingStudioContent: View {
                     title: windowTitle,
                     status: windowSubtitle,
                     customName: model.customName,
-                    defaultName: Self.friendlyTitle(for: model.sessionURL.deletingPathExtension().lastPathComponent),
+                    defaultName: model.defaultName,
                     // A bare movie has no project to keep a name in.
                     onRename: model.isProject ? { model.rename(to: $0) } : nil
                 )
@@ -217,7 +217,7 @@ private struct RecordingStudioContent: View {
         // A rename in the Library reloads the project store; reading it here
         // re-reads the name then.
         _ = RecordingProjectStore.shared.projects
-        let name = Self.friendlyTitle(for: model.projectDisplayName)
+        let name = model.customName ?? model.defaultName
         return model.hasUnsavedChanges ? "\(name) - Edited" : name
     }
 
@@ -228,18 +228,6 @@ private struct RecordingStudioContent: View {
         let clock = String(format: "%d:%02d", total / 60, total % 60)
         let size = model.videoSize
         return "\(clock) · \(Int(size.width))×\(Int(size.height))"
-    }
-
-    /// Unrenamed recordings are named `Screendrop_<timestamp>_<id>` on disk;
-    /// the title shows when it was recorded instead of the raw file name.
-    private static func friendlyTitle(for name: String) -> String {
-        let parts = name.split(separator: "_")
-        guard parts.count >= 2, parts[0] == "Screendrop" else { return name }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        guard let date = formatter.date(from: String(parts[1])) else { return name }
-        return "Recording · \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func configureCloseGuard() {

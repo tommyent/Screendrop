@@ -281,6 +281,25 @@ final class RecordingStudioModel {
         return session?.customName
     }
 
+    /// An unnamed project's name, as the Library and the image editor show
+    /// it: when it was recorded. Until load reads the manifest, that comes
+    /// from the `Screendrop_<timestamp>_<id>` folder name; a bare movie
+    /// keeps its file name.
+    var defaultName: String {
+        let name = sessionURL.deletingPathExtension().lastPathComponent
+        guard let date = manifest?.createdAt ?? Self.recordingDate(inName: name) else { return name }
+        return CaptureLibraryItem.dateTitle(date)
+    }
+
+    private static func recordingDate(inName name: String) -> Date? {
+        let parts = name.split(separator: "_")
+        guard parts.count >= 2, parts[0] == "Screendrop" else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.date(from: String(parts[1]))
+    }
+
     /// The names above are read from disk; a rename here bumps this so the
     /// title shows the new one at once.
     private var nameRevision = 0
