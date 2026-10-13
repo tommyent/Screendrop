@@ -140,11 +140,14 @@ struct CaptureLibraryView: View {
                 Button {
                     SettingsWindowController.show(tab: .general)
                 } label: {
+                    // Icon only; the label still names it for VoiceOver.
                     Label("Settings", systemImage: "gearshape")
+                        .labelStyle(.iconOnly)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
+                .help("Settings")
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
             }
