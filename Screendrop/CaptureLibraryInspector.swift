@@ -462,14 +462,8 @@ struct LibraryInspectorBarSurface: ViewModifier {
         content
             .frame(maxWidth: .infinity)
             .background {
-                Group {
-                    if #available(macOS 27.0, *) {
-                        WorkspaceChrome.background
-                    } else {
-                        Color(nsColor: .windowBackgroundColor)
-                    }
-                }
-                .ignoresSafeArea(.container, edges: .bottom)
+                WorkspaceChrome.background
+                    .ignoresSafeArea(.container, edges: .bottom)
             }
             .overlay(alignment: .top) {
                 Rectangle()

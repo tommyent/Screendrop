@@ -587,17 +587,12 @@ struct CaptureLibraryView: View {
 /// The editor's chrome colour behind a sidebar or inspector column, so the
 /// columns and the toolbar read as one flat surface.
 private struct LibrarySidebarSurface: ViewModifier {
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27.0, *) {
-            content
-                .scrollContentBackground(.hidden)
-                .background {
-                    WorkspaceChrome.background.ignoresSafeArea(.container)
-                }
-        } else {
-            content
-        }
+        content
+            .scrollContentBackground(.hidden)
+            .background {
+                WorkspaceChrome.background.ignoresSafeArea(.container)
+            }
     }
 }
 
@@ -610,7 +605,7 @@ private struct LibraryBrowserSurface: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27.0, *), showsDots {
+        if showsDots {
             content.background { AnnotationEditorWorkspaceBackground().allowsHitTesting(false) }
         } else {
             content
@@ -634,12 +629,10 @@ private struct LibraryColumnSeparators: ViewModifier {
         // cut-off if 27.1 shows doubled or missing lines.
         if #available(macOS 27.2, *) {
             content
-        } else if #available(macOS 27.0, *) {
+        } else {
             content
                 .overlay(alignment: .leading) { if leading { line } }
                 .overlay(alignment: .trailing) { if trailing { line } }
-        } else {
-            content
         }
     }
 
@@ -656,13 +649,8 @@ private struct LibraryColumnSeparators: ViewModifier {
 /// toolbar background visible it runs over the browser and inspector; a hard
 /// top scroll edge turns it on over the sidebar too.
 private struct LibraryToolbarSeparator: ViewModifier {
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27.0, *) {
-            content.scrollEdgeEffectStyle(.hard, for: .top)
-        } else {
-            content
-        }
+        content.scrollEdgeEffectStyle(.hard, for: .top)
     }
 }
 
@@ -671,15 +659,10 @@ private struct LibraryToolbarSeparator: ViewModifier {
 /// inspector's divider out of it. Backgrounds around `.inspector` keep the
 /// safe area; clips don't.
 private struct LibraryWindowSurface: ViewModifier {
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(macOS 27.0, *) {
-            content
-                .background { WorkspaceChrome.background.ignoresSafeArea() }
-                .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-        } else {
-            content
-        }
+        content
+            .background { WorkspaceChrome.background.ignoresSafeArea() }
+            .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
     }
 }
 
