@@ -241,7 +241,8 @@ struct CaptureLibraryView: View {
             Text("The local files and their edits will move to Trash. Exported copies and cloud links will remain available.")
         }
         .sheet(item: $model.pendingCloudUpload) { item in
-            CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
+            // Only a name the user gave; an unnamed upload keeps its file name on the share page.
+            CloudUploadOptionsPopover(suggestedTitle: item.customName ?? "") { options in
                 model.upload(item, options: options)
             }
         }

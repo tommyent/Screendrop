@@ -43,7 +43,11 @@ nonisolated enum CaptureLibraryLayout {
 nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
     let id: String
     let historyIDs: Set<UUID>
+    /// The custom name, else the file's: what exports, drags and uploads are
+    /// named. Cards and the inspector show `title`.
     let name: String
+    /// What the user renamed it to, if they did.
+    let customName: String?
     let fileURL: URL
     let session: RecordingSession?
     let createdAt: Date
@@ -64,10 +68,15 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
         pixelWidth > 0 && pixelHeight > 0 ? "\(pixelWidth) × \(pixelHeight)" : "Unknown"
     }
     var kindTitle: String { session != nil ? "Recording Project" : isVideo ? "Video" : "Screenshot" }
-    var subtitle: String {
-        let date = createdAt.formatted(date: .abbreviated, time: .omitted)
-        return isVideo ? "\(date) · \(durationText)" : "\(date) · \(dimensions)"
+    /// The custom name, else when it was taken (sd-8oa).
+    var title: String { customName ?? dateTitle }
+    /// "Oct 13, 8:13 AM", with the year when it isn't this year's.
+    var dateTitle: String {
+        let day = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        let thisYear = Calendar.current.isDate(createdAt, equalTo: .now, toGranularity: .year)
+        return createdAt.formatted(thisYear ? day : day.year()) + ", " + createdAt.formatted(date: .omitted, time: .shortened)
     }
+    var subtitle: String { isVideo ? durationText : dimensions }
     var durationText: String {
         guard let duration, duration.isFinite, duration >= 0 else { return "—" }
         let seconds = Int(min(duration.rounded(), Double(Int.max / 2)))
@@ -81,6 +90,7 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
 nonisolated struct CaptureLibraryHistorySnapshot: Sendable {
     let id: UUID
     let name: String
+    let customName: String?
     let fileName: String
     let sessionPath: String?
     let createdAt: Date
@@ -96,6 +106,7 @@ nonisolated struct CaptureLibraryHistorySnapshot: Sendable {
     @MainActor init(_ item: ScreenshotHistoryItem) {
         id = item.id
         name = item.displayName ?? item.fileName
+        customName = item.displayName
         fileName = item.fileName
         sessionPath = item.recordingSessionPath
         createdAt = item.createdAt
@@ -234,6 +245,7 @@ final class CaptureLibraryModel {
             let matchesKind = filter == .all || (filter == .recordings ? item.isVideo : !item.isVideo)
             let matchesTag = tagFilter.map(item.tags.contains) ?? true
             return matchesKind && matchesTag && (query.isEmpty || item.name.localizedStandardContains(query)
+                || item.title.localizedStandardContains(query)
                 || item.fileURL.lastPathComponent.localizedStandardContains(query)
                 || item.tags.contains { $0.localizedStandardContains(query) })
         }.sorted { lhs, rhs in
@@ -241,8 +253,12 @@ final class CaptureLibraryModel {
             case .newest where lhs.createdAt != rhs.createdAt: return lhs.createdAt > rhs.createdAt
             case .oldest where lhs.createdAt != rhs.createdAt: return lhs.createdAt < rhs.createdAt
             case .modified where lhs.modifiedAt != rhs.modifiedAt: return lhs.modifiedAt > rhs.modifiedAt
-            case .name where lhs.name != rhs.name:
-                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            // Named captures A to Z, then the rest newest first (sd-8oa).
+            case .name where lhs.customName != rhs.customName:
+                guard let left = lhs.customName else { return false }
+                guard let right = rhs.customName else { return true }
+                return left.localizedStandardCompare(right) == .orderedAscending
+            case .name where lhs.createdAt != rhs.createdAt: return lhs.createdAt > rhs.createdAt
             default: return lhs.id < rhs.id
             }
         }
@@ -272,6 +288,9 @@ nonisolated enum CaptureLibraryScanner {
             guard !Task.isCancelled else { return [] }
             guard path != excludingSessionPath else { continue }
             let manifest = session.loadCaptureManifest()
+            let metadata = session.loadProjectMetadata()
+            // `displayName` falls back to the folder's name; only a stored one is custom.
+            let storedName = metadata?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let rows = grouped[path] ?? []
             let row = rows.first
             let createdAt = manifest?.createdAt ?? row?.createdAt
@@ -282,12 +301,13 @@ nonisolated enum CaptureLibraryScanner {
                 .max() ?? row?.modifiedAt ?? createdAt
             entries.append(CaptureLibraryItem(
                 id: "recording:\(path)", historyIDs: Set(rows.map(\.id)), name: session.displayName,
+                customName: storedName.isEmpty ? nil : storedName,
                 fileURL: fileURL, session: session, createdAt: createdAt, modifiedAt: modified,
                 pixelWidth: manifest?.pixelWidth ?? row?.width ?? 0, pixelHeight: manifest?.pixelHeight ?? row?.height ?? 0,
                 duration: manifest?.duration ?? row?.duration,
                 isVideo: true, hasEdits: session.hasSavedProject, hasDraft: session.hasUnsavedDraft,
                 cloudURL: rows.compactMap(\.cloudURL).first,
-                tags: session.loadProjectMetadata()?.tags ?? [],
+                tags: metadata?.tags ?? [],
                 thumbnailKey: "\(fileURL.path):\(modified.timeIntervalSince1970)"
             ))
         }
@@ -298,7 +318,7 @@ nonisolated enum CaptureLibraryScanner {
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
                 ?? row.modifiedAt
             entries.append(CaptureLibraryItem(
-                id: row.id.uuidString, historyIDs: [row.id], name: row.name, fileURL: url, session: nil,
+                id: row.id.uuidString, historyIDs: [row.id], name: row.name, customName: row.customName, fileURL: url, session: nil,
                 createdAt: row.createdAt, modifiedAt: max(modified, row.modifiedAt), pixelWidth: row.width,
                 pixelHeight: row.height, duration: row.duration, isVideo: row.isVideo,
                 hasEdits: row.hasEdits, hasDraft: false, cloudURL: row.cloudURL, tags: row.tags,
