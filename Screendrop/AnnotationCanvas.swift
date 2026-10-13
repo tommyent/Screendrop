@@ -10,8 +10,6 @@ private enum AnnotationCanvasCursor: Equatable {
     case arrow
     case placement
     case crosshair
-    case openHand
-    case closedHand
 
     var nsCursor: NSCursor {
         switch self {
@@ -21,10 +19,6 @@ private enum AnnotationCanvasCursor: Equatable {
             .annotationPlus
         case .crosshair:
             .crosshair
-        case .openHand:
-            .openHand
-        case .closedHand:
-            .closedHand
         }
     }
 }
@@ -816,14 +810,13 @@ struct AnnotationCanvas: View {
         if probe?.isPicking == true || probe?.isMeasuringTool == true {
             setCursor(.crosshair)
         } else if hasActiveInteraction {
-            setCursor(model.isTransformingExistingAnnotation ? .closedHand : .placement)
+            setCursor(model.isTransformingExistingAnnotation ? .arrow : .placement)
         } else if NSEvent.modifierFlags.contains(.command), model.selectedTool.createsAnnotation {
             setCursor(.crosshair)
-        } else if model.hoveredHandle(at: location, imageFrame: imageFrame) != nil {
-            setCursor(.openHand)
-        } else if model.hoveredAnnotation(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) != nil {
-            setCursor(.openHand)
-        } else if model.selectedTool == .select {
+        } else if model.selectedTool == .select
+                    || model.hoveredHandle(at: location, imageFrame: imageFrame) != nil
+                    || model.hoveredAnnotation(at: location, imageFrame: imageFrame, boundaryFrame: boundaryFrame) != nil {
+            // The pointer over shapes and handles too, never a hand, like the Select tool's icon.
             setCursor(.arrow)
         } else {
             setCursor(.placement)
