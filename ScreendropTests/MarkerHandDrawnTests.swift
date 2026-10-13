@@ -82,6 +82,32 @@ struct MarkerHandDrawnTests {
         }
     }
 
+    /// p4's catch in Sol's place: the drawn bow, not just the straight line under it, grabs the arrow.
+    @Test func aClickOnTheBowsApexSelectsTheArrow() throws {
+        var props = ArrowProps()
+        props.end = Vec(1000, 0); props.strokeWidth = 20; props.dash = .draw
+        let arrow = AnnoShape(id: AnnoShapeID("bowed"), x: 100, y: 300, kind: .arrow(props))
+        let editor = AnnoEditor()
+        editor.viewport = AnnoViewport(imageFrame: CGRect(x: 0, y: 0, width: 1400, height: 800),
+                                       imageSize: CGSize(width: 1400, height: 800))
+        editor.replaceDocument(shapes: [arrow])
+
+        // The body is move(start) then one cubic; its middle is the bow's apex.
+        let body = try #require(Self.paths(editor.document)[0].first)
+        var points: [CGPoint] = []
+        body.applyWithBlock { element in
+            let count = element.pointee.type == .addCurveToPoint ? 3 : element.pointee.type == .closeSubpath ? 0 : 1
+            for i in 0..<count { points.append(element.pointee.points[i]) }
+        }
+        try #require(points.count == 4)
+        let apex = Vec(0.125 * points[0].x + 0.375 * points[1].x + 0.375 * points[2].x + 0.125 * points[3].x,
+                       0.125 * points[0].y + 0.375 * points[1].y + 0.375 * points[2].y + 0.125 * points[3].y)
+        // The click margin is 8 page px here; the straight line alone misses the apex.
+        #expect(abs(apex.y) > 8)
+        #expect(!editor.document.geometry(arrow).hitTestPoint(apex, margin: 8, hitInside: false))
+        #expect(editor.hitShape(at: Vec(apex.x + 100, apex.y + 300))?.id == arrow.id)
+    }
+
     @Test func plainShapesStayAsTheyWere() {
         var box = GeoProps(); box.w = 300; box.h = 180
         let document = Self.document([AnnoShape(id: AnnoShapeID("plain"), x: 0, y: 0, kind: .geo(box))])

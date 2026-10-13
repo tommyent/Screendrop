@@ -364,6 +364,11 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         return false
     }
 
+    /// Drawn as a marker would draw it (sd-drv), off its own outline.
+    var isHandDrawn: Bool {
+        geoProps?.dash == .draw || arrowProps?.dash == .draw
+    }
+
     /// An imprinted measurement: an arrow whose label states its length.
     /// It moves, but never bends or stretches, so the label stays true (sd-xoh).
     var isMeasurement: Bool {
