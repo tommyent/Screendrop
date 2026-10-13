@@ -523,33 +523,34 @@ private struct CloudUploadCard: View {
                 }
             }
             .overlay(alignment: .topLeading) {
-                // The duration pill's style, so they read on any thumbnail.
+                // The card marks' pills, so they read on any thumbnail.
                 if upload.hasPassword == true || upload.expiresAt != nil {
                     HStack(spacing: 4) {
                         if upload.hasPassword == true {
                             Image(systemName: "lock.fill")
-                                .foregroundStyle(.yellow)
-                                .modifier(CloudCardPill(background: .black.opacity(0.65)))
-                                // The pill is always dark, so its glyph takes the dark-appearance colour.
-                                .environment(\.colorScheme, .dark)
+                                .cardPill()
                                 .help("Password protected")
                         }
                         if let expiresAt = upload.expiresAt {
+                            // An expired link's pill turns red.
                             Label(CloudUploadText.expiryShort(expiresAt), systemImage: "hourglass")
-                                .modifier(CloudCardPill(background: expiresAt <= .now ? .red.opacity(0.85) : .black.opacity(0.65)))
+                                .cardPill(expiresAt <= .now ? .red : CardMark.text)
                                 .help(CloudUploadText.expiryDate(expiresAt))
                         }
                     }
                     .padding(7)
                 }
             }
+            // Every upload is shared: a click copies its link, as on Library cards.
+            .overlay(alignment: .topTrailing) {
+                CardCloudBadge(isShared: true) { act { $0.copyLinks([upload]) } }
+                    .id(upload.id)
+            }
             .overlay(alignment: .bottomTrailing) {
                 if upload.isVideo, let duration = upload.duration {
                     Label(CloudUploadText.duration(duration), systemImage: "play.fill")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .padding(.horizontal, 5).padding(.vertical, 3)
-                        .foregroundStyle(.white)
-                        .background(.black.opacity(0.65), in: Capsule())
+                        .cardPill()
+                        .monospacedDigit()
                         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { durationWidth = $0 }
                         .padding(7)
                 }
@@ -560,14 +561,12 @@ private struct CloudUploadCard: View {
         if local?.isTall == true { TallCapture.badge }
         if let count = upload.commentCount, count > 0 {
             Label { Text(count.formatted()) } icon: { Image(systemName: "bubble.left.fill").foregroundStyle(.blue) }
-                .modifier(CloudCardPill(background: .black.opacity(0.65)))
-                .environment(\.colorScheme, .dark)
+                .cardPill()
                 .help(CloudUploadText.comments(count) ?? "")
         }
         if let count = upload.likeCount, count > 0 {
             Label { Text(count.formatted()) } icon: { Image(systemName: "heart.fill").foregroundStyle(.red) }
-                .modifier(CloudCardPill(background: .black.opacity(0.65)))
-                .environment(\.colorScheme, .dark)
+                .cardPill()
                 .help(CloudUploadText.likes(count) ?? "")
         }
     }
@@ -650,18 +649,6 @@ private struct CloudPasswordPopover: View {
 }
 
 /// A small white-on-dark label over a card's thumbnail, like the duration's.
-private struct CloudCardPill: ViewModifier {
-    let background: Color
-
-    func body(content: Content) -> some View {
-        content
-            .font(.system(size: 10, weight: .semibold))
-            .padding(.horizontal, 6).padding(.vertical, 3)
-            .foregroundStyle(.white)
-            .background(background, in: Capsule())
-    }
-}
-
 nonisolated enum CloudUploadText {
     /// What an upload's card and inspector call it (sd-8oa): a title set on
     /// the upload, else its Library capture's title, else when it went up,
