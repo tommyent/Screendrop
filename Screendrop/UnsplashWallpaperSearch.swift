@@ -149,8 +149,7 @@ struct UnsplashWallpaperSearchView: View {
     }
 
     private var resultsGrid: some View {
-        ScrollView { resultTiles }
-            .frame(maxHeight: 320)
+        InspectorGridScroll { resultTiles }
     }
 
     private var resultTiles: some View {
