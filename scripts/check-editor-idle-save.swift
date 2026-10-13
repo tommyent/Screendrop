@@ -82,6 +82,47 @@ struct IdleSaveChecks {
         AnnoShape(x: x, y: 10, kind: .geo(GeoProps(w: 40, h: 30)))
     }
 
+    @MainActor static func savesOnlyRefreshExistingPreviews() async throws {
+        let directory = ScreenshotHistoryStore.historyDirectory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let original = directory.appendingPathComponent("preview-original.png")
+        let edited = directory.appendingPathComponent("preview-edited.png")
+        let latest = directory.appendingPathComponent("preview-latest.png")
+        try png().write(to: original)
+        try png(width: 240).write(to: edited)
+        let latestPixels = try png(width: 280)
+        try latestPixels.write(to: latest)
+        let exports = directory.appendingPathComponent("Exports", isDirectory: true)
+        UserDefaults.standard.setVolatileDomain([
+            ScreendropPreferences.autoCopyKey: true,
+            ScreendropPreferences.autoSaveKey: true,
+            ScreendropPreferences.exportDirectoryPathKey: exports.path,
+            ScreendropPreferences.exportFormatKey: "png"
+        ], forName: UserDefaults.argumentDomain)
+        defer { UserDefaults.standard.removeVolatileDomain(forName: UserDefaults.argumentDomain) }
+        var copies: [URL] = []
+        let stack = ScreenshotPreviewStack(copyImage: { copies.append($0) })
+        stack.isCollapsed = true
+        let missing = await stack.applyAnnotation(originalURL: original, historyURL: edited)
+        try check(!missing && stack.items.isEmpty && stack.isCollapsed && copies.isEmpty, "Save inserted a card, expanded the overlay or copied a missing preview")
+        try check(!FileManager.default.fileExists(atPath: exports.path), "Missing preview save created an export")
+
+        await stack.previewExistingImage(url: original)
+        guard let id = stack.items.first?.id else { throw Failure(description: "Cannot seed preview fixture") }
+        stack.collapse()
+        let explicit = await stack.applyAnnotation(originalURL: original, historyURL: edited)
+        guard let export = stack.items.first?.autoSavedURL else { throw Failure(description: "Explicit save did not publish its export") }
+        try check(explicit && copies == [edited], "Explicit save didn't republish the existing preview")
+        let idle = await stack.applyAnnotation(originalURL: edited, historyURL: latest, updatesClipboard: false)
+        try check(idle && stack.items.count == 1 && stack.items[0].id == id && stack.items[0].url == latest && stack.isCollapsed, "Idle save inserted/replaced a card or expanded the overlay")
+        try check(copies == [edited], "Idle save touched the clipboard with auto-copy enabled")
+        let exportedPixels = try Data(contentsOf: export)
+        try check(exportedPixels == latestPixels, "Idle save left the existing export stale")
+        let unrelated = await stack.applyAnnotation(originalURL: original, historyURL: edited, updatesClipboard: false)
+        try check(!unrelated && stack.items.count == 1 && copies == [edited], "Save inserted a missing card beside an existing card")
+        print("PASS no insert/expansion on saves, idle refresh without clipboard writes, explicit republish and export synchronization")
+    }
+
     @MainActor static func titleFieldFocusSelectionAndCommands() async throws {
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 360, height: 120), styleMask: [.titled], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
@@ -414,6 +455,7 @@ struct IdleSaveChecks {
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(actualHome == isolated && support.hasPrefix(isolated + "/"), "Foundation storage escaped isolated home")
         NSApplication.shared.setActivationPolicy(.prohibited)
+        try await savesOnlyRefreshExistingPreviews()
         try await titleFieldFocusSelectionAndCommands()
         try await titleRenameIsOnlyMetadata()
         try await nativeFieldFocusAndComposition()
@@ -427,6 +469,7 @@ struct IdleSaveChecks {
         try await closeAndQuitDuringRender(idle: true)
         try await closeAndQuitDuringRender(idle: false)
         try await benchmark()
+        try check(ScreenshotPreviewStack.shared.items.isEmpty, "Actual idle-save callers inserted preview cards")
         print("All idle-save model checks passed; no app window was shown")
     }
 }

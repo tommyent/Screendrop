@@ -430,7 +430,9 @@ final class AnnotationEditorModel {
                 try await Task.sleep(for: delay)
                 guard let self, let sourceURL = self.sourceURL else { return }
                 if let resultURL = try await self.commitEdits(idle: true), !Task.isCancelled {
-                    _ = await ScreenshotPreviewStack.shared.applyAnnotation(originalURL: sourceURL, historyURL: resultURL)
+                    _ = await ScreenshotPreviewStack.shared.applyAnnotation(
+                        originalURL: sourceURL, historyURL: resultURL, updatesClipboard: false
+                    )
                 }
             } catch is CancellationError {
                 // A newer completed edit replaces this request.
