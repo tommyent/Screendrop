@@ -43,6 +43,7 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     private nonisolated(unsafe) weak var previousDelegate: NSWindowDelegate?
     private var isPrompting = false
     private var isCloseApproved = false
+    private var waitingForClose: [(Bool) -> Void] = []
 
     init(savesWithoutAsking: Bool = false) {
         self.savesWithoutAsking = savesWithoutAsking
@@ -61,9 +62,15 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
             .first { $0.1.savesWithoutAsking && $0.1.hasUnsavedChanges() }
         guard let (window, closeGuard) = editor else { return false }
 
-        // Already asking about this window, or mid-save: let that finish and
-        // leave quitting again to the user.
-        guard !closeGuard.isPrompting, closeGuard.canClose() else {
+        // A close already saving this editor also satisfies a subsequent quit.
+        if closeGuard.isPrompting {
+            closeGuard.waitingForClose.append { closed in
+                guard closed else { return completion(false) }
+                if !reviewBeforeQuit(completion: completion) { completion(true) }
+            }
+            return true
+        }
+        guard closeGuard.canClose() else {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             Task { completion(false) }
@@ -179,21 +186,27 @@ final class EditorCloseGuard: NSObject, NSWindowDelegate {
     /// Discard always closes, so a save that keeps failing can't trap the
     /// window open.
     private func save(on window: NSWindow, then finished: ((Bool) -> Void)? = nil) {
+        let finish: (Bool) -> Void = { closed in
+            let waiting = self.waitingForClose
+            self.waitingForClose.removeAll()
+            finished?(closed)
+            waiting.forEach { $0(closed) }
+        }
         onDecision(.save) { [weak self, weak window] saved in
             guard let self, let window else {
-                finished?(false)
+                finish(false)
                 return
             }
             guard saved else {
                 NSApp.activate(ignoringOtherApps: true)
                 window.makeKeyAndOrderFront(nil)
-                self.present(on: window, then: finished)
+                self.present(on: window, then: finish)
                 return
             }
             self.isPrompting = false
             self.isCloseApproved = true
             window.close()
-            finished?(true)
+            finish(true)
         }
     }
 
