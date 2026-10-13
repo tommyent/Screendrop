@@ -133,6 +133,23 @@ final class RecordingStudioStylePresetStore {
         return deletedPreset
     }
 
+    /// Styles from a shared file, under fresh names that don't clash with
+    /// saved ones. They never replace a saved style or become the default.
+    func importPresets(_ incoming: [(name: String, style: RecordingStudioStyle)]) -> [RecordingStudioStylePreset] {
+        var imported: [RecordingStudioStylePreset] = []
+        for item in incoming {
+            let normalized = Self.normalizedName(item.name)
+            let name = Self.uniqueSanitizedName(
+                normalized.isEmpty ? "Untitled Preset" : normalized,
+                existingNames: presets.map(\.name) + imported.map(\.name)
+            )
+            imported.append(RecordingStudioStylePreset(name: name, style: item.style))
+        }
+        presets.append(contentsOf: imported)
+        persist()
+        return imported
+    }
+
     static func normalizedName(_ rawName: String) -> String {
         let collapsed = rawName
             .components(separatedBy: .whitespacesAndNewlines)

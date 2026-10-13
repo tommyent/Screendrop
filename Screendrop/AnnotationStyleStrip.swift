@@ -3,14 +3,11 @@
 //  Screendrop
 //
 //  The annotator's saved styles, in the Styles picker it shares with Studio
-//  (StylePresetPicker). The tiles show this screenshot wearing each style;
-//  here a style's menu can also export it, and the pop-out footer imports
-//  styles shared as files.
+//  (StylePresetPicker). The tiles show this screenshot wearing each style.
 //
 
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct AnnotationStyleStrip: View {
     @Bindable var model: AnnotationEditorModel
@@ -18,7 +15,6 @@ struct AnnotationStyleStrip: View {
     let onEditorAction: () -> Void
 
     @State private var thumbnail: CGImage?
-    @State private var transferAlert: PresetTransferAlert?
 
     var body: some View {
         StylePresetPicker(
@@ -41,23 +37,6 @@ struct AnnotationStyleStrip: View {
             },
             preview: { preset in
                 AnnotationStylePreview(settings: preset.settings, image: thumbnail, contentAspect: contentAspect)
-            },
-            extras: { preset in
-                Button("Export…") { exportPreset(preset.id) }
-            },
-            footer: { close in
-                HStack {
-                    Spacer(minLength: 0)
-                    Button("Import…") {
-                        close()
-                        importPresets()
-                    }
-                    .buttonStyle(.link)
-                    .help("Import styles")
-                    .accessibilityLabel("Import Styles")
-                }
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
             }
         )
         .disabled(model.sourceURL == nil)
@@ -67,9 +46,6 @@ struct AnnotationStyleStrip: View {
             // A decode for an earlier image mustn't replace a newer one.
             guard !Task.isCancelled else { return }
             thumbnail = image
-        }
-        .alert(item: $transferAlert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
     }
 
@@ -101,139 +77,6 @@ struct AnnotationStyleStrip: View {
             return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
         }.value
     }
-
-    // MARK: Sharing
-
-    private func importPresets() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.screendropPreset]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.title = "Import Screenshot Styles"
-        panel.prompt = "Import"
-
-        panel.begin { response in
-            guard response == .OK else { return }
-            let urls = panel.urls
-
-            Task { @MainActor in
-                var importedPresets: [AnnotationBackgroundPreset] = []
-                var omittedWallpaperCount = 0
-                var failures: [String] = []
-
-                for url in urls {
-                    do {
-                        let transferFile = try AnnotationBackgroundPresetTransferFile.load(from: url)
-                        let result = try presetStore.importTransferFile(transferFile)
-                        importedPresets.append(contentsOf: result.importedPresets)
-                        omittedWallpaperCount += result.omittedWallpaperCount
-                    } catch {
-                        failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
-                    }
-                }
-
-                if let firstImportedPreset = importedPresets.first {
-                    withAnimation(.morphIfAllowed) {
-                        model.applyBackgroundPreset(firstImportedPreset)
-                    }
-                }
-
-                transferAlert = Self.importAlert(
-                    importedCount: importedPresets.count,
-                    omittedWallpaperCount: omittedWallpaperCount,
-                    failures: failures
-                )
-            }
-        }
-    }
-
-    private func exportPreset(_ presetID: AnnotationBackgroundPreset.ID) {
-        do {
-            let transferFile = try presetStore.transferFile(for: presetID)
-            guard let preset = presetStore.preset(id: presetID) else {
-                throw AnnotationBackgroundPresetTransferError.presetNotFound
-            }
-
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [.screendropPreset]
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
-            panel.title = "Export Screenshot Style"
-            panel.prompt = "Export"
-            panel.nameFieldStringValue = "\(Self.safeFilename(for: preset.name)).\(AnnotationBackgroundPresetTransferFile.filenameExtension)"
-
-            panel.begin { response in
-                guard response == .OK, let url = panel.url else { return }
-
-                Task { @MainActor in
-                    do {
-                        let data = try transferFile.encodedData()
-                        try data.write(to: url, options: .atomic)
-                        let omittedWallpaper = transferFile.presets.first?.omitted.contains(.wallpaper) == true
-                        transferAlert = PresetTransferAlert(
-                            title: "Style Exported",
-                            message: omittedWallpaper
-                                ? "The local wallpaper was not included. The imported style will use no background."
-                                : "“\(preset.name)” is ready to share."
-                        )
-                    } catch {
-                        transferAlert = PresetTransferAlert(
-                            title: "Export Failed",
-                            message: error.localizedDescription
-                        )
-                    }
-                }
-            }
-        } catch {
-            transferAlert = PresetTransferAlert(
-                title: "Export Failed",
-                message: error.localizedDescription
-            )
-        }
-    }
-
-    private static func importAlert(
-        importedCount: Int,
-        omittedWallpaperCount: Int,
-        failures: [String]
-    ) -> PresetTransferAlert {
-        guard importedCount > 0 else {
-            return PresetTransferAlert(
-                title: "Import Failed",
-                message: failures.joined(separator: "\n")
-            )
-        }
-
-        let presetNoun = importedCount == 1 ? "style" : "styles"
-        var messages = ["Imported \(importedCount) \(presetNoun)."]
-        if omittedWallpaperCount > 0 {
-            let wallpaperNoun = omittedWallpaperCount == 1 ? "wallpaper was" : "wallpapers were"
-            messages.append(
-                "\(omittedWallpaperCount) local \(wallpaperNoun) not included and will use no background."
-            )
-        }
-        if !failures.isEmpty {
-            messages.append("Some files could not be imported:\n\(failures.joined(separator: "\n"))")
-        }
-        return PresetTransferAlert(
-            title: importedCount == 1 ? "Style Imported" : "Styles Imported",
-            message: messages.joined(separator: "\n\n")
-        )
-    }
-
-    private static func safeFilename(for presetName: String) -> String {
-        let forbiddenCharacters = CharacterSet(charactersIn: "/:\n\r")
-        let components = presetName.components(separatedBy: forbiddenCharacters)
-        let sanitized = components.filter { !$0.isEmpty }.joined(separator: "-")
-        return sanitized.isEmpty ? "Screenshot Style" : sanitized
-    }
-}
-
-private struct PresetTransferAlert: Identifiable {
-    let id = UUID()
-    let title: String
-    let message: String
 }
 
 /// A style drawn the way the canvas lays it out: the background, then the

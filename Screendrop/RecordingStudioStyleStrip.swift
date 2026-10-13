@@ -42,9 +42,7 @@ struct RecordingStudioStyleStrip: View {
                     contentAspect: model.sourceVideoAspect,
                     showsCamera: model.hasCameraVideo
                 )
-            },
-            extras: { _ in EmptyView() },
-            footer: { _ in EmptyView() }
+            }
         )
         .disabled(!model.isLoaded)
         .task(id: model.screenURL) {

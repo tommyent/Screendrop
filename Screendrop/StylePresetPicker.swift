@@ -5,12 +5,15 @@
 //  The Styles picker the image editor and Studio share: a row naming the
 //  applied style that opens a grid of thumbnails, the capture wearing each
 //  saved style. Clicking one applies it; the last tile saves the current
-//  look. A style's menu sets it as the default for new captures or deletes
-//  it. Each editor keeps its own store, since their styles hold different
+//  look. A style's menu sets it as the default for new captures, exports it
+//  or deletes it, and the grid's footer imports styles shared as files.
+//  Each editor keeps its own store, since their styles hold different
 //  settings.
 //
 
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A saved style the picker lists.
 protocol StylePresetItem: Identifiable where ID == UUID {
@@ -28,6 +31,10 @@ protocol StylePresetLibrary: AnyObject, Observable {
     @discardableResult func deletePreset(id: UUID) -> Preset?
     static var maximumNameLength: Int { get }
     static func normalizedName(_ rawName: String) -> String
+    /// A style as a shareable file, and whether its local wallpaper was left out.
+    func exportedData(for id: UUID) throws -> (data: Data, omitsWallpaper: Bool)
+    /// Adds the styles in a shared file, under fresh names.
+    func importStyles(from url: URL) throws -> (presets: [Preset], omittedWallpaperCount: Int)
 }
 
 extension AnnotationBackgroundPreset: StylePresetItem {}
@@ -35,7 +42,7 @@ extension AnnotationBackgroundPresetStore: StylePresetLibrary {}
 extension RecordingStudioStylePreset: StylePresetItem {}
 extension RecordingStudioStylePresetStore: StylePresetLibrary {}
 
-struct StylePresetPicker<Library: StylePresetLibrary, Preview: View, Extras: View, Footer: View>: View {
+struct StylePresetPicker<Library: StylePresetLibrary, Preview: View>: View {
     @Bindable var library: Library
     /// The applied style while the look still matches it.
     let appliedPreset: Library.Preset?
@@ -51,15 +58,12 @@ struct StylePresetPicker<Library: StylePresetLibrary, Preview: View, Extras: Vie
     let onSave: (String) -> Library.Preset?
     let onDeleted: (Library.Preset) -> Void
     @ViewBuilder let preview: (Library.Preset) -> Preview
-    /// More items for a style's menu, before Delete.
-    @ViewBuilder let extras: (Library.Preset) -> Extras
-    /// Under the grid; given a way to close the grid first.
-    @ViewBuilder let footer: (_ close: @escaping () -> Void) -> Footer
 
     @State private var isPickerPresented = false
     @State private var isNameEditorPresented = false
     @State private var draftName = ""
     @State private var presetPendingDeletion: Library.Preset?
+    @State private var transferAlert: PresetTransferAlert?
     @FocusState private var isNameFieldFocused: Bool
 
     private static var tileAspect: CGFloat { 1.5 }
@@ -105,6 +109,9 @@ struct StylePresetPicker<Library: StylePresetLibrary, Preview: View, Extras: Vie
         } message: { preset in
             Text("“\(preset.name)” will be removed from your styles. This \(itemNoun) won’t change.")
         }
+        .alert(item: $transferAlert) { alert in
+            Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
     }
 
     private var pickerRow: some View {
@@ -142,7 +149,18 @@ struct StylePresetPicker<Library: StylePresetLibrary, Preview: View, Extras: Vie
                     }
                 }
 
-                footer { isPickerPresented = false }
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Import…") {
+                        isPickerPresented = false
+                        importPresets()
+                    }
+                    .buttonStyle(.link)
+                    .help("Import styles")
+                    .accessibilityLabel("Import Styles")
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             }
             .padding(14)
             .frame(width: 320)
@@ -200,7 +218,7 @@ struct StylePresetPicker<Library: StylePresetLibrary, Preview: View, Extras: Vie
                     library.setActivePreset(id: isDefault ? nil : preset.id)
                 }
             }
-            extras(preset)
+            Button("Export…") { exportPreset(preset) }
             Divider()
             Button("Delete…", role: .destructive) {
                 presetPendingDeletion = preset
@@ -296,4 +314,124 @@ struct StylePresetPicker<Library: StylePresetLibrary, Preview: View, Extras: Vie
         library.setActivePreset(id: preset.id)
         isNameEditorPresented = false
     }
+
+    // MARK: Sharing
+
+    private var styleNoun: String { "\(itemNoun.capitalized) Style" }
+
+    private func importPresets() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.screendropPreset]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.title = "Import \(styleNoun)s"
+        panel.prompt = "Import"
+
+        panel.begin { response in
+            guard response == .OK else { return }
+            let urls = panel.urls
+
+            Task { @MainActor in
+                var importedPresets: [Library.Preset] = []
+                var omittedWallpaperCount = 0
+                var failures: [String] = []
+
+                for url in urls {
+                    do {
+                        let result = try library.importStyles(from: url)
+                        importedPresets.append(contentsOf: result.presets)
+                        omittedWallpaperCount += result.omittedWallpaperCount
+                    } catch {
+                        failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                    }
+                }
+
+                if let firstImportedPreset = importedPresets.first {
+                    withAnimation(.morphIfAllowed) { onApply(firstImportedPreset) }
+                }
+
+                transferAlert = Self.importAlert(
+                    importedCount: importedPresets.count,
+                    omittedWallpaperCount: omittedWallpaperCount,
+                    failures: failures
+                )
+            }
+        }
+    }
+
+    private func exportPreset(_ preset: Library.Preset) {
+        do {
+            let exported = try library.exportedData(for: preset.id)
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.screendropPreset]
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            panel.title = "Export \(styleNoun)"
+            panel.prompt = "Export"
+            panel.nameFieldStringValue = "\(safeFilename(for: preset.name)).\(AnnotationBackgroundPresetTransferFile.filenameExtension)"
+
+            panel.begin { response in
+                guard response == .OK, let url = panel.url else { return }
+
+                Task { @MainActor in
+                    do {
+                        try exported.data.write(to: url, options: .atomic)
+                        transferAlert = PresetTransferAlert(
+                            title: "Style Exported",
+                            message: exported.omitsWallpaper
+                                ? "The local wallpaper was not included. The imported style will use no background."
+                                : "“\(preset.name)” is ready to share."
+                        )
+                    } catch {
+                        transferAlert = PresetTransferAlert(title: "Export Failed", message: error.localizedDescription)
+                    }
+                }
+            }
+        } catch {
+            transferAlert = PresetTransferAlert(title: "Export Failed", message: error.localizedDescription)
+        }
+    }
+
+    private static func importAlert(
+        importedCount: Int,
+        omittedWallpaperCount: Int,
+        failures: [String]
+    ) -> PresetTransferAlert {
+        guard importedCount > 0 else {
+            return PresetTransferAlert(
+                title: "Import Failed",
+                message: failures.joined(separator: "\n")
+            )
+        }
+
+        let presetNoun = importedCount == 1 ? "style" : "styles"
+        var messages = ["Imported \(importedCount) \(presetNoun)."]
+        if omittedWallpaperCount > 0 {
+            let wallpaperNoun = omittedWallpaperCount == 1 ? "wallpaper was" : "wallpapers were"
+            messages.append(
+                "\(omittedWallpaperCount) local \(wallpaperNoun) not included and will use no background."
+            )
+        }
+        if !failures.isEmpty {
+            messages.append("Some files could not be imported:\n\(failures.joined(separator: "\n"))")
+        }
+        return PresetTransferAlert(
+            title: importedCount == 1 ? "Style Imported" : "Styles Imported",
+            message: messages.joined(separator: "\n\n")
+        )
+    }
+
+    private func safeFilename(for presetName: String) -> String {
+        let forbiddenCharacters = CharacterSet(charactersIn: "/:\n\r")
+        let components = presetName.components(separatedBy: forbiddenCharacters)
+        let sanitized = components.filter { !$0.isEmpty }.joined(separator: "-")
+        return sanitized.isEmpty ? styleNoun : sanitized
+    }
+}
+
+private struct PresetTransferAlert: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
 }
