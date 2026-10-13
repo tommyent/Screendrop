@@ -46,16 +46,6 @@ struct AnnotationEditorInspector: View {
     var body: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
-                InspectorSection(accessibilityLabel: "Tools") {
-                    AnnotationInspectorToolGrid(selectedTool: model.selectedTool) { tool in
-                        onEditorAction()
-                        model.selectTool(tool)
-                    }
-                    PixelColorRow()
-                }
-
-                InspectorSectionDivider()
-
                 // Always present so selecting or deselecting annotations never
                 // shifts the sections below.
                 InspectorSection(accessibilityLabel: "Style") {
@@ -472,88 +462,5 @@ private enum AnnotationInspectorSummary {
         let text = settings.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard settings.isEnabled, !text.isEmpty else { return nil }
         return "“\(text)”"
-    }
-}
-
-// MARK: - Tools
-
-private struct AnnotationInspectorToolGrid: View {
-    let selectedTool: AnnotationTool
-    let onSelect: (AnnotationTool) -> Void
-
-    // Six columns that grow to the panel's edge, up to 40 pt, so the tray
-    // lines up with the rows below it (design pass choice 11).
-    private let columns: [GridItem] = Array(
-        repeating: GridItem(.flexible(minimum: 30, maximum: 40), spacing: 4), count: 6
-    )
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        // Nested radius: the tray wraps tiles inset by `controlInset`.
-        let shape = RoundedRectangle(
-            cornerRadius: InspectorMetrics.tileRadius + InspectorMetrics.controlInset,
-            style: .continuous
-        )
-
-        LazyVGrid(columns: columns, spacing: 4) {
-            ForEach(AnnotationTool.paletteTools) { tool in
-                AnnotationToolCell(
-                    tool: tool,
-                    isSelected: selectedTool == tool,
-                    action: { onSelect(tool) }
-                )
-            }
-        }
-        .frame(maxWidth: 6 * 40 + 5 * 4)
-        .padding(InspectorMetrics.controlInset)
-        .background(shape.fill(InspectorControlPalette.trackFill(for: colorScheme)))
-        .clipShape(shape)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct AnnotationToolCell: View {
-    let tool: AnnotationTool
-    let isSelected: Bool
-    let action: () -> Void
-
-    @State private var isHovering = false
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Button(action: action) {
-            ZStack {
-                Color.clear
-
-                Image(systemName: tool.systemImage)
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
-            .contentShape(RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .foregroundStyle(isSelected ? InspectorControlPalette.selectedForeground : Color.secondary)
-        .background {
-            RoundedRectangle(cornerRadius: InspectorMetrics.tileRadius, style: .continuous)
-                .fill(background)
-                .shadow(
-                    color: isSelected ? InspectorControlPalette.selectedChipShadow(for: colorScheme) : .clear,
-                    radius: 1,
-                    y: 0.5
-                )
-        }
-        .help(tool.helpText)
-        .onHover { isHovering = $0 }
-        .accessibilityLabel(tool.title)
-        .accessibilityHint(tool.helpText)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var background: Color {
-        if isSelected {
-            return InspectorControlPalette.selectedChipFill(for: colorScheme)
-        }
-        return isHovering ? InspectorControlPalette.hoverFill : .clear
     }
 }

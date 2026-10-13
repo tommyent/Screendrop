@@ -55,15 +55,19 @@ struct CropResolutionBadge: View {
     let size: CGSize
 
     var body: some View {
-        Text("\(Int(size.width)) × \(Int(size.height)) px")
-            .font(.system(size: 12, weight: .medium))
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .fixedSize()
-            .glassEffect()
-            .help("Crop size")
+        VStack(spacing: 1) {
+            Text("\(Int(size.width)) × \(Int(size.height)) px")
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+            Text("Return to crop")
+                .font(.system(size: 10))
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .fixedSize()
+        .glassEffect()
+        .help("Crop size")
     }
 }
 
