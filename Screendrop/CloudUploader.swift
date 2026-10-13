@@ -344,6 +344,19 @@ final class CloudUploader: NSObject {
         }
     }
 
+    /// What the Worker's bucket holds, or nil when the Worker predates
+    /// GET /api/usage.
+    func usage() async throws -> CloudUsage? {
+        let creds = CloudCredentialStore.shared.snapshot()
+        guard creds.isConfigured else {
+            throw CloudUploadError.notConfigured
+        }
+        return try await CloudUsage.fetch(
+            workerBase: Self.normalizeWorkerURL(creds.workerURL),
+            token: creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
     /// Every page of one owner feed, newest first, without repeats. A 404
     /// means the Worker predates the feed.
     private func listFeed<Item: CloudFeedItem>(
