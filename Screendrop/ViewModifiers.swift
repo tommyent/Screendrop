@@ -48,7 +48,7 @@ private final class ClickOutsideNSView: NSView {
             guard let self, let window = self.window else { return event }
             let locationInWindow = event.locationInWindow
             let locationInView = self.convert(locationInWindow, from: nil)
-            if !self.bounds.contains(locationInView) {
+            if event.window !== window || !self.bounds.contains(locationInView) {
                 self.action?()
             }
             return event

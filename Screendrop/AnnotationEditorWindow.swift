@@ -39,8 +39,14 @@ struct AnnotationEditorWindow: View {
             .modifier(CaptureLibraryEditorRegistration(url: url))
             .navigationTitle(windowTitle)
             .navigationSubtitle(model.saveStatus)
+            .toolbar(removing: .title)
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
             .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    AnnotationEditorTitle(title: windowTitle, status: model.saveStatus, item: historyItem)
+                        .id(historyID)
+                }
+                .sharedBackgroundVisibility(.hidden)
                 ToolbarItemGroup(placement: .primaryAction) {
                     if model.isCropping {
                         cropActions
@@ -361,10 +367,14 @@ struct AnnotationEditorWindow: View {
     /// else when it was taken. A file outside History shows its file name.
     private var windowTitle: String {
         guard let url else { return "" }
-        guard let item = ScreenshotHistoryStore.shared.items.first(where: { $0.id == historyID }) else {
+        guard let item = historyItem else {
             return url.deletingPathExtension().lastPathComponent
         }
         return item.displayName ?? CaptureLibraryItem.dateTitle(item.createdAt)
+    }
+
+    private var historyItem: ScreenshotHistoryItem? {
+        ScreenshotHistoryStore.shared.items.first(where: { $0.id == historyID })
     }
 
     private func closeAfterLoadFailure() {
