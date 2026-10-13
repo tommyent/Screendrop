@@ -377,7 +377,12 @@ struct InspectorBackgroundFillPicker: View {
     }
 
     private var wallpaperGroup: some View {
-        recentWallpaperGrid
+        VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
+            recentWallpaperGrid
+            UnsplashWallpaperSearchView(search: UnsplashWallpaperSearch.shared) { url in
+                selectWallpaper(AnnotationCustomWallpaper(url: url))
+            }
+        }
     }
 
     private var visibleRecentWallpapers: [AnnotationCustomWallpaper] {

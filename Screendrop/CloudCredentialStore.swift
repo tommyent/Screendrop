@@ -150,7 +150,7 @@ final class CloudCredentialStore {
         return String(data: data, encoding: .utf8)
     }
 
-    private static func deleteKeychainItem(key: String) {
+    static func deleteKeychainItem(key: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrAccount as String: key,
