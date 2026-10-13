@@ -145,6 +145,34 @@ struct IdleSaveChecks {
         print("PASS image deletion and asset cleanup during render")
     }
 
+    @MainActor static func nativeFieldFocusAndComposition() async throws {
+        let gate = Gate(), model = try fixture(gate)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 160, height: 120), styleMask: [.titled], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let field = NSTextView(frame: CGRect(x: 0, y: 0, width: 140, height: 30))
+        field.isFieldEditor = true
+        window.contentView?.addSubview(field)
+        try check(window.makeFirstResponder(field), "Could not focus the native field fixture")
+        model.allowsIdleSave = { AnnotationEditorWindow.allowsIdleSave(in: window, keyWindow: nil) }
+        try check(model.allowsIdleSave(), "Plain native field focus blocked idle saving")
+        field.setMarkedText("あ", selectedRange: NSRange(location: 1, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        try check(field.hasMarkedText() && !model.allowsIdleSave(), "Native IME composition did not block saving")
+        model.scheduleIdleSave(after: .milliseconds(5))
+        try await Task.sleep(for: .milliseconds(40))
+        try check(gate.snapshots.isEmpty, "Save started during native IME composition")
+        field.unmarkText()
+        let text = field.string
+        try check(model.allowsIdleSave(), "Native field focus still blocked after composition ended")
+        model.scheduleIdleSave(after: .milliseconds(5))
+        try await until { gate.continuation != nil }
+        gate.resume()
+        try await until { model.saveStatus == "Saved" }
+        try check(window.firstResponder === field && field.string == text, "Idle save ended or disturbed native field editing")
+        model.releaseEditorResources()
+        print("PASS native field focus permits saving; real marked text blocks it; focus and text survive")
+    }
+
     @MainActor static func idleGatesAndUndo() async throws {
         let gate = Gate(), model = try fixture(gate)
         let text = AnnoShape(x: 10, y: 10, kind: .text(TextProps(text: "draft")))
@@ -153,10 +181,10 @@ struct IdleSaveChecks {
         _ = try await model.commitEdits(idle: true)
         try check(gate.snapshots.isEmpty && model.editingTextID == text.id, "Idle save ended text editing")
         model.engine.stopEditingText()
-        model.allowsIdleSave = { false } // Native field editor / marked-text gate.
+        model.allowsIdleSave = { false } // Native marked-text gate.
         model.scheduleIdleSave(after: .milliseconds(5))
         try await Task.sleep(for: .milliseconds(40))
-        try check(gate.snapshots.isEmpty, "Idle save entered a native text/composition session")
+        try check(gate.snapshots.isEmpty, "Idle save entered native IME composition")
         model.allowsIdleSave = { true }
         model.beginInteraction(at: CGPoint(x: 190, y: 90), imageFrame: CGRect(x: 0, y: 0, width: 200, height: 100), boundaryFrame: .zero)
         _ = try await model.commitEdits(idle: true)
@@ -318,6 +346,7 @@ struct IdleSaveChecks {
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(actualHome == isolated && support.hasPrefix(isolated + "/"), "Foundation storage escaped isolated home")
         NSApplication.shared.setActivationPolicy(.prohibited)
+        try await nativeFieldFocusAndComposition()
         try await cropDuringRender()
         try await undoDuringRender()
         try await imageDeletionDuringRender()

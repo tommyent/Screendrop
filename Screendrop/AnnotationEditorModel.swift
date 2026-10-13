@@ -367,7 +367,7 @@ final class AnnotationEditorModel {
     @ObservationIgnored private var idleSaveTask: Task<Void, Never>?
     @ObservationIgnored private var pendingSaveBaseURL: URL?
     @ObservationIgnored private var saveFailureMessage: String?
-    /// The window also excludes native text fields, composition and sheets.
+    /// The window also excludes native IME composition and sheets.
     @ObservationIgnored var allowsIdleSave: () -> Bool = { true }
     static let idleSaveDelay: Duration = .seconds(2)
 
@@ -376,7 +376,15 @@ final class AnnotationEditorModel {
         if let sourceURL { _ = try ScreenshotHistoryStore.shared.loadEditDocument(for: sourceURL) }
     }
 
-    /// Explicit actions wait for an idle render, then capture the latest state.
+    /// Renders the composite, writes the `.screendrop` sidecar, and repoints
+    /// the editor at the preserved base image so continued edits don't re-bake
+    /// annotations onto an already-composited picture. Returns nil when there
+    /// is nothing to persist or an idle save is not eligible.
+    ///
+    /// This is the only thing that puts annotations on disk, so every save -
+    /// closing, quitting, ⌘C, ⌘S, Upload and the saves at a pause - goes
+    /// through it. Explicit actions wait for an idle render, then capture
+    /// the latest state.
     @discardableResult
     func commitEdits(idle: Bool = false) async throws -> URL? {
         if !idle {
@@ -454,7 +462,10 @@ final class AnnotationEditorModel {
         var committedSnapshot = currentSnapshot()
         let hasContent = !committedSnapshot.shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
             || committedSnapshot.baseImageURL != savedSnapshot?.baseImageURL
+        // A pre-v2 sidecar has nothing the editor can remove: its marks are the image.
         let hadDocument = !isLegacyDocument && ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
+
+        // Nothing drawn and nothing previously saved: there is no work to lose.
         guard hasContent || hadDocument else {
             markSaved()
             saved = true
@@ -490,6 +501,8 @@ final class AnnotationEditorModel {
                 displayURL: sourceURL, baseURL: baseURL, renderedURL: annotatedURL, document: snapshot.document
             )
         } else {
+            // All annotations were cleared on a previously-edited image:
+            // restore the untouched original.
             resultURL = try ScreenshotHistoryStore.shared.removeAnnotations(displayURL: sourceURL)
         }
 
@@ -560,12 +573,16 @@ final class AnnotationEditorModel {
         return lastSaveSucceeded == false ? "Not Saved" : "Edited"
     }
 
+    /// A background snapshot must not end canvas text editing or split a
+    /// pointer/inspector gesture. Native IME composition and sheets also wait.
     private var isIdleForSaving: Bool {
         guard !isCropping, editingTextID == nil, !isPointerDown, !isInspectorEditing,
               case .idle = engine.interaction else { return false }
         return allowsIdleSave()
     }
 
+    /// Whether a save nobody asked for may start: dirty, no save or explicit
+    /// request in progress, and no unfinished interaction. Editing stays enabled.
     var canSaveInBackground: Bool {
         hasUnsavedChanges && !isCommitting && !isBlockingCommit && isIdleForSaving
     }

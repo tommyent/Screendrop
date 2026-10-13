@@ -73,10 +73,7 @@ struct AnnotationEditorWindow: View {
                 }
                 model.allowsIdleSave = { [weak window] in
                     guard let window else { return false }
-                    let key = NSApp.keyWindow
-                    let textIsActive = window.firstResponder is NSTextView
-                        || (key?.parent == window && key?.firstResponder is NSTextView)
-                    return !textIsActive && window.attachedSheet == nil
+                    return Self.allowsIdleSave(in: window, keyWindow: NSApp.keyWindow)
                 }
                 configureCloseGuard()
                 closeGuard.attach(to: window)
@@ -473,11 +470,19 @@ struct AnnotationEditorWindow: View {
         save()
     }
 
-    /// Leaves the inspector's focus alone, and skips a window with text
-    /// being typed or a sheet up; closing still saves.
+    /// Leaves focus alone; composition, unfinished interactions and sheets
+    /// defer the background snapshot. Closing still saves.
     private func saveAtPause(in window: NSWindow) {
-        guard model.canSaveInBackground, !(window.firstResponder is NSTextView), window.attachedSheet == nil else { return }
+        guard model.canSaveInBackground, window.attachedSheet == nil else { return }
         save(idle: true)
+    }
+
+    /// Focus can return to a field editor even when nobody is typing.
+    static func allowsIdleSave(in window: NSWindow, keyWindow: NSWindow?) -> Bool {
+        let isComposing = (window.firstResponder as? NSTextView)?.hasMarkedText() == true
+        let popoverIsComposing = keyWindow?.parent == window
+            && (keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
+        return !isComposing && !popoverIsComposing && window.attachedSheet == nil
     }
 
     private func save(idle: Bool = false) {
