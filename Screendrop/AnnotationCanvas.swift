@@ -791,11 +791,13 @@ struct AnnotationCanvas: View {
         guard !rulers.isEmpty else { return false }
         onEditorInteraction()
         takeKeyboardFocusFromInspector()
-        for ruler in rulers {
-            model.engine.imprintMeasurement(from: Vec(ruler.pageStart), to: Vec(ruler.pageEnd), label: ruler.label,
-                                            clickCount: NSApp.currentEvent?.clickCount ?? 1)
+        model.engine.imprintMeasurements(rulers.map { (Vec($0.pageStart), Vec($0.pageEnd), $0.label) },
+                                         clickCount: NSApp.currentEvent?.clickCount ?? 1)
+        if probe.isMeasuringTool {
+            // The dock's ruler is one shape like any other: it ends on Select.
+            probe.isMeasuringTool = false
+            model.selectTool(.select)
         }
-        probe.isMeasuringTool = false
         return true
     }
 
