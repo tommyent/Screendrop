@@ -3,7 +3,7 @@
 //  Screendrop
 //
 //  The annotator's saved styles as thumbnails of this screenshot wearing
-//  them, the same strip Studio shows. Clicking one applies it; the last tile
+//  them, in a pop-out grid. Clicking one applies it; the last tile
 //  saves the current look. A style's menu sets it as the default for new
 //  screenshots, exports it or deletes it, and the header's menu imports
 //  styles shared as files.
@@ -19,14 +19,15 @@ struct AnnotationStyleStrip: View {
     let onEditorAction: () -> Void
 
     @State private var thumbnail: CGImage?
+    @State private var isPickerPresented = false
     @State private var isNameEditorPresented = false
     @State private var draftName = ""
     @State private var presetPendingDeletion: AnnotationBackgroundPreset?
     @State private var transferAlert: PresetTransferAlert?
     @FocusState private var isNameFieldFocused: Bool
 
-    private static let tileWidth: CGFloat = 78
     private static let tileAspect: CGFloat = 1.5
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
 
     var body: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
@@ -40,20 +41,15 @@ struct AnnotationStyleStrip: View {
             .frame(minHeight: 24)
             .padding(.horizontal, InspectorMetrics.horizontalPadding)
 
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 6) {
-                    ForEach(presetStore.presets) { preset in
-                        tile(for: preset)
-                    }
-                    addTile
-                }
-                .padding(.horizontal, InspectorMetrics.horizontalPadding - 2.5)
-            }
-            .scrollIndicators(.never)
+            pickerRow
+                .padding(.horizontal, InspectorMetrics.horizontalPadding)
         }
         .padding(.top, InspectorMetrics.sectionVerticalPadding / 2 + 3)
         .padding(.bottom, 4)
         .disabled(model.sourceURL == nil)
+        .onChange(of: isPickerPresented) { _, isShown in
+            if !isShown { isNameEditorPresented = false }
+        }
         // The pixels being edited, so the tiles follow a crop and its undo.
         .task(id: thumbnailURL) {
             let image = await Self.thumbnail(for: thumbnailURL)
@@ -84,6 +80,53 @@ struct AnnotationStyleStrip: View {
         }
         .alert(item: $transferAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+    }
+
+    private var appliedPreset: AnnotationBackgroundPreset? {
+        guard let preset = presetStore.preset(id: model.appliedBackgroundPresetID),
+              preset.matches(model.backgroundSettings) else { return nil }
+        return preset
+    }
+
+    private var pickerRow: some View {
+        Button {
+            onEditorAction()
+            isPickerPresented = true
+        } label: {
+            HStack(spacing: 8) {
+                Text(appliedPreset?.name ?? "None")
+                    .font(.inspectorValue)
+                    .foregroundStyle(appliedPreset == nil ? Palette.secondaryLabel : Palette.label)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, InspectorMetrics.fieldInset)
+            .inspectorField()
+        }
+        .buttonStyle(.plain)
+        .help("Choose a style")
+        .accessibilityLabel("Styles")
+        .accessibilityValue(appliedPreset?.name ?? "None")
+        .closesOnEditorEscape($isPickerPresented)
+        .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
+            ScrollView {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                    ForEach(presetStore.presets) { preset in
+                        tile(for: preset)
+                    }
+                    addTile
+                }
+            }
+            .frame(maxHeight: 320)
+            .padding(14)
+            .frame(width: 320)
+            .background(Palette.panel)
+            .presentationBackground(Palette.panel)
         }
     }
 
@@ -143,14 +186,16 @@ struct AnnotationStyleStrip: View {
                         .help("Used for new screenshots")
                 }
                 Text(preset.name)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.tail)
+                    .multilineTextAlignment(.center)
             }
-            .font(.system(size: 10, weight: isApplied ? .semibold : .regular))
+            .font(.system(size: 11, weight: isApplied ? .semibold : .regular))
             .foregroundStyle(isApplied ? Palette.label : Palette.secondaryLabel)
             .padding(.horizontal, 2)
+            .frame(height: 28, alignment: .top)
         }
-        .frame(width: Self.tileWidth)
+        .frame(maxWidth: .infinity)
         .help(isMissing ? "\(preset.name)’s wallpaper can’t be found" : preset.name)
         .contextMenu {
             if !isMissing {
@@ -194,10 +239,11 @@ struct AnnotationStyleStrip: View {
             }
 
             Text(presetStore.presets.isEmpty ? "Save Look" : "Save")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(Palette.tertiaryLabel)
+                .frame(height: 28, alignment: .top)
         }
-        .frame(width: Self.tileWidth)
+        .frame(maxWidth: .infinity)
     }
 
     private var thumbnailURL: URL? {
