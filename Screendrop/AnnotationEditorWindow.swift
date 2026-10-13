@@ -22,7 +22,7 @@ struct AnnotationEditorWindow: View {
     @State private var isUploading = false
     /// No close-button dot: Apple's HIG says that with autosave on, a dot
     /// implies people must act to keep their work. The subtitle says it instead.
-    @State private var closeGuard = EditorCloseGuard(savesWithoutAsking: true)
+    @State private var closeGuard = EditorCloseGuard()
     @State private var didCopyLink = false
     /// Found once per load: matching by URL probes each recording on disk,
     /// and the title is read on every edit.
@@ -557,13 +557,11 @@ struct AnnotationEditorWindow: View {
     }
 
     private func configureCloseGuard() {
+        closeGuard.savesWithoutAsking = { true }
         closeGuard.hasUnsavedChanges = { [weak model] in
             guard let model else { return false }
             return model.hasUnsavedChanges || model.isCommitting || model.isBlockingCommit
         }
-        // A screenshot is already in History whether or not it is annotated,
-        // so there is no "delete the whole thing" case here.
-        closeGuard.offersDelete = { false }
         closeGuard.projectName = { [weak model] in model?.sourceURL?.lastPathComponent ?? "this screenshot" }
         // Capture only the model, not this view and its @State close guard.
         closeGuard.onDecision = { [weak model] decision, done in
@@ -590,7 +588,7 @@ struct AnnotationEditorWindow: View {
             case .discard:
                 model.releaseEditorResources()
                 done(true)
-            case .delete, .cancel:
+            case .cancel:
                 done(false)
             }
         }
@@ -646,13 +644,16 @@ struct AnnotationEditorSaveCommand: View {
     }
 }
 
-/// File › Save As… for the key editor window.
+/// File › Save As… for the key editor window. Only there while an editor
+/// is focused, like Save: Studio has no Save As, and a disabled one sat
+/// above Studio's Save.
 struct AnnotationEditorSaveAsCommand: View {
     @FocusedValue(\.annotationEditor) private var editor
 
     var body: some View {
-        Button("Save As…") { editor?.requestSaveAs() }
-            .keyboardShortcut("s", modifiers: [.command, .shift])
-            .disabled(editor == nil)
+        if let editor {
+            Button("Save As…") { editor.requestSaveAs() }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+        }
     }
 }

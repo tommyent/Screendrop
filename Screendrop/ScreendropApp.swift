@@ -57,6 +57,11 @@ struct ScreendropApp: App {
         WindowGroup("Sukusho Recording Editor", id: "VIDEO_EDITOR", for: URL.self) { value in
             RecordingStudioWindow(url: value)
         }
+        .commands {
+            CommandGroup(after: .newItem) {
+                RecordingStudioSaveCommand()
+            }
+        }
         .windowResizability(.contentSize)
         .defaultSize(width: 1360, height: 860)
     }
@@ -194,6 +199,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// temporary directory, so quitting discards them. Warn before that
     /// happens.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Saved Studio projects save without closing first, so the review
+        // below finds only failed ones and an export still gets its prompt.
+        StudioProjectRegistry.shared.autosaveAll()
         // Annotation edits have no draft, so ask about each dirty editor
         // first. Once all are saved or discarded (their windows closed), run
         // this again for the checks below; it replies itself if it defers.
@@ -206,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateLater
         }
 
-        // Studio's autosave is debounced. Flushing here means quitting never
+        // Studio's draft is debounced. Flushing here means quitting never
         // costs the last edit - the project reopens on its draft.
         StudioProjectRegistry.shared.flushDrafts()
         if StudioProjectRegistry.shared.hasUnsavedMovieEdits {

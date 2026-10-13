@@ -82,10 +82,6 @@ private struct RecordingStudioContent: View {
                 if model.isCroppingVideo {
                     videoCropActions
                 } else {
-                    if model.isProject {
-                        saveStatus
-                    }
-
                     if model.canShareToCloud {
                         shareStatus
                     }
@@ -112,11 +108,15 @@ private struct RecordingStudioContent: View {
             }
             configureCloseGuard()
             closeGuard.attach(to: window)
-            closeGuard.refreshDocumentEdited()
         }
-        .onChange(of: model.hasUnsavedChanges) {
-            closeGuard.refreshDocumentEdited()
+        // Saves on leaving the window or the app, as the image editor does.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignMainNotification)) { note in
+            if let window = note.object as? NSWindow, window.delegate === closeGuard { model.autosave() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            model.autosave()
+        }
+        .focusedSceneValue(\.recordingStudio, model)
         .onDeleteCommand {
             if let selectedCueID = model.selectedCueID {
                 model.removeZoomCue(id: selectedCueID)
@@ -186,20 +186,23 @@ private struct RecordingStudioContent: View {
         )
     }
 
-    /// AppKit already paints the unsaved dot in the close button; the title
-    /// says it in words for anyone who reads the title bar first.
+    /// No "Edited" here and no close-button dot, as in the image editor: the
+    /// subtitle says it, and with autosave Apple's HIG says a dot implies
+    /// people must act to keep their work.
     private var windowTitle: String {
-        let name = Self.friendlyTitle(for: model.projectDisplayName)
-        return model.hasUnsavedChanges ? "\(name) - Edited" : name
+        Self.friendlyTitle(for: model.projectDisplayName)
     }
 
-    /// Length of the edited cut and the source resolution.
+    /// The save status, then the length of the edited cut and the source
+    /// resolution.
     private var windowSubtitle: String {
         guard model.isLoaded else { return "" }
         let total = Int(model.duration.rounded())
         let clock = String(format: "%d:%02d", total / 60, total % 60)
         let size = model.videoSize
-        return "\(clock) · \(Int(size.width))×\(Int(size.height))"
+        return [model.saveStatus, "\(clock) · \(Int(size.width))×\(Int(size.height))"]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
     }
 
     /// Unrenamed recordings are named `Screendrop_<timestamp>_<id>` on disk;
@@ -215,9 +218,9 @@ private struct RecordingStudioContent: View {
     }
 
     private func configureCloseGuard() {
+        closeGuard.savesWithoutAsking = { [weak model] in model?.isProject ?? false }
         closeGuard.hasRunningWork = { [weak model] in model?.hasRunningWork ?? false }
         closeGuard.hasUnsavedChanges = { [weak model] in model?.hasUnsavedChanges ?? false }
-        closeGuard.offersDelete = { [weak model] in model?.hasNeverBeenSaved ?? false }
         closeGuard.offersSave = { [weak model] in model?.isProject ?? true }
         closeGuard.projectName = { [weak model] in model?.projectDisplayName ?? "this recording" }
         closeGuard.onDecision = { [weak model] decision, done in
@@ -230,36 +233,10 @@ private struct RecordingStudioContent: View {
                     await model.discardChanges()
                     done(true)
                 }
-            case .delete:
-                done(model.deleteProject())
             case .cancel:
                 break
             }
         }
-    }
-
-    /// Save is a plain toolbar button rather than a menu command: Studio is
-    /// reached from a menu-bar app, where the main menu isn't a reliable
-    /// place to look for ⌘S.
-    @ViewBuilder
-    private var saveStatus: some View {
-        Button {
-            model.saveProject()
-        } label: {
-            if model.saveFlash {
-                Label("Saved", systemImage: "checkmark.circle.fill")
-                    .labelStyle(.titleAndIcon)
-                    .foregroundStyle(.green)
-            } else {
-                // Icon-only: a greyed-out "Save" title read as broken
-                // whenever there was nothing to save.
-                Label("Save", systemImage: "square.and.arrow.down")
-                    .labelStyle(.iconOnly)
-            }
-        }
-        .keyboardShortcut("s", modifiers: .command)
-        .disabled(!model.hasUnsavedChanges)
-        .help(model.hasUnsavedChanges ? "Save this project (⌘S)" : "All changes saved")
     }
 
     /// Share pipeline in one toolbar slot: render → upload → link copied.
@@ -431,6 +408,27 @@ private struct SharePill: View {
             .accessibilityLabel(cancelLabel)
         }
         .padding(.leading, 12)
+    }
+}
+
+extension FocusedValues {
+    /// The key Studio window's model, for menu commands.
+    @Entry var recordingStudio: RecordingStudioModel?
+}
+
+/// File › Save for the key Studio window, disabled when clean. Only there
+/// for a recording project while Studio is focused, as with the image
+/// editor's Save. It is also a new recording's first save; after that the
+/// project saves at a pause.
+struct RecordingStudioSaveCommand: View {
+    @FocusedValue(\.recordingStudio) private var studio
+
+    var body: some View {
+        if let studio, studio.isProject {
+            Button("Save") { studio.saveProject() }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(!studio.hasUnsavedChanges)
+        }
     }
 }
 

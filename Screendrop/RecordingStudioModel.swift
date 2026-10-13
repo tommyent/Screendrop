@@ -228,6 +228,7 @@ final class RecordingStudioModel {
     private var shareTask: Task<Void, Never>?
     private var transcriptionTask: Task<Void, Never>?
     private var projectSaveTask: Task<Void, Never>?
+    private var autosaveTask: Task<Void, Never>?
     private var screenAsset: AVURLAsset?
     private var isTornDown = false
     private var isLoading = false
@@ -235,19 +236,27 @@ final class RecordingStudioModel {
     private let editUndoManager = UndoManager()
     private(set) var undoRevision = 0
     private var zoomEditSnapshot: [ZoomCue]?
-    /// The document as of the last explicit save. Everything the user does
-    /// after that lives in memory and in the autosaved draft until they save
-    /// again, which is what makes the close prompt meaningful.
+    /// The document as of the last save. Everything the user does after
+    /// that lives in memory and in the draft until the next save.
     private var lastSavedDocument: RecordingEditDocument?
     /// Set while a stored document is being applied to the model, so the
     /// resulting property writes don't register as user edits.
     private var isApplyingDocument = false
-    /// Whether the editor holds edits that have not been committed with an
-    /// explicit save. Stored rather than derived: the title bar and the Save
-    /// button read it on every body evaluation, and rebuilding the whole
-    /// document to compare it there would cost real time while dragging.
+    /// Whether the editor holds edits that have not been committed to
+    /// `edit.json`. Stored rather than derived: the title bar reads it on
+    /// every body evaluation, and rebuilding the whole document to compare
+    /// it there would cost real time while dragging.
     private(set) var hasUnsavedChanges = false
-    private(set) var saveFlash = false
+    /// Whether the last save in this window worked; nil before the first.
+    private(set) var lastSaveSucceeded: Bool?
+
+    /// The window subtitle's status, as in the image editor: nothing on
+    /// open, then Edited, Saved (until the next edit) or Not Saved (until a
+    /// save works). A save is one small file write, so there's no Saving….
+    var saveStatus: String {
+        guard hasUnsavedChanges else { return lastSaveSucceeded == true ? "Saved" : "" }
+        return lastSaveSucceeded == false ? "Not Saved" : "Edited"
+    }
 
     /// Accepts either a recording session folder or a bare video file (so
     /// history items and old recordings still open, just without events).
@@ -414,17 +423,15 @@ final class RecordingStudioModel {
             if session.hasUnsavedDraft {
                 // Reopened on a draft that outlived its editor.
                 hasUnsavedChanges = true
-            } else if lastSavedDocument == nil {
-                // A recording that has never been saved is unsaved work by
-                // definition, which is what makes the close prompt offer to
-                // throw the whole thing away.
-                hasUnsavedChanges = true
             } else {
                 hasUnsavedChanges = false
                 // Adopt the loaded document in its normalized in-memory form
                 // as the baseline. Defaults filled in during load (an export
                 // preset an older project never stored, clips normalized to
-                // the real duration) would otherwise read as edits.
+                // the real duration) would otherwise read as edits. A new
+                // recording's defaults (the default style, zoom cues found
+                // in its pointer track) are its baseline too, so opening one
+                // saves nothing until it is edited.
                 lastSavedDocument = currentDocument()
             }
             session.updateProjectMetadata { $0.lastOpenedAt = Date() }
@@ -489,6 +496,7 @@ final class RecordingStudioModel {
         cancelShare()
         transcriptionTask?.cancel()
         projectSaveTask?.cancel()
+        autosaveTask?.cancel()
         if let session, !StudioProjectRegistry.shared.hasLoadedEditor(for: sessionURL) { removeUnusedReplacementAudio(in: session) }
         exportTask = nil
         audioExportTask = nil
@@ -1161,6 +1169,31 @@ final class RecordingStudioModel {
             guard !Task.isCancelled else { return }
             self?.writeDraftNow()
         }
+        scheduleAutosave()
+    }
+
+    /// Two seconds after the last change. Every keystroke and drag step is a
+    /// change, so this waits out typing; a held mouse button (a drag or a
+    /// scrub paused mid-way) puts it off again.
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self else { return }
+            if NSEvent.pressedMouseButtons != 0 {
+                self.scheduleAutosave()
+            } else {
+                self.autosave()
+            }
+        }
+    }
+
+    /// A save nobody asked for, as in the image editor; a bare movie has
+    /// nowhere to save. A failure shows Not Saved rather than an alert, and
+    /// the draft keeps the edits.
+    func autosave() {
+        guard isProject, hasUnsavedChanges else { return }
+        saveProject(reportingFailure: false)
     }
 
     /// Every edit in the editor, as a storable document.
@@ -1188,16 +1221,8 @@ final class RecordingStudioModel {
         )
     }
 
-    /// True until the project has been saved at least once. Only these get
-    /// offered "Move to Trash and Close"; saved projects discard only their unsaved edits.
-    var hasNeverBeenSaved: Bool {
-        guard let session else { return false }
-        return !session.hasSavedProject
-    }
-
     /// Persists the working copy. Cheap, debounced, and never touches the
-    /// committed `edit.json`, so a crash costs nothing and Save still means
-    /// something.
+    /// committed `edit.json`, so a crash or a failed save costs nothing.
     private func writeDraftNow() {
         guard isLoaded else { return }
         let document = currentDocument()
@@ -1232,11 +1257,13 @@ final class RecordingStudioModel {
         writeDraftNow()
     }
 
-    /// ⌘S. Commits the working copy to `edit.json` and clears the draft.
+    /// ⌘S, a pause, leaving the window, closing and quitting. Commits the
+    /// working copy to `edit.json` and clears the draft.
     @discardableResult
-    func saveProject() -> Bool {
+    func saveProject(reportingFailure: Bool = true) -> Bool {
         guard isLoaded, let session else { return false }
         projectSaveTask?.cancel()
+        autosaveTask?.cancel()
         let document = currentDocument()
         do {
             try session.writeEditDocument(document)
@@ -1246,11 +1273,16 @@ final class RecordingStudioModel {
             session.updateProjectMetadata { $0.savedAt = Date() }
             dropStaleRender(for: document, in: session)
             RecordingProjectStore.shared.reload()
-            flashSaveConfirmation()
+            lastSaveSucceeded = true
             return true
         } catch {
-            FailureAlert.present(message: "The recording project could not be saved", error: error,
-                                 detail: "Your editor will stay open. Try saving again after resolving the problem.")
+            lastSaveSucceeded = false
+            // The draft still holds the edits.
+            writeDraftNow()
+            if reportingFailure {
+                FailureAlert.present(message: "The recording project could not be saved", error: error,
+                                     detail: "Your editor will stay open. Try saving again after resolving the problem.")
+            }
             return false
         }
     }
@@ -1269,32 +1301,6 @@ final class RecordingStudioModel {
         // Rebuilding the timeline touches published state; let the normal
         // draft path settle the dirty flag rather than assuming it landed.
         flushDraft()
-    }
-
-    /// Moves a never-saved project and its footage to the Trash before closing.
-    @discardableResult
-    func deleteProject() -> Bool {
-        guard let session else { return false }
-        flushDraft()
-        do {
-            try RecordingProjectStore.shared.delete(session)
-            // Teardown must not recreate a draft at the package's former location.
-            isLoaded = false
-            teardown()
-            return true
-        } catch {
-            FailureAlert.present(message: "The recording could not be moved to the Trash", error: error,
-                                 detail: "Your editor will stay open and your footage has been kept.")
-            return false
-        }
-    }
-
-    private func flashSaveConfirmation() {
-        saveFlash = true
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1400))
-            self?.saveFlash = false
-        }
     }
 
     /// The parts of a stored project that need the timeline rebuilt around
