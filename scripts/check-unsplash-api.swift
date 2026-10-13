@@ -25,10 +25,10 @@ struct UnsplashAPIChecks {
         precondition(first.fullURL.absoluteString == "https://images.unsplash.com/photo-1?ixid=k1&w=3840&fm=jpg&q=85")
         precondition(first.profileURL.absoluteString == "https://unsplash.com/@ana?utm_source=sukusho&utm_medium=referral")
         precondition(first.downloadLocation.absoluteString.hasSuffix("/download?ixid=k1"))
-        precondition(UnsplashAPI.fileName(for: first) == "abc-123_X.jpg")
+        precondition(UnsplashAPI.fileName(for: first) == "Ana Lee [abc-123_X].jpg")
         precondition(photos[1].altText == "Photo by Bo")
         // A hostile id can't climb out of the wallpapers folder.
-        precondition(UnsplashAPI.fileName(for: photos[1]) == "etc.jpg")
+        precondition(UnsplashAPI.fileName(for: photos[1]) == "Bo [etc].jpg")
 
         precondition(UnsplashAPI.downloadPing(for: first, accessKey: "KEY")?.value(forHTTPHeaderField: "Authorization") == "Client-ID KEY")
         let elsewhere = UnsplashAPI.Photo(id: "x", thumbURL: first.thumbURL, fullURL: first.fullURL,

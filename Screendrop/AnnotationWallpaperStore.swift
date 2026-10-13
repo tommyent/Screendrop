@@ -40,6 +40,11 @@ final class AnnotationWallpaperStore {
         Self.isSupportedImageFile(wallpaper.url)
     }
 
+    func accessibilityTitle(for wallpaper: AnnotationCustomWallpaper) -> String {
+        let ordinal = (recentWallpapers.firstIndex(where: { $0.id == wallpaper.id }) ?? 0) + 1
+        return wallpaper.accessibilityTitle(ordinal: ordinal)
+    }
+
     func addRecentWallpaper(_ url: URL) {
         let standardizedPath = url.standardizedFileURL.path
         let standardizedURL = URL(fileURLWithPath: standardizedPath)

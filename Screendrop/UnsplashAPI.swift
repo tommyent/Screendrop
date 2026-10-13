@@ -79,10 +79,17 @@ nonisolated enum UnsplashAPI {
         return try decoder.decode(SearchResponse.self, from: data).results.compactMap(\.photo)
     }
 
-    /// A photo id from the network, made safe to use as a file name.
+    /// Keep a readable credit and the photo's short unique id in the filename.
     static func fileName(for photo: Photo) -> String? {
         let id = photo.id.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
-        return id.isEmpty ? nil : "\(id).jpg"
+        guard !id.isEmpty else { return nil }
+        let forbidden = CharacterSet(charactersIn: "/:[]").union(.controlCharacters)
+        let credit = photo.photographer.components(separatedBy: forbidden)
+            .joined(separator: " ")
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".").union(.whitespacesAndNewlines))
+        let name = credit.isEmpty ? "Wallpaper" : String(credit.prefix(80))
+        return "\(name) [\(id)].jpg"
     }
 
     static func referral(_ url: URL) -> URL {
