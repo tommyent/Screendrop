@@ -136,31 +136,31 @@ struct CaptureLibraryView: View {
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
             .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Cloud storage against the threshold in Settings › Cloud
-                    // (sd-irc), on every page; none until the Worker reports it.
-                    if let usage = cloud.usage, CloudUploader.shared.isConfigured {
-                        CloudUsageBar(usage: usage)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                    }
-
+                HStack(alignment: .center, spacing: 12) {
                     Button {
                         SettingsWindowController.show(tab: .general)
                     } label: {
                         // Icon only; the label still names it for VoiceOver.
                         Label("Settings", systemImage: "gearshape")
                             .labelStyle(.iconOnly)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 8)
-                            // The whole row clicks, not just the gear's own pixels.
+                            // A comfortable target, not just the gear's own pixels.
+                            .frame(minWidth: 28, alignment: .leading)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .help("Settings")
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
+
+                    // Cloud storage against the threshold in Settings › Cloud
+                    // (sd-irc), beside the gear on every page; none until the
+                    // Worker reports it.
+                    if let usage = cloud.usage, CloudUploader.shared.isConfigured {
+                        CloudUsageBar(usage: usage)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
             }
             .modifier(LibrarySidebarSurface())
         } detail: {
