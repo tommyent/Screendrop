@@ -202,9 +202,11 @@ struct PreviewCardView: View {
         } else {
             cornerButton(
                 systemImage: action.symbol(for: item.kind),
-                help: action.help(for: item.kind),
+                help: isBlocked(action) ? Self.deleteBlockedHelp : action.help(for: item.kind),
                 action: handler(for: action)
             )
+            .disabled(isBlocked(action))
+            .opacity(isBlocked(action) ? 0.4 : 1)
         }
     }
 
@@ -233,8 +235,18 @@ struct PreviewCardView: View {
             actionPill("Copy Link", action: copyUploadedURL)
         } else {
             actionPill(action.label(for: item.kind), action: handler(for: action))
+                .disabled(isBlocked(action))
+                .opacity(isBlocked(action) ? 0.4 : 1)
+                .help(isBlocked(action) ? Self.deleteBlockedHelp : "")
         }
     }
+
+    /// Delete waits while the capture is open in an editor.
+    private func isBlocked(_ action: OverlayCardAction) -> Bool {
+        action == .delete && ScreenshotPreviewStack.shared.isOpenInEditor(id: item.id)
+    }
+
+    private static let deleteBlockedHelp = "Close its editor to delete it"
 
     /// Whether an action should be shown for the current item.
     private func isAvailable(_ action: OverlayCardAction) -> Bool {

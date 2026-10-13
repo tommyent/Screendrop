@@ -122,7 +122,7 @@ extension CaptureLibraryModel {
             var removedEntries: Set<String> = []
             var failures: [String] = []
             for item in targets {
-                guard !CaptureLibraryOpenEditors.contains(item.ownedURL) else {
+                guard !CaptureLibraryOpenEditors.isEditing(item.ownedURL) else {
                     failures.append("\(item.name): close its editor before moving it to Trash.")
                     continue
                 }
@@ -281,6 +281,13 @@ enum CaptureLibraryOpenEditors {
     static func contains(_ url: URL) -> Bool {
         let path = url.standardizedFileURL.path
         return urls.keys.contains { $0.path == path || $0.path.hasPrefix(path + "/") }
+    }
+
+    /// Whether an editor has this file open, or the package it lives in: a
+    /// recording's card points at a file inside the package Studio opened.
+    static func isEditing(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return contains(url) || urls.keys.contains { path.hasPrefix($0.path + "/") }
     }
 }
 
