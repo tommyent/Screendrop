@@ -172,6 +172,16 @@ struct PastedImageTests {
         #expect(AnnoImageAsset.pasteboardData(pasteboard) == nil)
     }
 
+    @Test func aPictureDraggedPastTheEdgeCountsForCanvasGrowth() {
+        // AnnotationCanvasExpansion grows the canvas to `renderedPageBounds`, which must include
+        // a picture hanging off the screenshot's right edge.
+        let document = AnnoDocument()
+        document.restore(AnnoDocument.Snapshot(
+            shapes: [AnnoShape(x: 700, y: 100, kind: .image(ImageProps(assetID: "p", w: 300, h: 200)))],
+            bindings: []))
+        #expect(document.renderedPageBounds() == CGRect(x: 700, y: 100, width: 300, height: 200))
+    }
+
     @Test func sidecarsFromBeforePastingHaveNoImages() throws {
         let document = AnnotationDocument(shapes: [], background: AnnotationBackgroundSettings())
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(document)) as! [String: Any]
