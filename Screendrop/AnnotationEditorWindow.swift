@@ -184,11 +184,11 @@ struct AnnotationEditorWindow: View {
                     }
                     .padding(.horizontal, 6)
                 } else if didCopyLink {
-                    Label("Link copied", systemImage: "checkmark.circle.fill")
+                    Label("Link copied", systemImage: "checkmark.icloud")
                         .labelStyle(.titleAndIcon)
                         .padding(.horizontal, 6)
                 } else {
-                    Label("Upload", systemImage: "arrow.up.circle")
+                    Label("Upload", systemImage: "icloud.and.arrow.up")
                         .labelStyle(.titleAndIcon)
                         .padding(.horizontal, 6)
                 }
