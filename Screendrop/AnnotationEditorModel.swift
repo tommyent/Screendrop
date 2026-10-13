@@ -105,7 +105,9 @@ final class AnnotationEditorModel {
 
     // MARK: Crop
     /// Whether the modal crop overlay is currently active.
-    var isCropping = false
+    var isCropping = false {
+        didSet { scheduleIdleSave() }
+    }
     /// The working crop rectangle, normalized to the image (0...1, top-left
     /// origin). Only meaningful while `isCropping` is true.
     var cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -148,7 +150,10 @@ final class AnnotationEditorModel {
     @ObservationIgnored private var smartRedactionTask: Task<Void, Never>?
     private var smartRedactionGeneration = UUID()
 
-    init() {
+    @ObservationIgnored private let renderSave: (AnnotationSaveSnapshot) async throws -> URL
+
+    init(renderSave: @escaping (AnnotationSaveSnapshot) async throws -> URL = { try await $0.render() }) {
+        self.renderSave = renderSave
         engine.tool = selectedTool
         engine.onChange = { [weak self] in
             guard let self else { return }
@@ -234,6 +239,7 @@ final class AnnotationEditorModel {
     // MARK: - Loading
 
     func load(url: URL?, dismiss: DismissAction) {
+        idleSaveTask?.cancel()
         cancelSmartRedaction()
         guard let url else {
             dismiss()
@@ -329,6 +335,8 @@ final class AnnotationEditorModel {
     }
 
     func releaseEditorResources() {
+        idleSaveTask?.cancel()
+        idleSaveTask = nil
         isRestoringHistory = true
         defer { isRestoringHistory = false }
         cancelSmartRedaction()
@@ -352,93 +360,153 @@ final class AnnotationEditorModel {
         RedactionImageProcessor.removeAllCachedPreviewImages()
     }
 
-    /// Renders the composite, writes the `.screendrop` sidecar, and repoints
-    /// the editor at the preserved base image so continued edits don't re-bake
-    /// annotations onto an already-composited picture. Returns nil when there
-    /// is nothing to persist.
-    ///
-    /// This is the only thing that puts annotations on disk, so every save -
-    /// closing, quitting, ⌘C, ⌘S, Upload and the saves at a pause - goes
-    /// through it.
     private(set) var isCommitting = false
+    private var blockingCommitCount = 0
+    var isBlockingCommit: Bool { blockingCommitCount > 0 }
+    @ObservationIgnored private var commitTask: Task<URL?, Error>?
+    @ObservationIgnored private var idleSaveTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingSaveBaseURL: URL?
+    @ObservationIgnored private var saveFailureMessage: String?
+    /// The window also excludes native text fields, composition and sheets.
+    @ObservationIgnored var allowsIdleSave: () -> Bool = { true }
+    static let idleSaveDelay: Duration = .seconds(2)
 
     func validateEditDocument() throws {
         guard !unreadableEditDocument else { throw AnnotationDocumentReadError.unreadable }
         if let sourceURL { _ = try ScreenshotHistoryStore.shared.loadEditDocument(for: sourceURL) }
     }
 
+    /// Explicit actions wait for an idle render, then capture the latest state.
     @discardableResult
-    func commitEdits() async throws -> URL? {
-        guard !isCommitting else { throw CocoaError(.userCancelled) }
-        guard let sourceURL = self.sourceURL else { return nil }
-        var saved = false
-        defer { lastSaveSucceeded = saved }
-        try validateEditDocument()
+    func commitEdits(idle: Bool = false) async throws -> URL? {
+        if !idle {
+            idleSaveTask?.cancel()
+            blockingCommitCount += 1
+        }
+        defer { if !idle { blockingCommitCount -= 1 } }
+        while let running = commitTask {
+            // An explicit request retries even if the preceding idle save failed.
+            _ = try? await running.value
+        }
+        if idle {
+            try Task.checkCancellation()
+            guard canSaveInBackground else { return nil }
+        }
+        guard sourceURL != nil else { return nil }
         isCommitting = true
-        defer { isCommitting = false }
-        commitTextEditing()
-        inspectorEditingDepth = 0
-        recordHistoryChange(force: true)
+        let task = Task { @MainActor in
+            defer {
+                commitTask = nil
+                isCommitting = false
+            }
+            do {
+                return try await persistEdits(idle: idle)
+            } catch {
+                let message = "Failed to save annotation: \(error.localizedDescription)"
+                saveFailureMessage = message
+                errorMessage = message
+                throw error
+            }
+        }
+        commitTask = task
+        return try await task.value
+    }
+
+    /// One timer is also the single coalesced request behind an in-flight save.
+    func scheduleIdleSave(after delay: Duration = AnnotationEditorModel.idleSaveDelay) {
+        idleSaveTask?.cancel()
+        idleSaveTask = nil
+        guard !isRestoringHistory, hasUnsavedChanges, !isBlockingCommit else { return }
+        idleSaveTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+                guard let self, let sourceURL = self.sourceURL else { return }
+                if let resultURL = try await self.commitEdits(idle: true), !Task.isCancelled {
+                    _ = await ScreenshotPreviewStack.shared.applyAnnotation(originalURL: sourceURL, historyURL: resultURL)
+                }
+            } catch is CancellationError {
+                // A newer completed edit replaces this request.
+            } catch {
+                // The shared commit records failures before releasing its waiters.
+            }
+        }
+    }
+
+    private func persistEdits(idle: Bool) async throws -> URL? {
+        guard let sourceURL else { return nil }
+        if idle { guard hasUnsavedChanges, isIdleForSaving else { return nil } }
+        var saved = false
+        defer {
+            if self.sourceURL == sourceURL {
+                lastSaveSucceeded = saved
+                if saved {
+                    if errorMessage == saveFailureMessage { errorMessage = nil }
+                    saveFailureMessage = nil
+                }
+            }
+        }
+        try validateEditDocument()
+        if !idle {
+            commitTextEditing()
+            inspectorEditingDepth = 0
+            recordHistoryChange(force: true)
+        }
         var committedSnapshot = currentSnapshot()
-
-        let baseURL = self.baseImageURL ?? sourceURL
-        let shapes = self.shapes
-        let bindings = self.bindings
-        let backgroundSettings = self.backgroundSettings
-        let hasContent = !shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
+        let hasContent = !committedSnapshot.shapes.isEmpty || backgroundSettings.hasRenderableContent || self.isCropped
             || committedSnapshot.baseImageURL != savedSnapshot?.baseImageURL
-        // A pre-v2 sidecar has nothing the editor can remove: its marks are the image.
         let hadDocument = !isLegacyDocument && ScreenshotHistoryStore.shared.hasEditDocument(for: sourceURL)
-
-        // Nothing drawn and nothing previously saved: there is no work to lose.
         guard hasContent || hadDocument else {
-            self.markSaved()
+            markSaved()
             saved = true
             return nil
         }
 
-        guard preserveHistoryImage() else {
-            throw CocoaError(.fileWriteUnknown)
+        // A disk commit may replace the base file. Render from retained pixels,
+        // also keeping them alive if new edits trim their undo-history entry.
+        guard preserveHistoryImage(), let baseURL = baseImageURL else { throw CocoaError(.fileWriteUnknown) }
+        committedSnapshot = currentSnapshot()
+        pendingSaveBaseURL = baseURL
+        defer {
+            pendingSaveBaseURL = nil
+            removeOwnedCropFiles(keepingHistory: true)
         }
-        let historyBaseURL = self.baseImageURL
+        let snapshot = AnnotationSaveSnapshot(
+            baseURL: baseURL,
+            document: AnnotationDocument(
+                shapes: committedSnapshot.shapes,
+                bindings: committedSnapshot.bindings,
+                background: backgroundSettings,
+                images: AnnotationDocument.images(for: committedSnapshot.shapes, from: engine.imageAssets)
+            ),
+            images: engine.images,
+            background: backgroundSettings
+        )
 
         let resultURL: URL
         if hasContent {
-            let annotatedURL = try await AnnotationRenderer.renderToTemporaryFileInBackground(
-                sourceURL: baseURL,
-                shapes: shapes,
-                bindings: bindings,
-                images: engine.images,
-                backgroundSettings: backgroundSettings
-            )
+            let annotatedURL = try await renderSave(snapshot)
             defer { try? FileManager.default.removeItem(at: annotatedURL) }
-            let document = AnnotationDocument(
-                shapes: shapes,
-                bindings: bindings,
-                background: backgroundSettings,
-                images: AnnotationDocument.images(for: shapes, from: engine.imageAssets)
-            )
             resultURL = try ScreenshotHistoryStore.shared.commitAnnotations(
-                displayURL: sourceURL,
-                baseURL: baseURL,
-                renderedURL: annotatedURL,
-                document: document
+                displayURL: sourceURL, baseURL: baseURL, renderedURL: annotatedURL, document: snapshot.document
             )
-            self.baseImageURL = ScreenshotHistoryStore.baseImageURL(for: resultURL)
-            // The sidecar is v2 now, and its base is the composite the old marks live in.
-            self.isLegacyDocument = false
         } else {
-            // All annotations were cleared on a previously-edited image:
-            // restore the untouched original.
             resultURL = try ScreenshotHistoryStore.shared.removeAnnotations(displayURL: sourceURL)
-            self.baseImageURL = resultURL
         }
 
-        rebaseHistoryImage(from: historyBaseURL, to: self.baseImageURL)
-        committedSnapshot.baseImageURL = self.baseImageURL
+        guard self.sourceURL == sourceURL else { return resultURL }
+        // A crop or undo/redo during the render owns the live base now.
+        if baseImageURL == baseURL {
+            let storedBase = hasContent ? ScreenshotHistoryStore.baseImageURL(for: resultURL) : resultURL
+            rebaseHistoryImage(from: baseURL, to: storedBase)
+            baseImageURL = storedBase
+            committedSnapshot.baseImageURL = storedBase
+        }
+        isLegacyDocument = false
         savedSnapshot = committedSnapshot
-        removeOwnedCropFiles(keepingHistory: true)
         saved = true
+        // Undo can briefly return to the old saved baseline mid-render, leaving
+        // no queued request until this older snapshot becomes the saved one.
+        if idle, hasUnsavedChanges, idleSaveTask == nil { scheduleIdleSave() }
         return resultURL
     }
 
@@ -492,13 +560,14 @@ final class AnnotationEditorModel {
         return lastSaveSucceeded == false ? "Not Saved" : "Edited"
     }
 
-    /// Whether a save nobody asked for may run now. Committing locks the
-    /// editor, ends text editing and closes an undo step, so never while
-    /// anything is being drawn, dragged, typed or cropped.
+    private var isIdleForSaving: Bool {
+        guard !isCropping, editingTextID == nil, !isPointerDown, !isInspectorEditing,
+              case .idle = engine.interaction else { return false }
+        return allowsIdleSave()
+    }
+
     var canSaveInBackground: Bool {
-        guard hasUnsavedChanges, !isCommitting, !isCropping, editingTextID == nil,
-              !isPointerDown, !isInspectorEditing, case .idle = engine.interaction else { return false }
-        return true
+        hasUnsavedChanges && !isCommitting && !isBlockingCommit && isIdleForSaving
     }
 
     /// Re-baselines after a successful commit, and at the end of a load.
@@ -528,6 +597,7 @@ final class AnnotationEditorModel {
                   case .idle = engine.interaction else { return }
         }
         let snapshot = currentSnapshot()
+        defer { scheduleIdleSave() }
         guard snapshot != history[historyIndex] else { return }
         history.removeSubrange((historyIndex + 1)..<history.count)
         history.append(snapshot)
@@ -800,6 +870,7 @@ final class AnnotationEditorModel {
         }
         historyIndex -= 1
         restore(history[historyIndex])
+        scheduleIdleSave()
     }
 
     func redo() {
@@ -814,6 +885,7 @@ final class AnnotationEditorModel {
         }
         historyIndex += 1
         restore(history[historyIndex])
+        scheduleIdleSave()
     }
 
     // MARK: - Smart redaction
@@ -1202,9 +1274,9 @@ extension AnnotationEditorModel {
     }
 
     private func removeOwnedCropFiles(keepingHistory: Bool = false) {
-        var retainedURLs: Set<URL> = []
+        var retainedURLs = Set(pendingSaveBaseURL.map { [$0] } ?? [])
         if keepingHistory {
-            retainedURLs = Set(history.compactMap(\.baseImageURL))
+            retainedURLs.formUnion(history.compactMap(\.baseImageURL))
             if let baseImageURL { retainedURLs.insert(baseImageURL) }
             if let savedURL = savedSnapshot?.baseImageURL { retainedURLs.insert(savedURL) }
         }

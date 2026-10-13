@@ -30,12 +30,12 @@ struct AnnotationEditorWindow: View {
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
 
-    private var isBusy: Bool { isSaving || isFinishing || isUploading || model.isCommitting }
+    private var isBusy: Bool { isSaving || isFinishing || isUploading || model.isBlockingCommit }
 
     var body: some View {
         mainContent
-            .disabled(model.isCommitting)
-            .allowsHitTesting(!model.isCommitting)
+            .disabled(model.isBlockingCommit)
+            .allowsHitTesting(!model.isBlockingCommit)
             .modifier(CaptureLibraryEditorRegistration(url: url))
             .navigationTitle(windowTitle)
             .navigationSubtitle(model.saveStatus)
@@ -71,6 +71,13 @@ struct AnnotationEditorWindow: View {
                     closeGuard.detach()
                     return
                 }
+                model.allowsIdleSave = { [weak window] in
+                    guard let window else { return false }
+                    let key = NSApp.keyWindow
+                    let textIsActive = window.firstResponder is NSTextView
+                        || (key?.parent == window && key?.firstResponder is NSTextView)
+                    return !textIsActive && window.attachedSheet == nil
+                }
                 configureCloseGuard()
                 closeGuard.attach(to: window)
             }
@@ -83,8 +90,19 @@ struct AnnotationEditorWindow: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
                 if let window = NSApp.windows.first(where: { $0.delegate === closeGuard }) { saveAtPause(in: window) }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                if let window = note.object as? NSWindow, window.delegate === closeGuard {
+                    model.scheduleIdleSave()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSControl.textDidEndEditingNotification)) { note in
+                if let control = note.object as? NSView, control.window?.delegate === closeGuard {
+                    model.scheduleIdleSave()
+                }
+            }
+            .onChange(of: focusedField) { _, _ in model.scheduleIdleSave() }
             .onDeleteCommand {
-                if !model.isCommitting { model.deleteSelectedAnnotation() }
+                if !model.isBlockingCommit { model.deleteSelectedAnnotation() }
             }
             .onChange(of: model.isCropping) { _, isCropping in
                 if isCropping {
@@ -107,7 +125,7 @@ struct AnnotationEditorWindow: View {
                 await probe.load(model.baseImageURL, preview: model.previewCGImage)
             }
             .background(AnnotationKeyCommandHandler(
-                isEnabled: { !model.isCommitting },
+                isEnabled: { !model.isBlockingCommit },
                 onDelete: model.deleteSelectedAnnotation,
                 onSave: saveEdits,
                 onCopy: copyAndFinishEditing,
@@ -158,7 +176,7 @@ struct AnnotationEditorWindow: View {
                     onEditorAction: clearInspectorFocus,
                     onPickWallpaper: pickCustomWallpaper
                 )
-                .disabled(model.isCropping || model.isCommitting)
+                .disabled(model.isCropping || model.isBlockingCommit)
             }
             .environment(probe)
     }
@@ -459,20 +477,20 @@ struct AnnotationEditorWindow: View {
     /// being typed or a sheet up; closing still saves.
     private func saveAtPause(in window: NSWindow) {
         guard model.canSaveInBackground, !(window.firstResponder is NSTextView), window.attachedSheet == nil else { return }
-        save()
+        save(idle: true)
     }
 
-    private func save() {
+    private func save(idle: Bool = false) {
         // Committing re-renders the composite, so a save with nothing
         // changed should cost nothing.
-        guard model.sourceURL != nil, model.hasUnsavedChanges, !isBusy else { return }
+        guard model.sourceURL != nil, model.hasUnsavedChanges || model.isCommitting, !isBusy else { return }
 
-        isSaving = true
+        if !idle { isSaving = true }
         Task {
-            defer { isSaving = false }
+            defer { if !idle { isSaving = false } }
             do {
                 guard let sourceURL = model.sourceURL,
-                      let resultURL = try await model.commitEdits() else { return }
+                      let resultURL = try await model.commitEdits(idle: idle) else { return }
                 _ = await ScreenshotPreviewStack.shared.applyAnnotation(
                     originalURL: sourceURL,
                     historyURL: resultURL
@@ -525,8 +543,10 @@ struct AnnotationEditorWindow: View {
     }
 
     private func configureCloseGuard() {
-        closeGuard.canClose = { [weak model] in model?.isCommitting != true }
-        closeGuard.hasUnsavedChanges = { [weak model] in model?.hasUnsavedChanges ?? false }
+        closeGuard.hasUnsavedChanges = { [weak model] in
+            guard let model else { return false }
+            return model.hasUnsavedChanges || model.isCommitting || model.isBlockingCommit
+        }
         // A screenshot is already in History whether or not it is annotated,
         // so there is no "delete the whole thing" case here.
         closeGuard.offersDelete = { false }
