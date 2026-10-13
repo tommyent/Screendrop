@@ -59,6 +59,7 @@ struct AnnotationTextStyleControls: View {
                                 .underline(segment == .underline)
                                 .opacity(isInert ? 0.35 : 1)
                                 .help(isInert ? "Not available in this font" : "")
+                                .accessibilityLabel(segment.accessibilityTitle)
                         }
                     )
                     .frame(width: Self.segmentWidth * 3 + InspectorMetrics.controlInset * 2)
@@ -159,10 +160,12 @@ struct AnnotationTextStyleControls: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .accessibilityLabel("Decrease font size")
 
             Divider().frame(height: 13)
 
             TextField("", text: $fontSizeText)
+                .accessibilityLabel("Font size")
                 .focused($isFontSizeFieldFocused)
                 .onSubmit(commitFontSizeText)
                 .textFieldStyle(.plain)
@@ -182,6 +185,7 @@ struct AnnotationTextStyleControls: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .accessibilityLabel("Increase font size")
         }
         .inspectorField()
     }
@@ -246,6 +250,14 @@ private enum TextStyleSegment: CaseIterable, Hashable {
     case bold
     case italic
     case underline
+
+    var accessibilityTitle: String {
+        switch self {
+        case .bold: "Bold"
+        case .italic: "Italic"
+        case .underline: "Underline"
+        }
+    }
 
     var title: String {
         switch self {

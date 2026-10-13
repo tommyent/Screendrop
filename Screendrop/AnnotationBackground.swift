@@ -438,7 +438,24 @@ struct AnnotationCustomWallpaper: Identifiable, Equatable, Hashable {
     }
 
     var title: String {
-        url.deletingPathExtension().lastPathComponent
+        if isUnsplash { return unsplashCredit ?? "Unsplash photo" }
+        return url.deletingPathExtension().lastPathComponent
+    }
+
+    private var unsplashCredit: String? {
+        let stem = url.deletingPathExtension().lastPathComponent
+        if isUnsplash, stem.hasSuffix("]"), let suffix = stem.range(of: " [", options: .backwards) {
+            return String(stem[..<suffix.lowerBound])
+        }
+        return nil
+    }
+
+    func accessibilityTitle(ordinal: Int) -> String {
+        return isUnsplash && unsplashCredit == nil ? "Wallpaper \(ordinal)" : title
+    }
+
+    private var isUnsplash: Bool {
+        url.deletingLastPathComponent().lastPathComponent == "Unsplash"
     }
 }
 

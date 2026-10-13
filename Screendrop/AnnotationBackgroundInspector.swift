@@ -224,7 +224,7 @@ struct InspectorBackgroundRow: View {
         .onHover { isHovering = $0 }
         .help("Choose a background")
         .accessibilityLabel("Background")
-        .accessibilityValue(style.displayTitle)
+        .accessibilityValue(accessibilityValue)
         .closesOnEditorEscape($isPickerPresented)
         .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
             // No title: the row it hangs off already says Background, and
@@ -247,6 +247,13 @@ struct InspectorBackgroundRow: View {
             .presentationBackground(Palette.panel)
             .onDisappear(perform: onEndPreview)
         }
+    }
+
+    private var accessibilityValue: String {
+        if case .customWallpaper(let wallpaper) = style {
+            return wallpaperStore.accessibilityTitle(for: wallpaper)
+        }
+        return style.displayTitle
     }
 }
 
@@ -430,6 +437,7 @@ struct InspectorBackgroundFillPicker: View {
                 AnnotationCustomWallpaperPreview(wallpaper: wallpaper)
             }
             .onHover { onPreview?(.customWallpaper(wallpaper), $0) }
+            .accessibilityLabel(wallpaperStore.accessibilityTitle(for: wallpaper))
         }
     }
 
