@@ -236,7 +236,7 @@ struct InspectorSlider: View {
             .foregroundStyle(isActive ? Color.primary.opacity(0.85) : Color.secondary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .padding(.leading, 8)
+            .padding(.leading, InspectorMetrics.fieldInset)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .gesture(
@@ -296,7 +296,7 @@ struct InspectorSlider: View {
             .foregroundStyle(.primary.opacity(0.85))
             .multilineTextAlignment(.trailing)
             .frame(width: Self.valueWidth)
-            .padding(.trailing, 8)
+            .padding(.trailing, InspectorMetrics.fieldInset)
             .frame(maxHeight: .infinity)
             .focused($focusedPart, equals: .value)
             .onSubmit {

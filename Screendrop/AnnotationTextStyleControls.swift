@@ -129,7 +129,7 @@ struct AnnotationTextStyleControls: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, InspectorMetrics.fieldInset)
             .inspectorField()
         }
         .menuStyle(.button)
