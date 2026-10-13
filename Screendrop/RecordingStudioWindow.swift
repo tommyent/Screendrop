@@ -270,7 +270,7 @@ private struct RecordingStudioContent: View {
         switch model.shareState {
         case .idle:
             CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: model.shareToCloud) {
-                Label("Share", systemImage: "link")
+                Label("Upload", systemImage: "icloud.and.arrow.up")
                     .labelStyle(.titleAndIcon)
             }
             .disabled(!model.isLoaded || model.exportState.isExporting)
@@ -294,7 +294,7 @@ private struct RecordingStudioContent: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(url, forType: .string)
                 } label: {
-                    Label("Link Copied", systemImage: "checkmark.circle.fill")
+                    Label("Link Copied", systemImage: "checkmark.icloud")
                         .foregroundStyle(.green)
                 }
                 .help("Copy the share link again")
@@ -308,13 +308,13 @@ private struct RecordingStudioContent: View {
                 }
 
                 CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: model.shareToCloud) {
-                    Image(systemName: "link")
+                    Image(systemName: "icloud.and.arrow.up")
                 }
-                .help("Share Again")
+                .help("Upload Again")
             }
         case .failed(let message):
             HStack(spacing: 6) {
-                Label("Share Failed", systemImage: "exclamationmark.triangle.fill")
+                Label("Upload Failed", systemImage: "exclamationmark.triangle.fill")
                     .labelStyle(.titleAndIcon)
                     .foregroundStyle(.orange)
                     .help(message)
@@ -406,7 +406,7 @@ private struct StudioProgressRing: View {
 private struct SharePill: View {
     let stage: String
     let progress: Double
-    var cancelLabel = "Cancel Share"
+    var cancelLabel = "Cancel Upload"
     let onCancel: () -> Void
 
     var body: some View {
