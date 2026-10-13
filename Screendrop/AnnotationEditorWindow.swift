@@ -646,14 +646,17 @@ struct AnnotationEditorSaveCommand: View {
     }
 }
 
-/// File › Save As… for the key editor window.
+/// File › Save As… for the key editor window. Only there while an editor
+/// is focused, like Save: Studio has no Save As, and a disabled one sat
+/// above Studio's Save.
 struct AnnotationEditorSaveAsCommand: View {
     @FocusedValue(\.annotationEditor) private var editor
 
     var body: some View {
-        Button("Save As…") { editor?.requestSaveAs() }
-            .keyboardShortcut("s", modifiers: [.command, .shift])
-            .disabled(editor == nil)
+        if let editor {
+            Button("Save As…") { editor.requestSaveAs() }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+        }
     }
 }
 
