@@ -14,8 +14,9 @@ struct AnnotationToolDock: View {
 
     static let height: CGFloat = 44
     static let topPadding: CGFloat = 12
-    /// Height the canvas keeps clear above a fitted image, beyond its own fit inset.
-    static let canvasReserve: CGFloat = 44
+    /// Height the canvas keeps clear at its top: the dock, the gap above it
+    /// and a little air below, so an image scrolled to its top starts clear.
+    static let canvasReserve: CGFloat = topPadding + height + 8
 
     private static let groups: [[AnnotationTool]] = [
         [.select],
