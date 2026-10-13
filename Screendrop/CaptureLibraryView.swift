@@ -10,7 +10,6 @@ struct CaptureLibraryView: View {
     @State private var projects = RecordingProjectStore.shared
     @State private var libraryWindow: NSWindow?
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
-    @AppStorage("captureLibrary.layout") private var layout: CaptureLibraryLayout = .grid
     @AppStorage("captureLibrary.inspectorVisible") private var inspectorVisible = true
     @AppStorage("captureLibrary.tagsExpanded") private var tagsExpanded = true
     @AppStorage("captureLibrary.cardWidth") private var cardWidth = 220.0
@@ -169,9 +168,7 @@ struct CaptureLibraryView: View {
                 browser.frame(maxWidth: .infinity, maxHeight: .infinity)
                     .modifier(LibraryBrowserSurface(
                         showsDots: comments.isShown ? comments.visibleComments.isEmpty
-                            : likes.isShown ? likes.visibleLikes.isEmpty : layout == .grid || (cloud.isShown
-                            ? cloud.visibleUploads.isEmpty
-                            : !model.hasLoaded || model.visibleItems.isEmpty)
+                            : likes.isShown ? likes.visibleLikes.isEmpty : true
                     ))
                 Divider()
                 statusBar
@@ -273,7 +270,7 @@ struct CaptureLibraryView: View {
         } else if likes.isShown {
             LikesLibraryPage(likes: likes)
         } else if cloud.isShown {
-            CloudLibraryPage(cloud: cloud, layout: layout, cardWidth: cardWidth)
+            CloudLibraryPage(cloud: cloud, cardWidth: cardWidth)
         } else if !model.hasLoaded {
             ProgressView("Loading Library…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.visibleItems.isEmpty {
@@ -316,10 +313,10 @@ struct CaptureLibraryView: View {
                 }
             }
         } else {
-            CaptureLibraryCollection(items: model.visibleItems, revision: model.contentRevision, layout: layout,
+            CaptureLibraryCollection(items: model.visibleItems, revision: model.contentRevision, layout: .grid,
                 cardWidth: cardWidth, selection: $model.selection, isBusy: model.isBusy,
-                cell: { [layout] item, selected, onTitleFrame in
-                    AnyView(LibraryCellContent(item: item, layout: layout, selected: selected, onTitleFrame: onTitleFrame))
+                cell: { item, selected, onTitleFrame in
+                    AnyView(LibraryCellContent(item: item, selected: selected, onTitleFrame: onTitleFrame))
                 },
                 menu: { [model] in model.menuItems(selected: $0) },
                 backgroundMenu: { [model] in model.backgroundMenuItems { model.refresh() } },
@@ -428,7 +425,7 @@ struct CaptureLibraryView: View {
                     .help(comments.isShown ? "Refreshing comments" : likes.isShown ? "Refreshing likes"
                           : cloud.isShown ? "Refreshing uploads" : "Refreshing Library")
             }
-            if layout == .grid, !comments.isShown, !likes.isShown {
+            if !comments.isShown, !likes.isShown {
                 // Capped where the 640 px thumbnails stay sharp on Retina.
                 Slider(value: $cardWidth, in: 140...320) {
                     EmptyView()
@@ -469,18 +466,6 @@ struct CaptureLibraryView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            // Comments are always a list, so the picker says so there.
-            Picker("View", selection: Binding(get: { comments.isShown || likes.isShown ? .list : layout }, set: { layout = $0 })) {
-                Label("Grid View", systemImage: "square.grid.2x2").tag(CaptureLibraryLayout.grid).help("Grid view")
-                Label("List View", systemImage: "list.bullet").tag(CaptureLibraryLayout.list).help("List view")
-            }
-            .labelStyle(.iconOnly)
-            .pickerStyle(.segmented)
-            .disabled(comments.isShown || likes.isShown)
-            .help("Switch between grid and list")
-        }
-        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             Button { inspectorVisible.toggle() } label: {
                 Label(inspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")

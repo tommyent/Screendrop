@@ -408,7 +408,6 @@ final class LibraryCollectionItem: NSCollectionViewItem {
 
 struct LibraryCellContent: View {
     let item: CaptureLibraryItem?
-    let layout: CaptureLibraryLayout
     let selected: Bool
     var onTitleFrame: (CGRect) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -417,26 +416,12 @@ struct LibraryCellContent: View {
     var body: some View {
         Group {
             if let item {
-                Group {
-                    if layout == .grid {
-                        VStack(alignment: .leading, spacing: 8) {
-                            thumbnail(item)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            labels(item)
-                                .padding(.horizontal, 4)
-                                .padding(.bottom, 4)
-                        }
-                    } else {
-                        HStack(spacing: 14) {
-                            thumbnail(item).frame(width: 88, height: 58)
-                            labels(item)
-                            Spacer(minLength: 8)
-                            Text(item.kindTitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.trailing, 8)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 8) {
+                    thumbnail(item)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    labels(item)
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 4)
                 }
                 .padding(6)
                 .background(
