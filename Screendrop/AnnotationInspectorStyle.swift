@@ -87,14 +87,14 @@ enum InspectorControlPalette {
         colorScheme == .dark ? .clear : Color.black.opacity(0.14)
     }
 
-    /// Every inspector label, header and hint. macOS's secondary label in
-    /// dark mode (6.9:1 on the panel); in light mode that measures 3.1:1
-    /// against white, under AA's 4.5:1, so it's darker there (5.4:1).
-    /// Measured off-screen, design pass choice 10.
+    /// Every inspector sub-label and hint, one step below the black section
+    /// headers. macOS's secondary label in dark mode (6.9:1 on the panel);
+    /// in light mode that measures 3.1:1 against white, under AA's 4.5:1,
+    /// so it's 60% black there: #666666, 5.7:1 on the inspector's white.
     static let label = Color(nsColor: NSColor(name: "InspectorLabel") { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? .secondaryLabelColor
-            : NSColor.black.withAlphaComponent(0.66)
+            : NSColor.black.withAlphaComponent(0.6)
     })
 
     static var hoverFill: Color { Color.primary.opacity(0.04) }
@@ -172,7 +172,6 @@ struct InspectorSection<Content: View, Accessory: View>: View {
     @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
 
-    @State private var isHeaderHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var showsContent: Bool {
@@ -206,31 +205,17 @@ struct InspectorSection<Content: View, Accessory: View>: View {
 
     private func header(_ title: String) -> some View {
         HStack(spacing: 6) {
-            Button(action: toggleExpansion) {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.inspectorSectionHeader)
-                        .foregroundStyle(titleColor)
-                        .fixedSize()
-
-                    if let summary, !showsContent {
-                        Text(summary)
-                            .font(.inspectorLabel)
-                            // The fork's AA-contrast label, not upstream's
-                            // tertiary ink (about 2.4:1 on white).
-                            .foregroundStyle(InspectorControlPalette.label)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .transition(.opacity)
-                    }
-
-                    Spacer(minLength: 0)
+            Group {
+                if isExpanded != nil {
+                    Button(action: toggleExpansion) { headerTitle(title) }
+                        .buttonStyle(.plain)
+                } else {
+                    // Not a disabled button: macOS greys those, which dimmed
+                    // every header that doesn't fold (Background, Border…).
+                    headerTitle(title)
+                        .accessibilityElement(children: .ignore)
                 }
-                .frame(maxWidth: .infinity, minHeight: 24)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .disabled(isExpanded == nil)
             .accessibilityLabel(title)
             .accessibilityValue(summary ?? "")
             .accessibilityAddTraits(.isHeader)
@@ -263,14 +248,32 @@ struct InspectorSection<Content: View, Accessory: View>: View {
                 .accessibilityLabel(isExpanded.wrappedValue ? "Collapse \(title)" : "Expand \(title)")
             }
         }
-        .onHover { isHeaderHovering = $0 }
     }
 
-    private var titleColor: Color {
-        if showsContent || (isExpanded != nil && isHeaderHovering) {
-            return Palette.label.opacity(0.95)
+    /// One header ink whether the section is on, off or folded: the switch
+    /// and chevron show that state, and the user wants two label levels.
+    private func headerTitle(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.inspectorSectionHeader)
+                .foregroundStyle(Palette.label.opacity(0.95))
+                .fixedSize()
+
+            if let summary, !showsContent {
+                Text(summary)
+                    .font(.inspectorLabel)
+                    // The fork's AA-contrast label, not upstream's
+                    // tertiary ink (about 2.4:1 on white).
+                    .foregroundStyle(InspectorControlPalette.label)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .transition(.opacity)
+            }
+
+            Spacer(minLength: 0)
         }
-        return Palette.secondaryLabel
+        .frame(maxWidth: .infinity, minHeight: 24)
+        .contentShape(Rectangle())
     }
 
     private func toggleExpansion() {
