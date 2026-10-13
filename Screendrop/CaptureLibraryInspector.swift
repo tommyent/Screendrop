@@ -35,7 +35,7 @@ struct CaptureLibraryInspector: View {
         }
         .task(id: items.map(\.thumbnailKey)) {
             byteCount = nil
-            let urls = items.map(\.ownedURL)
+            let urls = items.flatMap(\.ownedFileURLs)
             let scan = Task.detached(priority: .utility) {
                 urls.reduce(Int64(0)) { total, url in
                     Task.isCancelled ? total : total + CaptureLibraryScanner.sizeOnDisk(of: url)

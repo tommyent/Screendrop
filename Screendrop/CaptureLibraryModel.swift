@@ -63,6 +63,11 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
     let thumbnailKey: String
 
     var ownedURL: URL { session?.directoryURL ?? fileURL }
+    /// Everything the capture keeps on disk: a recording's package, or a
+    /// screenshot and the files its edits keep beside it.
+    var ownedFileURLs: [URL] {
+        session == nil && !isVideo ? [fileURL] + ScreenshotHistoryStore.companionURLs(for: fileURL) : [ownedURL]
+    }
     var isTall: Bool { !isVideo && TallCapture.isTall(width: pixelWidth, height: pixelHeight) }
     var dimensions: String {
         pixelWidth > 0 && pixelHeight > 0 ? "\(pixelWidth) × \(pixelHeight)" : "Unknown"
