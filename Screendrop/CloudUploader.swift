@@ -173,6 +173,8 @@ final class CloudUploader: NSObject {
             if mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
                 scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, creds: creds)
             }
+            // The Library's storage bar; a video's sidecars land in the next reading.
+            CloudLibraryModel.shared.refreshUsage()
             return result
         } catch {
             if uploadTask.isCancelled || Task.isCancelled || error is CancellationError

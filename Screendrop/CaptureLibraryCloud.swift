@@ -101,9 +101,13 @@ final class CloudLibraryModel {
     }
 
     /// One list of the bucket (a Class A operation per 1,000 objects), so
-    /// only when the page loads or uploads are deleted. A failure keeps the
-    /// last reading.
-    private func refreshUsage() {
+    /// only when the Library opens or the page reloads, and after an upload
+    /// or a delete. A failure keeps the last reading.
+    func refreshUsage() {
+        guard CloudUploader.shared.isConfigured else {
+            usage = nil
+            return
+        }
         Task {
             if let usage = try? await CloudUploader.shared.usage() {
                 self.usage = usage
@@ -364,14 +368,6 @@ struct CloudLibraryPage: View {
                     menu: { _ in cloud.menuItems() },
                     onAction: cloud.perform
                 )
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if let usage = cloud.usage, CloudUploader.shared.isConfigured {
-                CloudUsageBar(usage: usage)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
