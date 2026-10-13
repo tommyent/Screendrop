@@ -44,10 +44,6 @@ struct AnnotationBackgroundInspector: View {
                 onEndPreview: onEndPreview
             )
 
-            if !settings.requiresCanvasLayout {
-                InspectorHint("Pick a background to frame the screenshot.")
-            }
-
             frameControls
                 // Without a canvas there is nothing to shape, pad, round or
                 // shadow. Dimmed rather than hidden, so picking a fill
