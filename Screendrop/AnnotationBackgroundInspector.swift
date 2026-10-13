@@ -124,6 +124,45 @@ struct AnnotationBackgroundInspector: View {
     }
 }
 
+extension AnnotationBackgroundStyle {
+    var displayTitle: String {
+        switch self {
+        case .none: "None"
+        case .solid(let color): color.title
+        case .gradient(let gradient): gradient.title
+        case .customWallpaper(let wallpaper): wallpaper.title
+        }
+    }
+}
+
+/// A background drawn small: the fill itself, or a quiet empty well for none.
+struct BackgroundSwatch: View {
+    let style: AnnotationBackgroundStyle
+
+    var body: some View {
+        switch style {
+        case .none:
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .overlay {
+                    Image(systemName: "slash.circle")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                }
+        case .solid(let color):
+            Rectangle().fill(color.color)
+        case .gradient(let gradient):
+            Rectangle().fill(LinearGradient(
+                colors: gradient.colors.map(\.color),
+                startPoint: gradient.startPoint,
+                endPoint: gradient.endPoint
+            ))
+        case .customWallpaper(let wallpaper):
+            AnnotationCustomWallpaperPreview(wallpaper: wallpaper, maxPixelSize: 320)
+        }
+    }
+}
+
 /// The background fill browser shared by the annotator and Studio: a
 /// Color / Gradient / Wallpaper library switch over tile grids, with recent
 /// wallpapers, built-in packs and an add tile.

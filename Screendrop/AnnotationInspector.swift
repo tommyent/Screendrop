@@ -56,6 +56,12 @@ struct AnnotationEditorInspector: View {
 
                 InspectorSectionDivider()
 
+                AnnotationStyleStrip(
+                    model: model,
+                    presetStore: backgroundPresetStore,
+                    onEditorAction: onEditorAction
+                )
+
                 // Always present so selecting or deselecting annotations never
                 // shifts the sections below.
                 InspectorSection(accessibilityLabel: "Style") {
@@ -202,20 +208,6 @@ struct AnnotationEditorInspector: View {
             .padding(.bottom, PreviewPeekTab.pillHeight * 1.1)
         }
         .environment(\.annotationEditorHistory, model)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                AnnotationBackgroundPresetBar(
-                    model: model,
-                    presetStore: backgroundPresetStore,
-                    onEditorAction: onEditorAction
-                )
-
-                Rectangle()
-                    .fill(Color(nsColor: .separatorColor).opacity(0.45))
-                    .frame(height: 0.5)
-            }
-            .background(sidebarBackground)
-        }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .all)
         .background(sidebarBackground)
