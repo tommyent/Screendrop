@@ -656,7 +656,7 @@ private struct StudioCanvasComposition: View {
                 : model.previewViewportFrame(at: model.displayTime)
 
             ZStack {
-                StudioBackgroundView(style: model.style.background)
+                StudioBackgroundView(style: model.previewBackground ?? model.style.background)
                     .frame(width: canvasSize.width, height: canvasSize.height)
                     .clipped()
 
@@ -2769,8 +2769,6 @@ private extension ZoomAnchorMode {
 }
 
 private enum StudioInspectorSection: String, Hashable, CaseIterable {
-    case background
-    case layout
     case motion
     case cursor
     case keystrokes
@@ -2781,7 +2779,7 @@ private enum StudioInspectorSection: String, Hashable, CaseIterable {
 
 private enum StudioInspectorSectionState {
     static let expandedSectionsKey = "studioInspector.expandedSections"
-    static let defaultSections: Set<StudioInspectorSection> = [.background, .layout, .motion]
+    static let defaultSections: Set<StudioInspectorSection> = [.motion]
 
     static func load() -> Set<StudioInspectorSection> {
         guard let rawValues = UserDefaults.standard.stringArray(forKey: expandedSectionsKey) else {
@@ -2856,14 +2854,20 @@ private struct StudioInspector: View {
                     InspectorSectionDivider()
                 }
 
-                InspectorDisclosureSection(
-                    title: "Background",
-                    summary: StudioInspectorSummary.background(
-                        model.style.background,
-                        aspect: model.exportAspect
-                    ),
-                    isExpanded: expansionBinding(for: .background),
+                // The look, as the image editor lays it out: Styles, then
+                // Background (upstream v0.35's Canvas and Frame).
+                RecordingStudioStyleStrip(model: model, presetStore: stylePresetStore)
+
+                InspectorSection(
+                    "Background",
                     accessory: {
+                        if !usesDefaultLayout {
+                            InspectorResetButton(help: "Reset padding, corners and shadow") {
+                                model.style.padding = 0.06
+                                model.style.cornerRadius = 0.02
+                                model.style.shadow = 0.45
+                            }
+                        }
                         if model.style.background != .none {
                             InspectorClearButton(help: "Remove background") {
                                 model.style.background = .none
@@ -2874,22 +2878,7 @@ private struct StudioInspector: View {
                     backgroundControls
                 }
 
-                InspectorDisclosureSection(
-                    title: "Layout",
-                    summary: usesDefaultLayout ? nil : "Custom",
-                    isExpanded: expansionBinding(for: .layout),
-                    accessory: {
-                        if !usesDefaultLayout {
-                            InspectorResetButton(help: "Reset layout") {
-                                model.style.padding = 0.06
-                                model.style.cornerRadius = 0.02
-                                model.style.shadow = 0.45
-                            }
-                        }
-                    }
-                ) {
-                    layoutControls
-                }
+                InspectorGroupBreak()
 
                 InspectorDisclosureSection(
                     title: "Zoom & Clicks",
@@ -3009,16 +2998,6 @@ private struct StudioInspector: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(.bottom, PreviewPeekTab.pillHeight * 1.1)
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                RecordingStudioStylePresetBar(model: model, presetStore: stylePresetStore)
-
-                Rectangle()
-                    .fill(Color(nsColor: .separatorColor).opacity(0.45))
-                    .frame(height: 0.5)
-            }
-            .background(sidebarBackground)
-        }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .all)
         .background(sidebarBackground)
@@ -3040,70 +3019,48 @@ private struct StudioInspector: View {
 
     // MARK: Background
 
+    /// The fill as one row whose picker previews a fill on the video while
+    /// the pointer rests on it, then the canvas shape, then how the video
+    /// sits on the background.
     private var backgroundControls: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Aspect ratio")
+        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            InspectorBackgroundRow(
+                style: $model.style.background,
+                wallpaperStore: wallpaperStore,
+                onPickWallpaper: pickWallpaper,
+                onPreview: { model.previewBackground($0, isHovering: $1) },
+                onEndPreview: { model.previewBackground = nil }
+            )
 
+            InspectorSegmented(
+                options: ExportAspectPreset.allCases,
+                isSelected: { $0 == model.exportAspect },
+                onTap: { model.exportAspect = $0 },
+                label: { preset in
+                    Text(preset.title)
+                        .font(.inspectorSegment)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .help(preset.help)
+                }
+            )
+
+            if model.exportAspect != .original {
                 InspectorSegmented(
-                    options: ExportAspectPreset.allCases,
-                    isSelected: { $0 == model.exportAspect },
-                    onTap: { model.exportAspect = $0 },
-                    label: { preset in
-                        Text(preset.title)
+                    options: ExportAspectContentMode.allCases,
+                    isSelected: { $0 == model.exportAspectMode },
+                    onTap: { model.exportAspectMode = $0 },
+                    label: { mode in
+                        Text(mode.title)
                             .font(.inspectorSegment)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                            .help(preset.help)
+                            .help(mode.help)
                     }
                 )
-
-                if model.exportAspect != .original {
-                    InspectorSegmented(
-                        options: ExportAspectContentMode.allCases,
-                        isSelected: { $0 == model.exportAspectMode },
-                        onTap: { model.exportAspectMode = $0 },
-                        label: { mode in
-                            Text(mode.title)
-                                .font(.inspectorSegment)
-                                .help(mode.help)
-                        }
-                    )
-                }
             }
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Fill")
+            // Padding, corners and shadow shape the video on the background.
+            InspectorGroupLabel("Video")
 
-                InspectorBackgroundFillPicker(
-                    style: $model.style.background,
-                    rememberedWallpaper: nil,
-                    wallpaperStore: wallpaperStore,
-                    onEditorAction: {},
-                    onPickWallpaper: pickWallpaper
-                )
-            }
-        }
-    }
-
-    private func pickWallpaper() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.title = "Choose Video Background Wallpaper"
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            wallpaperStore.addRecentWallpaper(url)
-            model.style.background = .customWallpaper(AnnotationCustomWallpaper(url: url))
-        }
-    }
-
-    // MARK: Layout
-
-    private var layoutControls: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
             InspectorFieldPair {
                 InspectorSlider(
                     "Padding",
@@ -3126,6 +3083,24 @@ private struct StudioInspector: View {
                 range: 0...1,
                 format: .percent()
             )
+            // The shadow falls on the background; with none there is
+            // nothing for it to fall on, and neither preview nor export draws one.
+            .disabled(model.style.background == .none)
+            .opacity(model.style.background == .none ? 0.4 : 1)
+        }
+    }
+
+    private func pickWallpaper() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.title = "Choose Video Background Wallpaper"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            wallpaperStore.addRecentWallpaper(url)
+            model.style.background = .customWallpaper(AnnotationCustomWallpaper(url: url))
         }
     }
 
@@ -3802,26 +3777,6 @@ private struct StudioInspector: View {
 
 /// Collapsed-header readouts for the Studio inspector.
 private enum StudioInspectorSummary {
-    static func background(
-        _ style: AnnotationBackgroundStyle,
-        aspect: ExportAspectPreset
-    ) -> String? {
-        let fill: String?
-        switch style {
-        case .none:
-            fill = nil
-        case .solid(let color):
-            fill = color.title
-        case .gradient(let gradient):
-            fill = gradient.title
-        case .customWallpaper(let wallpaper):
-            fill = wallpaper.title
-        }
-        let ratio = aspect == .original ? nil : aspect.title
-        let parts = [fill, ratio].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
     static func keystrokePlacement(_ placement: RecordingKeystrokePlacement) -> String {
         switch placement {
         case .topLeft: "Top left"

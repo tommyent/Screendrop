@@ -587,6 +587,20 @@ final class RecordingStudioModel {
 
     // MARK: - Style presets
 
+    /// A fill shown on the canvas while the pointer rests on it in the
+    /// picker. Never saved or exported; picking it writes `style`.
+    var previewBackground: AnnotationBackgroundStyle?
+
+    /// Shows or clears a hovered fill. Leaving one fill can arrive after
+    /// entering the next, so only the fill being left is cleared.
+    func previewBackground(_ background: AnnotationBackgroundStyle, isHovering: Bool) {
+        if isHovering {
+            previewBackground = background
+        } else if previewBackground == background {
+            previewBackground = nil
+        }
+    }
+
     func applyStylePreset(_ preset: RecordingStudioStylePreset) {
         style = preset.value
         appliedStylePresetID = preset.id
