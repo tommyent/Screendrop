@@ -187,6 +187,8 @@ nonisolated struct AnnotationCanvasViewport {
             : min(max(origin.x, layout.viewportSize.width - size.width), 0)
         origin.y = size.height <= layout.fitHeight
             ? layout.topReserve + (layout.fitHeight - size.height) / 2
-            : min(max(origin.y, layout.viewportSize.height - size.height), 0)
+            // Scrolled to its top, the image starts below the dock; lower
+            // down, it passes under it.
+            : min(max(origin.y, layout.viewportSize.height - size.height), layout.topReserve)
     }
 }
