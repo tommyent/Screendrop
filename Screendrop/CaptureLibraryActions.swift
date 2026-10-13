@@ -43,6 +43,8 @@ extension CaptureLibraryModel {
             }
         case .export:
             export(selected)
+        case .share:
+            LibrarySharing.show(selected.map(\.fileURL))
         case .reveal:
             NSWorkspace.shared.activateFileViewerSelecting(selected.map(\.ownedURL))
         case .trash:
@@ -350,5 +352,16 @@ struct CaptureNameField: View {
 
     private var ownsSession: Bool {
         model.renameSession?.id == id && model.renameSession?.location == location
+    }
+}
+
+/// The system Share sheet for Library items, opened from a right-click
+/// menu, so it appears beside the pointer.
+enum LibrarySharing {
+    static func show(_ items: [URL]) {
+        guard !items.isEmpty, let window = NSApp.keyWindow, let view = window.contentView else { return }
+        let point = view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        NSSharingServicePicker(items: items)
+            .show(relativeTo: NSRect(origin: point, size: .zero), of: view, preferredEdge: .minY)
     }
 }
