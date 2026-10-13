@@ -438,7 +438,7 @@ struct LibraryCellContent: View {
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
                 .accessibilityElement(children: isRenaming(item) ? .contain : .ignore)
-                .accessibilityLabel("\(item.title), \(item.kindTitle), \(item.dimensions)"
+                .accessibilityLabel("\(item.title), \(item.kindTitle), \(item.subtitle)"
                     + (item.isVideo ? ", \(item.durationText)" : "")
                     + (item.cloudURL != nil ? ", shared" : "")
                     + (item.tags.isEmpty ? "" : ", tags: \(item.tags.joined(separator: ", "))"))
@@ -476,8 +476,7 @@ struct LibraryCellContent: View {
                 }
                 if item.hasDraft { Image(systemName: "circle.fill").font(.system(size: 6)).foregroundStyle(.orange) }
             }
-            // The dimensions for every capture; a video's pill shows its length.
-            Text(item.dimensions).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(item.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
