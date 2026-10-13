@@ -111,7 +111,7 @@ struct AnnotationCanvas: View {
                 sceneStage(
                     viewportSize: proxy.size,
                     canvasFrame: displayLayout.canvasFrame,
-                    backgroundStyle: model.backgroundSettings.style,
+                    backgroundStyle: model.displayedBackgroundStyle,
                     showsBackground: model.backgroundSettings.isEnabled,
                     screenshotGeometry: screenshotGeometry,
                     allowedBounds: allowedBounds,

@@ -20,71 +20,98 @@ private enum AnnotationBackgroundFillLibrary: CaseIterable, Hashable {
     }
 }
 
+/// The Background section (upstream v0.35's Frame): the fill as one row
+/// that opens the full picker beside the inspector, then the canvas shape,
+/// padding, corners, shadow and alignment.
 struct AnnotationBackgroundInspector: View {
     @Binding var settings: AnnotationBackgroundSettings
     @Bindable var wallpaperStore: AnnotationWallpaperStore
     let onEditorAction: () -> Void
     let onPickWallpaper: () -> Void
+    let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
+    let onEndPreview: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.groupSpacing) {
-            InspectorBackgroundFillPicker(
+        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            InspectorBackgroundRow(
                 style: $settings.style,
                 rememberedWallpaper: settings.customWallpaper,
                 wallpaperStore: wallpaperStore,
                 onEditorAction: onEditorAction,
                 onPickWallpaper: onPickWallpaper,
-                onSelectWallpaper: { settings.customWallpaper = $0 }
+                onSelectWallpaper: { settings.customWallpaper = $0 },
+                onPreview: onPreview,
+                onEndPreview: onEndPreview
             )
 
-            innerDivider
-
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Layout")
-
-                InspectorFieldPair {
-                    InspectorSlider(
-                        "Padding",
-                        value: $settings.padding,
-                        range: 0.04...0.45,
-                        format: .percent()
-                    )
-                } trailing: {
-                    InspectorSlider(
-                        "Corners",
-                        value: $settings.cornerRadius,
-                        range: 0...0.12,
-                        format: .percent()
-                    )
-                }
+            if !settings.requiresCanvasLayout {
+                InspectorHint("Pick a background to frame the screenshot.")
             }
 
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Shadow")
+            frameControls
+                // Without a canvas there is nothing to shape, pad, round or
+                // shadow. Dimmed rather than hidden, so picking a fill
+                // doesn't shift the list.
+                .disabled(!settings.requiresCanvasLayout)
+                .opacity(settings.requiresCanvasLayout ? 1 : 0.4)
+        }
+    }
 
+    private var frameControls: some View {
+        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            InspectorSegmented(
+                options: AnnotationBackgroundAspectRatio.allCases,
+                isSelected: { $0 == settings.aspectRatio },
+                onTap: {
+                    onEditorAction()
+                    settings.aspectRatio = $0
+                },
+                label: { ratio in
+                    Text(ratio.title)
+                        .font(.inspectorSegment)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            )
+
+            InspectorFieldPair {
                 InspectorSlider(
-                    "Amount",
-                    value: $settings.shadow,
-                    range: 0...1,
+                    "Padding",
+                    value: $settings.padding,
+                    range: 0.04...0.45,
                     format: .percent()
                 )
-
-                InspectorSegmented(
-                    options: AnnotationShadowStyle.allCases,
-                    isSelected: { $0 == settings.shadowStyle },
-                    onTap: {
-                        onEditorAction()
-                        settings.shadowStyle = $0
-                    },
-                    label: { style in
-                        Text(style.title)
-                            .font(.inspectorSegment)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
+            } trailing: {
+                InspectorSlider(
+                    "Corners",
+                    value: $settings.cornerRadius,
+                    range: 0...0.12,
+                    format: .percent()
                 )
-                .opacity(settings.shadow > 0 ? 1 : 0.45)
             }
+
+            InspectorSlider(
+                "Shadow",
+                value: $settings.shadow,
+                range: 0...1,
+                format: .percent()
+            )
+
+            InspectorSegmented(
+                options: AnnotationShadowStyle.allCases,
+                isSelected: { $0 == settings.shadowStyle },
+                onTap: {
+                    onEditorAction()
+                    settings.shadowStyle = $0
+                },
+                label: { style in
+                    Text(style.title)
+                        .font(.inspectorSegment)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            )
+            .opacity(settings.shadow > 0 ? 1 : 0.45)
 
             InspectorRow("Alignment") {
                 AlignmentPositionPicker(
@@ -94,33 +121,7 @@ struct AnnotationBackgroundInspector: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .trailing)
             }
-
-            VStack(alignment: .leading, spacing: InspectorMetrics.groupLabelSpacing) {
-                InspectorGroupLabel("Aspect ratio")
-
-                InspectorSegmented(
-                    options: AnnotationBackgroundAspectRatio.allCases,
-                    isSelected: { $0 == settings.aspectRatio },
-                    onTap: {
-                        onEditorAction()
-                        settings.aspectRatio = $0
-                    },
-                    label: { ratio in
-                        Text(ratio.title)
-                            .font(.inspectorSegment)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                )
-            }
         }
-    }
-
-    private var innerDivider: some View {
-        Rectangle()
-            .fill(Color(nsColor: .separatorColor).opacity(0.4))
-            .frame(height: 0.5)
-            .padding(.vertical, 2)
     }
 }
 
@@ -163,6 +164,90 @@ struct BackgroundSwatch: View {
     }
 }
 
+/// The background as one row: its swatch and name. The full picker opens
+/// beside the inspector, over the canvas, so hovering a fill shows it on the
+/// screenshot right there.
+struct InspectorBackgroundRow: View {
+    @Binding var style: AnnotationBackgroundStyle
+    var rememberedWallpaper: AnnotationCustomWallpaper? = nil
+    @Bindable var wallpaperStore: AnnotationWallpaperStore
+    var onEditorAction: () -> Void = {}
+    let onPickWallpaper: () -> Void
+    var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
+    /// A fill the pointer enters (true) or leaves (false).
+    let onPreview: (AnnotationBackgroundStyle, Bool) -> Void
+    /// The picker closed: drop any preview.
+    let onEndPreview: () -> Void
+
+    @State private var isPickerPresented = false
+    @State private var isHovering = false
+
+    var body: some View {
+        Button {
+            onEditorAction()
+            isPickerPresented = true
+        } label: {
+            HStack(spacing: 8) {
+                BackgroundSwatch(style: style)
+                    .frame(width: 26, height: 18)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                    }
+
+                Text(style.displayTitle)
+                    .font(.inspectorValue)
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.leading, 7)
+            .padding(.trailing, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .inspectorField()
+            .overlay {
+                if isHovering || isPickerPresented {
+                    RoundedRectangle(cornerRadius: InspectorMetrics.fieldRadius, style: .continuous)
+                        .fill(InspectorControlPalette.hoverFill)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Choose a background")
+        .accessibilityLabel("Background")
+        .accessibilityValue(style.displayTitle)
+        .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
+            // No title: the row it hangs off already says Background, and
+            // the picker's own No Background tile replaces upstream's None.
+            InspectorBackgroundFillPicker(
+                style: $style,
+                rememberedWallpaper: rememberedWallpaper,
+                wallpaperStore: wallpaperStore,
+                onEditorAction: onEditorAction,
+                onPickWallpaper: {
+                    isPickerPresented = false
+                    onPickWallpaper()
+                },
+                onSelectWallpaper: onSelectWallpaper,
+                onPreview: onPreview
+            )
+            .padding(14)
+            .frame(width: 320)
+            .background(Palette.panel)
+            .presentationBackground(Palette.panel)
+            .onDisappear(perform: onEndPreview)
+        }
+    }
+}
+
 /// The background fill browser shared by the annotator and Studio: a
 /// Color / Gradient / Wallpaper library switch over tile grids, with recent
 /// wallpapers, built-in packs and an add tile.
@@ -175,6 +260,9 @@ struct InspectorBackgroundFillPicker: View {
     let onEditorAction: () -> Void
     let onPickWallpaper: () -> Void
     var onSelectWallpaper: (AnnotationCustomWallpaper) -> Void = { _ in }
+    /// Called as the pointer enters (true) and leaves (false) a fill, so a
+    /// host can show it before it is picked.
+    var onPreview: ((AnnotationBackgroundStyle, Bool) -> Void)? = nil
 
     private let swatchColumns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 8)
     private static let maxVisibleRecentWallpapers = 4
@@ -250,6 +338,7 @@ struct InspectorBackgroundFillPicker: View {
                     } content: {
                         Rectangle().fill(color.color)
                     }
+                    .onHover { onPreview?(.solid(color), $0) }
                 }
                 InspectorCustomBackgroundColorTile(style: $style, onSelect: onEditorAction)
             }
@@ -267,6 +356,7 @@ struct InspectorBackgroundFillPicker: View {
                             endPoint: gradient.endPoint
                         ))
                     }
+                    .onHover { onPreview?(.gradient(gradient), $0) }
                 }
             }
 
@@ -393,6 +483,7 @@ struct InspectorBackgroundFillPicker: View {
             } content: {
                 AnnotationCustomWallpaperPreview(wallpaper: wallpaper)
             }
+            .onHover { onPreview?(.customWallpaper(wallpaper), $0) }
         }
     }
 

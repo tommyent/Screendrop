@@ -70,11 +70,22 @@ struct AnnotationEditorInspector: View {
 
                 InspectorSectionDivider()
 
-                InspectorDisclosureSection(
-                    title: "Background",
-                    summary: AnnotationInspectorSummary.background(model.backgroundSettings),
-                    isExpanded: expansionBinding(for: .background),
+                InspectorSection(
+                    "Background",
                     accessory: {
+                        if !usesDefaultFrame {
+                            InspectorResetButton(help: "Reset padding, corners, shadow and alignment") {
+                                onEditorAction()
+                                withAnimation(sectionAnimation) {
+                                    let defaults = AnnotationBackgroundSettings()
+                                    model.backgroundSettings.padding = defaults.padding
+                                    model.backgroundSettings.cornerRadius = defaults.cornerRadius
+                                    model.backgroundSettings.shadow = defaults.shadow
+                                    model.backgroundSettings.shadowStyle = defaults.shadowStyle
+                                    model.backgroundSettings.alignment = defaults.alignment
+                                }
+                            }
+                        }
                         if model.backgroundSettings.style != .none {
                             InspectorClearButton(help: "Remove background") {
                                 onEditorAction()
@@ -90,7 +101,9 @@ struct AnnotationEditorInspector: View {
                         ),
                         wallpaperStore: wallpaperStore,
                         onEditorAction: onEditorAction,
-                        onPickWallpaper: onPickWallpaper
+                        onPickWallpaper: onPickWallpaper,
+                        onPreview: { model.previewBackground($0, isHovering: $1) },
+                        onEndPreview: { model.previewBackground = nil }
                     )
                 }
 
@@ -225,6 +238,16 @@ struct AnnotationEditorInspector: View {
     }
 
     private var sidebarBackground: Color { WorkspaceChrome.background }
+
+    private var usesDefaultFrame: Bool {
+        let settings = model.backgroundSettings
+        let defaults = AnnotationBackgroundSettings()
+        return settings.padding == defaults.padding
+            && settings.cornerRadius == defaults.cornerRadius
+            && settings.shadow == defaults.shadow
+            && settings.shadowStyle == defaults.shadowStyle
+            && settings.alignment == defaults.alignment
+    }
 
     private var sectionAnimation: Animation? {
         accessibilityReduceMotion ? nil : .snappy(duration: 0.18)
@@ -411,22 +434,6 @@ struct AnnotationEditorInspector: View {
 /// One-line readouts for collapsed section headers. `nil` means the section
 /// has nothing active worth announcing.
 private enum AnnotationInspectorSummary {
-    static func background(_ settings: AnnotationBackgroundSettings) -> String? {
-        let fill: String
-        switch settings.style {
-        case .none:
-            return nil
-        case .solid(let color):
-            fill = color.title
-        case .gradient(let gradient):
-            fill = gradient.title
-        case .customWallpaper(let wallpaper):
-            fill = wallpaper.title
-        }
-        guard settings.aspectRatio != .auto else { return fill }
-        return "\(fill) · \(settings.aspectRatio.title)"
-    }
-
     static func border(_ settings: AnnotationScreenshotBorderSettings) -> String? {
         guard settings.isEnabled else { return nil }
         let thickness = InspectorValueFormat.percent(fractionDigits: 1).displayString(for: settings.thickness)
