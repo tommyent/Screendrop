@@ -495,7 +495,7 @@ struct LibraryCellContent: View {
     }
 
     private func thumbnail(_ item: CaptureLibraryItem) -> some View {
-        CaptureLibraryThumbnail(item: item)
+        CaptureLibraryThumbnail(item: item, showsTopOfTall: true)
             // Concentric inside the card: its radius minus its 6 pt padding.
             .clipShape(.rect(cornerRadius: DS.Radius.m, style: .continuous))
             .overlay {
@@ -524,6 +524,10 @@ struct LibraryCellContent: View {
                 // Reused cells keep @State; the id gives each capture its own tick.
                 LibraryCloudBadge(item: item)
                     .id(item.id)
+            }
+            // The free corner: tag top left, cloud top right, a video's length bottom right.
+            .overlay(alignment: .bottomLeading) {
+                if item.isTall { TallCapture.badge.padding(6) }
             }
             .overlay(alignment: .bottomTrailing) {
                 if item.isVideo {
