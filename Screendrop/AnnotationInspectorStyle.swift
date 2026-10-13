@@ -146,51 +146,191 @@ extension View {
 
 // MARK: - Section
 
-/// A section with consistent padding. The title is optional: Tools and Style
-/// have none, so they don't spend a line on a label. A trailing accessory
-/// (reset, add, info) sits opposite a title.
+/// One inspector section (upstream v0.35's): a title row and a body,
+/// separated from the next section by whitespace alone.
+///
+/// A section folds in one of two ways. A feature with an on/off state passes
+/// `isOn`; its switch sits at the end of the title row and turning it off
+/// folds the body away. A heavy group with no state of its own passes
+/// `isExpanded` and gets a chevron instead. Either way a folded section can
+/// show a one-line `summary` so the setup can be scanned without opening it.
+/// A section without a title (Tools, Style) draws no header row and is
+/// named for VoiceOver by `accessibilityLabel` instead.
 struct InspectorSection<Content: View, Accessory: View>: View {
     let title: String?
     /// Spoken name for a section that draws no title. Titled sections already
     /// expose their title, so this is ignored when `title` is set.
     var accessibilityLabel: String? = nil
+    var summary: String? = nil
+    var isOn: Binding<Bool>? = nil
+    var toggleTitle: String = ""
+    var isExpanded: Binding<Bool>? = nil
     @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
 
+    @State private var isHeaderHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var showsContent: Bool {
+        (isOn?.wrappedValue ?? true) && (isExpanded?.wrappedValue ?? true)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: title == nil ? 0 : InspectorMetrics.headerSpacing) {
+        VStack(alignment: .leading, spacing: 0) {
             if let title {
-                HStack(spacing: 6) {
-                    Text(title)
-                        .font(.inspectorSectionHeader)
-                        .foregroundStyle(InspectorControlPalette.label)
-
-                    Spacer(minLength: 0)
-
-                    accessory()
-                }
+                header(title)
             }
 
-            // Its own stack, so rows get the row gap rather than the header
-            // gap, or none in a section without a title.
-            VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                content()
+            if showsContent {
+                // Its own stack, so rows get the row gap rather than the
+                // header gap.
+                VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+                    content()
+                }
+                .padding(.top, title == nil ? 0 : InspectorMetrics.headerSpacing)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, InspectorMetrics.horizontalPadding)
-        .padding(.vertical, InspectorMetrics.sectionVerticalPadding)
+        .padding(.vertical, InspectorMetrics.sectionVerticalPadding / 2 + 3)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The folding body never paints over the next section mid-fold.
+        .clipped()
         .inspectorUntitledLabel(title == nil ? accessibilityLabel : nil)
+    }
+
+    private func header(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Button(action: toggleExpansion) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.inspectorSectionHeader)
+                        .foregroundStyle(titleColor)
+                        .fixedSize()
+
+                    if let summary, !showsContent {
+                        Text(summary)
+                            .font(.inspectorLabel)
+                            // The fork's AA-contrast label, not upstream's
+                            // tertiary ink (about 2.4:1 on white).
+                            .foregroundStyle(InspectorControlPalette.label)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .transition(.opacity)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isExpanded == nil)
+            .accessibilityLabel(title)
+            .accessibilityValue(summary ?? "")
+            .accessibilityAddTraits(.isHeader)
+
+            accessory()
+
+            if let isOn {
+                InspectorToggle(
+                    toggleTitle.isEmpty ? title : toggleTitle,
+                    isOn: Binding(
+                        get: { isOn.wrappedValue },
+                        set: { value in
+                            withAnimation(reduceMotion ? nil : .fold) { isOn.wrappedValue = value }
+                        }
+                    )
+                )
+            }
+
+            if let isExpanded {
+                Button(action: toggleExpansion) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Palette.secondaryLabel)
+                        .frame(width: 18, height: 24)
+                        .rotationEffect(.degrees(isExpanded.wrappedValue ? 0 : -90))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .accessibilityLabel(isExpanded.wrappedValue ? "Collapse \(title)" : "Expand \(title)")
+            }
+        }
+        .onHover { isHeaderHovering = $0 }
+    }
+
+    private var titleColor: Color {
+        if showsContent || (isExpanded != nil && isHeaderHovering) {
+            return Palette.label.opacity(0.95)
+        }
+        return Palette.secondaryLabel
+    }
+
+    private func toggleExpansion() {
+        guard let isExpanded else { return }
+        withAnimation(reduceMotion ? nil : .fold) {
+            isExpanded.wrappedValue.toggle()
+        }
     }
 }
 
 extension InspectorSection where Accessory == EmptyView {
-    init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
-        self.init(title: title, accessory: { EmptyView() }, content: content)
+    init(
+        _ title: String,
+        summary: String? = nil,
+        isOn: Binding<Bool>? = nil,
+        toggleTitle: String = "",
+        isExpanded: Binding<Bool>? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.init(
+            title: title,
+            summary: summary,
+            isOn: isOn,
+            toggleTitle: toggleTitle,
+            isExpanded: isExpanded,
+            accessory: { EmptyView() },
+            content: content
+        )
     }
 
     init(accessibilityLabel: String, @ViewBuilder content: @escaping () -> Content) {
         self.init(title: nil, accessibilityLabel: accessibilityLabel, accessory: { EmptyView() }, content: content)
+    }
+}
+
+extension InspectorSection {
+    init(
+        _ title: String,
+        summary: String? = nil,
+        isOn: Binding<Bool>? = nil,
+        toggleTitle: String = "",
+        isExpanded: Binding<Bool>? = nil,
+        @ViewBuilder accessory: @escaping () -> Accessory,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.init(
+            title: title,
+            summary: summary,
+            isOn: isOn,
+            toggleTitle: toggleTitle,
+            isExpanded: isExpanded,
+            accessory: accessory,
+            content: content
+        )
+    }
+}
+
+/// The break between groups of related sections: more air than separates
+/// sections within a group, and no rule.
+struct InspectorGroupBreak: View {
+    var body: some View {
+        Color.clear
+            .frame(height: 16)
+            .accessibilityHidden(true)
     }
 }
 
@@ -345,28 +485,41 @@ struct InspectorResetButton: View {
     }
 }
 
-/// The inspector's on/off switch for section headers. A compact capsule that
-/// uses the panel's track and border tokens when off and the accent when on,
-/// so it sits alongside the header's icon buttons instead of AppKit chrome.
+/// The app's one on/off switch (upstream v0.35's): a track in the system
+/// accent when on, with a knob that springs across. Side panels use the
+/// regular size; `small` is for tight spots.
 struct InspectorToggle: View {
+    enum Size {
+        case small
+        case regular
+
+        var track: CGSize {
+            switch self {
+            case .small: CGSize(width: 26, height: 15)
+            case .regular: CGSize(width: 34, height: 20)
+            }
+        }
+    }
+
     let title: String
     @Binding var isOn: Bool
+    var size: Size = .regular
 
-    private static let trackSize = CGSize(width: 26, height: 15)
     private static let knobInset: CGFloat = 2
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isHovering = false
 
-    init(_ title: String, isOn: Binding<Bool>) {
+    init(_ title: String, isOn: Binding<Bool>, size: Size = .regular) {
         self.title = title
         self._isOn = isOn
+        self.size = size
     }
 
     var body: some View {
         Button {
-            withAnimation(accessibilityReduceMotion ? nil : .snappy(duration: 0.16)) {
+            withAnimation(accessibilityReduceMotion ? nil : .morphQuick) {
                 isOn.toggle()
             }
         } label: {
@@ -380,12 +533,12 @@ struct InspectorToggle: View {
                 }
                 .overlay(alignment: isOn ? .trailing : .leading) {
                     Circle()
-                        .fill(Color.white)
-                        .shadow(color: .black.opacity(0.2), radius: 1, y: 0.5)
+                        .fill(isOn ? Palette.onAccent : Color.white)
+                        .shadow(color: .black.opacity(isOn ? 0 : 0.2), radius: 1, y: 0.5)
                         .padding(Self.knobInset)
                 }
-                .frame(width: Self.trackSize.width, height: Self.trackSize.height)
-                .frame(height: 24)
+                .frame(width: size.track.width, height: size.track.height)
+                .frame(height: max(24, size.track.height))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -400,7 +553,7 @@ struct InspectorToggle: View {
 
     private var trackFill: Color {
         if isOn {
-            return isHovering && isEnabled ? Color.accentColor.opacity(0.88) : Color.accentColor
+            return isHovering && isEnabled ? Palette.accent.opacity(0.82) : Palette.accent
         }
         return Color.primary.opacity(isHovering && isEnabled ? 0.2 : 0.14)
     }
@@ -608,9 +761,10 @@ struct InspectorSectionDivider: View {
 
 // MARK: - Segmented control
 
-/// One unified segmented control used for every segmented picker in the panel.
-/// It shares the slider's height, radius, neutral track and value fill so choice
-/// controls and numeric controls read as one inspector system.
+/// One segmented control for every choice in the panel (upstream v0.35's):
+/// a quiet capsule track with the selected option raised as a glass pill.
+/// The pill jumps to the new option rather than sliding. It keeps the
+/// inspector's one control height so it lines up with sliders and fields.
 struct InspectorSegmented<Option: Hashable, Label: View>: View {
     let options: [Option]
     let isSelected: (Option) -> Bool
@@ -620,30 +774,24 @@ struct InspectorSegmented<Option: Hashable, Label: View>: View {
     var height: CGFloat = InspectorMetrics.sliderHeight
     var equalWidths: Bool = true
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredOption: Option?
 
-    var body: some View {
-        let shape = RoundedRectangle(
-            cornerRadius: InspectorMetrics.sliderRadius,
-            style: .continuous
-        )
+    private static var inset: CGFloat { 3 }
 
+    var body: some View {
         HStack(spacing: 0) {
             ForEach(options, id: \.self) { option in
                 segment(for: option)
             }
         }
-        .padding(InspectorMetrics.controlInset)
+        .padding(Self.inset)
         .frame(height: height)
-        .background(shape.fill(trackFill))
-        .clipShape(shape)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
     }
 
     private func segment(for option: Option) -> some View {
         let selected = isSelected(option)
         let isHovering = hoveredOption == option
-        let segmentRadius = InspectorMetrics.sliderRadius - InspectorMetrics.controlInset
 
         return Button {
             onTap(option)
@@ -652,19 +800,17 @@ struct InspectorSegmented<Option: Hashable, Label: View>: View {
                 .frame(maxWidth: equalWidths ? .infinity : nil)
                 .frame(maxHeight: .infinity)
                 .padding(.horizontal, equalWidths ? 0 : 11)
-                .contentShape(RoundedRectangle(cornerRadius: segmentRadius, style: .continuous))
+                .background {
+                    if isHovering, !selected {
+                        Capsule().fill(InspectorControlPalette.hoverFill)
+                    }
+                }
+                .contentShape(Capsule())
+                .glassEffect(selected ? .regular.interactive() : .identity, in: Capsule())
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
         .foregroundStyle(selected ? InspectorControlPalette.selectedForeground : Color.secondary)
-        .background {
-            RoundedRectangle(cornerRadius: segmentRadius, style: .continuous)
-                .fill(segmentFill(isSelected: selected, isHovering: isHovering))
-                .shadow(
-                    color: selected ? InspectorControlPalette.selectedChipShadow(for: colorScheme) : .clear,
-                    radius: 1,
-                    y: 0.5
-                )
-        }
         .onHover { isHovering in
             if isHovering {
                 hoveredOption = option
@@ -673,17 +819,6 @@ struct InspectorSegmented<Option: Hashable, Label: View>: View {
             }
         }
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private var trackFill: Color {
-        InspectorControlPalette.trackFill(for: colorScheme)
-    }
-
-    private func segmentFill(isSelected: Bool, isHovering: Bool) -> Color {
-        if isSelected {
-            return InspectorControlPalette.selectedChipFill(for: colorScheme)
-        }
-        return isHovering ? InspectorControlPalette.hoverFill : .clear
     }
 }
 
@@ -762,5 +897,66 @@ struct InspectorCustomBackgroundColorTile: View {
                         .foregroundStyle(.primary)
                 }
         }
+    }
+}
+
+// MARK: - Popovers
+
+/// The layout every option popover shares (upstream v0.35's): a title, an
+/// optional line of explanation, the controls, and Cancel beside one inked
+/// confirm button. Popovers paint the panel surface so inspector fills keep
+/// reading as controls over the popover's vibrancy.
+struct InspectorPopover<Content: View>: View {
+    let title: String
+    var message: String? = nil
+    let confirmTitle: String
+    var isConfirmDisabled = false
+    var width: CGFloat = 280
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: InspectorMetrics.headerSpacing + 2) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.dsHeadline)
+                    .foregroundStyle(Palette.label)
+                if let message {
+                    Text(message)
+                        .font(.inspectorLabel)
+                        .foregroundStyle(InspectorControlPalette.label)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            content()
+
+            GlassEffectContainer(spacing: GlassMetrics.containerSpacing) {
+                HStack(spacing: GlassMetrics.gap) {
+                    Spacer(minLength: 0)
+                    GlassCapsuleButton(title: "Cancel", action: onCancel)
+                        .keyboardShortcut(.cancelAction)
+                    GlassCapsuleButton(title: confirmTitle, isProminent: true, action: onConfirm)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(isConfirmDisabled)
+                }
+            }
+            .padding(.top, 4)
+        }
+        .padding(Space.l + 2)
+        .frame(width: width)
+        .presentationBackground(Palette.panel)
+    }
+}
+
+extension View {
+    /// A plain text field drawn as an inspector field: filled, borderless,
+    /// at the standard control height.
+    func inspectorTextField() -> some View {
+        textFieldStyle(.plain)
+            .font(.inspectorValue)
+            .padding(.horizontal, 10)
+            .inspectorField()
     }
 }
