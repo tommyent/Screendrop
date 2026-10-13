@@ -381,6 +381,10 @@ final class ScreenshotHistoryStore {
         return items[index].editorURL
     }
 
+    func item(for mediaURL: URL) -> ScreenshotHistoryItem? {
+        index(for: mediaURL).map { items[$0] }
+    }
+
     /// Recording media filenames change when the render cache changes;
     /// their owning package remains the same History identity.
     private func index(for mediaURL: URL) -> Int? {
