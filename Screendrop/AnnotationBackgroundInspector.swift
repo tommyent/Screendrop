@@ -70,6 +70,9 @@ struct AnnotationBackgroundInspector: View {
                 }
             )
 
+            // Padding, corners and shadow shape the screenshot on the background.
+            InspectorGroupLabel("Screenshot")
+
             InspectorFieldPair {
                 InspectorSlider(
                     "Padding",
