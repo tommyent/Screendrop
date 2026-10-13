@@ -44,7 +44,12 @@ struct ScreendropApp: App {
             AnnotationEditorWindow(url: value)
         }
         .commands {
-            CommandGroup(after: .saveItem) { AnnotationEditorSaveAsCommand() }
+            // After New, not Save: this app's File menu drops the .saveItem
+            // group (after or replacing), so Save As… never showed there.
+            CommandGroup(after: .newItem) {
+                AnnotationEditorSaveCommand()
+                AnnotationEditorSaveAsCommand()
+            }
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 1100, height: 760)

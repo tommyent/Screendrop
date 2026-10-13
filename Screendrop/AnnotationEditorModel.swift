@@ -30,6 +30,10 @@ final class AnnotationEditorModel {
     private(set) var saveAsRequest = 0
 
     func requestSaveAs() { saveAsRequest += 1 }
+    /// Bumped by File › Save (⌘S from the menu); the editor window saves.
+    private(set) var saveRequest = 0
+
+    func requestSave() { saveRequest += 1 }
 
     /// The display/history image being edited. Used to match the preview item
     /// and to locate the sidecar document.
@@ -242,6 +246,7 @@ final class AnnotationEditorModel {
         historyIndex = 0
         inspectorEditingDepth = 0
         croppedInSession = false
+        lastSaveSucceeded = nil
 
         wallpaperCacheLease = AnnotationBackgroundRenderer.beginWallpaperUse()
         removeOwnedCropFiles()
@@ -366,6 +371,8 @@ final class AnnotationEditorModel {
     func commitEdits() async throws -> URL? {
         guard !isCommitting else { throw CocoaError(.userCancelled) }
         guard let sourceURL = self.sourceURL else { return nil }
+        var saved = false
+        defer { lastSaveSucceeded = saved }
         try validateEditDocument()
         isCommitting = true
         defer { isCommitting = false }
@@ -386,6 +393,7 @@ final class AnnotationEditorModel {
         // Nothing drawn and nothing previously saved: there is no work to lose.
         guard hasContent || hadDocument else {
             self.markSaved()
+            saved = true
             return nil
         }
 
@@ -430,6 +438,7 @@ final class AnnotationEditorModel {
         committedSnapshot.baseImageURL = self.baseImageURL
         savedSnapshot = committedSnapshot
         removeOwnedCropFiles(keepingHistory: true)
+        saved = true
         return resultURL
     }
 
@@ -469,6 +478,18 @@ final class AnnotationEditorModel {
         _ = revision
         guard sourceURL != nil, let savedSnapshot else { return false }
         return currentSnapshot() != savedSnapshot
+    }
+
+    /// Whether the last commit in this window worked; nil before the first.
+    private(set) var lastSaveSucceeded: Bool?
+
+    /// The window subtitle. Nothing on open, since load's default style is
+    /// baselined, not written; then Edited, Saving…, Saved (until the next
+    /// edit) or Not Saved (until a save works or nothing is left unsaved).
+    var saveStatus: String {
+        if isCommitting { return "Saving…" }
+        guard hasUnsavedChanges else { return lastSaveSucceeded == true ? "Saved" : "" }
+        return lastSaveSucceeded == false ? "Not Saved" : "Edited"
     }
 
     /// Whether a save nobody asked for may run now. Committing locks the

@@ -20,8 +20,13 @@ struct AnnotationEditorWindow: View {
     @State private var isFinishing = false
     @State private var isSaving = false
     @State private var isUploading = false
+    /// No close-button dot: Apple's HIG says that with autosave on, a dot
+    /// implies people must act to keep their work. The subtitle says it instead.
     @State private var closeGuard = EditorCloseGuard(savesWithoutAsking: true)
     @State private var didCopyLink = false
+    /// Found once per load: matching by URL probes each recording on disk,
+    /// and the title is read on every edit.
+    @State private var historyID: UUID?
     @FocusState private var focusedField: AnnotationEditorFocusedField?
     @Environment(\.dismiss) private var dismissWindow
 
@@ -32,7 +37,8 @@ struct AnnotationEditorWindow: View {
             .disabled(model.isCommitting)
             .allowsHitTesting(!model.isCommitting)
             .modifier(CaptureLibraryEditorRegistration(url: url))
-            .navigationTitle("Sukusho Annotate")
+            .navigationTitle(windowTitle)
+            .navigationSubtitle(model.saveStatus)
             .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
@@ -46,6 +52,7 @@ struct AnnotationEditorWindow: View {
                 .sharedBackgroundVisibility(.hidden)
             }
             .task(id: url) {
+                historyID = url.flatMap { ScreenshotHistoryStore.shared.item(for: $0)?.id }
                 clearInspectorFocus()
                 model.load(url: url, dismiss: dismissWindow)
             }
@@ -66,7 +73,6 @@ struct AnnotationEditorWindow: View {
                 }
                 configureCloseGuard()
                 closeGuard.attach(to: window)
-                closeGuard.refreshDocumentEdited()
             }
             // Saves at a pause, so History and the Library keep up without a
             // Save button. Not on resign key: the editor's own popovers take
@@ -86,24 +92,15 @@ struct AnnotationEditorWindow: View {
                     probe.isMeasuringTool = false
                 }
             }
-            .onChange(of: model.hasUnsavedChanges) { _, _ in
-                closeGuard.refreshDocumentEdited()
-            }
             .onChange(of: model.revision) { _, _ in
-                closeGuard.refreshDocumentEdited()
                 if didCopyLink { withAnimation(.snappy(duration: 0.2)) { didCopyLink = false } }
             }
             .onChange(of: model.backgroundSettings) { _, _ in
-                closeGuard.refreshDocumentEdited()
                 if didCopyLink { withAnimation(.snappy(duration: 0.2)) { didCopyLink = false } }
             }
             .focusedSceneValue(\.annotationEditor, model)
             .onChange(of: model.saveAsRequest) { _, _ in saveAs() }
-            .onChange(of: model.baseImageURL) { _, _ in
-                // Cropping replaces the base image rather than touching the
-                // engine, so it never bumps `revision`.
-                closeGuard.refreshDocumentEdited()
-            }
+            .onChange(of: model.saveRequest) { _, _ in saveEdits() }
             // The pixels under the pointer come from the base image, so they
             // are read again whenever a crop or its undo replaces it.
             .task(id: model.previewCGImage.map(ObjectIdentifier.init)) {
@@ -345,6 +342,16 @@ struct AnnotationEditorWindow: View {
         }
     }
 
+    /// The capture's Library title, following a rename made there: its name,
+    /// else when it was taken. A file outside History shows its file name.
+    private var windowTitle: String {
+        guard let url else { return "" }
+        guard let item = ScreenshotHistoryStore.shared.items.first(where: { $0.id == historyID }) else {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        return item.displayName ?? CaptureLibraryItem.dateTitle(item.createdAt)
+    }
+
     private func closeAfterLoadFailure() {
         model.releaseEditorResources()
         dismissWindow()
@@ -442,7 +449,7 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    /// Cmd-S, kept without a button: saves now rather than at the next pause.
+    /// ⌘S and File › Save: saves now rather than at the next pause.
     private func saveEdits() {
         clearInspectorFocus()
         save()
@@ -586,6 +593,23 @@ private struct AnnotationLoadFailureView: View {
 extension FocusedValues {
     /// The key editor window's model, for menu commands.
     @Entry var annotationEditor: AnnotationEditorModel?
+}
+
+/// File › Save for the key editor window, disabled when clean. The editor's
+/// key monitor takes ⌘S before the menu sees it, so one press saves once;
+/// a second call would find the first save running anyway. Only there while
+/// an editor is focused: a disabled item still consumes its ⌘S, which would
+/// take the keystroke from Studio's own Save.
+struct AnnotationEditorSaveCommand: View {
+    @FocusedValue(\.annotationEditor) private var editor
+
+    var body: some View {
+        if let editor {
+            Button("Save") { editor.requestSave() }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(!editor.hasUnsavedChanges)
+        }
+    }
 }
 
 /// File › Save As… for the key editor window.
