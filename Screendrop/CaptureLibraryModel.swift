@@ -58,6 +58,7 @@ nonisolated struct CaptureLibraryItem: Identifiable, Equatable, Sendable {
     let thumbnailKey: String
 
     var ownedURL: URL { session?.directoryURL ?? fileURL }
+    var isTall: Bool { !isVideo && TallCapture.isTall(width: pixelWidth, height: pixelHeight) }
     var dimensions: String {
         pixelWidth > 0 && pixelHeight > 0 ? "\(pixelWidth) × \(pixelHeight)" : "Unknown"
     }

@@ -502,7 +502,7 @@ private struct CloudUploadCard: View {
     }
 
     private var thumbnail: some View {
-        CloudUploadThumbnail(upload: upload, local: local)
+        CloudUploadThumbnail(upload: upload, local: local, showsTopOfTall: true)
             .overlay { CloudFetchOverlay(uploadID: upload.id) }
             // Concentric inside the card: its radius minus its 6 pt padding.
             .clipShape(.rect(cornerRadius: DS.Radius.m, style: .continuous))
@@ -513,7 +513,7 @@ private struct CloudUploadCard: View {
             // Bottom left, clear of the pills above. Side by side when they fit
             // beside the duration, stacked when the card is too small.
             .overlay(alignment: .bottomLeading) {
-                if layout == .grid, (upload.commentCount ?? 0) > 0 || (upload.likeCount ?? 0) > 0 {
+                if layout == .grid, (upload.commentCount ?? 0) > 0 || (upload.likeCount ?? 0) > 0 || local?.isTall == true {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 4) { socialPills }
                         VStack(alignment: .leading, spacing: 4) { socialPills }
@@ -558,6 +558,7 @@ private struct CloudUploadCard: View {
     }
 
     @ViewBuilder private var socialPills: some View {
+        if local?.isTall == true { TallCapture.badge }
         if let count = upload.commentCount, count > 0 {
             Label { Text(count.formatted()) } icon: { Image(systemName: "bubble.left.fill").foregroundStyle(.blue) }
                 .modifier(CloudCardPill(background: .black.opacity(0.65)))
@@ -710,12 +711,14 @@ nonisolated enum CloudUploadText {
 struct CloudUploadThumbnail: View {
     let upload: CloudUpload
     let local: CaptureLibraryItem?
+    var showsTopOfTall = false
     @State private var image: CGImage?
 
     var body: some View {
         if let local {
-            CaptureLibraryThumbnail(item: local)
+            CaptureLibraryThumbnail(item: local, showsTopOfTall: showsTopOfTall)
         } else {
+            // shortcut: a cloud-only upload has no dimensions before it downloads, so a tall one stays fitted; Worker dimensions if that shows.
             GeometryReader { geometry in
                 ZStack {
                     Color(nsColor: .quaternaryLabelColor).opacity(0.25)
