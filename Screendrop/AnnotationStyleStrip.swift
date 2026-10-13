@@ -5,7 +5,7 @@
 //  The annotator's saved styles as thumbnails of this screenshot wearing
 //  them, in a pop-out grid. Clicking one applies it; the last tile
 //  saves the current look. A style's menu sets it as the default for new
-//  screenshots, exports it or deletes it, and the header's menu imports
+//  screenshots, exports it or deletes it, and the pop-out footer imports
 //  styles shared as files.
 //
 
@@ -36,7 +36,6 @@ struct AnnotationStyleStrip: View {
                     .font(.inspectorSectionHeader)
                     .foregroundStyle(Palette.label.opacity(0.95))
                 Spacer(minLength: 0)
-                headerMenu
             }
             .frame(minHeight: 24)
             .padding(.horizontal, InspectorMetrics.horizontalPadding)
@@ -114,39 +113,34 @@ struct AnnotationStyleStrip: View {
         .accessibilityValue(appliedPreset?.name ?? "None")
         .closesOnEditorEscape($isPickerPresented)
         .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
-            InspectorGridScroll {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                    ForEach(presetStore.presets) { preset in
-                        tile(for: preset)
+            VStack(spacing: 8) {
+                InspectorGridScroll {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                        ForEach(presetStore.presets) { preset in
+                            tile(for: preset)
+                        }
+                        addTile
                     }
-                    addTile
                 }
+
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Import…") {
+                        isPickerPresented = false
+                        importPresets()
+                    }
+                    .buttonStyle(.link)
+                    .help("Import styles")
+                    .accessibilityLabel("Import Styles")
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             }
             .padding(14)
             .frame(width: 320)
             .background(Palette.panel)
             .presentationBackground(Palette.panel)
         }
-    }
-
-    private var headerMenu: some View {
-        Menu {
-            Button("Import Styles…", action: importPresets)
-            if let applied = presetStore.preset(id: model.appliedBackgroundPresetID) {
-                Button("Export “\(applied.name)”…") { exportPreset(applied.id) }
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Palette.secondaryLabel)
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
-        .fixedSize()
-        .help("Import or export styles")
     }
 
     private func tile(for preset: AnnotationBackgroundPreset) -> some View {
@@ -201,9 +195,9 @@ struct AnnotationStyleStrip: View {
                 Button(isDefault ? "Stop Using for New Screenshots" : "Use for New Screenshots") {
                     presetStore.setActivePreset(id: isDefault ? nil : preset.id)
                 }
-                Button("Export…") { exportPreset(preset.id) }
-                Divider()
             }
+            Button("Export…") { exportPreset(preset.id) }
+            Divider()
             Button("Delete…", role: .destructive) {
                 presetPendingDeletion = preset
             }
