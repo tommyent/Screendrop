@@ -130,6 +130,7 @@ final class CloudLibraryModel {
         case .edit: if let upload = selectedUploads.first { open(upload) }
         case .copy: copyLinks(selectedUploads)
         case .trash: pendingDelete = selectedUploads
+        case .share: LibrarySharing.show(selectedUploads.compactMap { URL(string: $0.url) })
         case .rename, .export, .reveal: break
         }
     }
@@ -144,6 +145,9 @@ final class CloudLibraryModel {
             LibraryMenuItem(title: "Open Link", isEnabled: single != nil) { if let single { self.open(single) } },
             LibraryMenuItem(title: selected.count > 1 ? "Copy Links" : "Copy Link", isEnabled: !selected.isEmpty) {
                 self.copyLinks(selected)
+            },
+            LibraryMenuItem(title: "Share…", isEnabled: !selected.isEmpty) {
+                LibrarySharing.show(selected.compactMap { URL(string: $0.url) })
             },
             LibraryMenuItem(title: "Show in Library", isEnabled: local != nil) { if let local { self.showInLibrary(local) } },
             LibraryMenuItem(title: "Delete from Cloud…", isEnabled: !selected.isEmpty && !isBusy, startsGroup: true) {

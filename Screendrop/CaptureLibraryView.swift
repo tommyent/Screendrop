@@ -15,7 +15,6 @@ struct CaptureLibraryView: View {
     @AppStorage("captureLibrary.tagsExpanded") private var tagsExpanded = true
     @AppStorage("captureLibrary.cardWidth") private var cardWidth = 220.0
     @AppStorage("captureLibrary.sort") private var savedSort: CaptureLibrarySort = .newest
-    @State private var pendingCloudUpload: CaptureLibraryItem?
 
     private var activeFilter: CaptureLibraryFilter { model.filter ?? .all }
 
@@ -430,18 +429,6 @@ struct CaptureLibraryView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button("Capture Fullscreen", systemImage: "macwindow") { CaptureCoordinator.shared.captureFullscreen() }
-                Button("Capture Window", systemImage: "macwindow.on.rectangle") { CaptureCoordinator.shared.captureWindow() }
-                Button("Capture Area", systemImage: "rectangle.dashed") { CaptureCoordinator.shared.captureArea() }
-                Divider()
-                Button("Record Screen", systemImage: "record.circle") { RecordingBarPresenter.shared.showPicker() }
-                    .disabled(ScreenRecordingManager.shared.isActive || ScrollingCapturePresenter.shared.isRunning)
-            } label: { Label("New Capture", systemImage: "plus") }
-            .help("New capture")
-        }
-        .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(placement: .primaryAction) {
             // Comments are always a list, so the picker says so there.
             Picker("View", selection: Binding(get: { comments.isShown || likes.isShown ? .list : layout }, set: { layout = $0 })) {
                 Label("Grid View", systemImage: "square.grid.2x2").tag(CaptureLibraryLayout.grid).help("Grid view")
@@ -468,14 +455,6 @@ struct CaptureLibraryView: View {
             .help("Sort captures")
         }
         .sharedBackgroundVisibility(.hidden)
-        ToolbarItemGroup(placement: .primaryAction) {
-            pageActions
-        }
-        .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(placement: .primaryAction) {
-            shareMenu
-        }
-        .sharedBackgroundVisibility(.hidden)
         ToolbarItem(placement: .primaryAction) {
             Button { inspectorVisible.toggle() } label: {
                 Label(inspectorVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
@@ -484,108 +463,6 @@ struct CaptureLibraryView: View {
             .help(inspectorVisible ? "Hide Inspector" : "Show Inspector")
         }
         .sharedBackgroundVisibility(.hidden)
-    }
-
-    /// Comments open on their share page; there's nothing to preview or edit.
-    @ViewBuilder private var commentActions: some View {
-        Menu {
-            ForEach(Array(comments.menuItems().enumerated()), id: \.offset) { _, item in
-                if item.startsGroup { Divider() }
-                Button(item.title, action: item.perform).disabled(!item.isEnabled)
-            }
-        } label: { Label("Actions", systemImage: "ellipsis.circle") }
-        .disabled(comments.selection.isEmpty)
-        .help("Comment actions")
-    }
-
-    /// The same three slots on every page (Quick Look, Edit, Actions), so
-    /// the toolbar never shifts when the page changes; each does what fits
-    /// its page or is dimmed (design pass choice 5).
-    @ViewBuilder private var pageActions: some View {
-        Button {
-            if cloud.isShown { cloud.quickLook() } else { model.perform(.preview) }
-        } label: { Label("Quick Look", systemImage: "eye") }
-            .disabled(comments.isShown || likes.isShown
-                      || (cloud.isShown ? cloud.selection.isEmpty : model.selection.count != 1 || model.isBusy))
-            .help("Quick Look (Space)")
-        Button { model.perform(.edit) } label: { Label("Edit", systemImage: "pencil.tip.crop.circle") }
-            .disabled(cloud.isShown || comments.isShown || likes.isShown || model.selection.count != 1 || model.isBusy)
-            .help(cloud.isShown || comments.isShown || likes.isShown
-                  ? "Uploads can't be edited; edit the capture in the Library"
-                  : "Open in the screenshot or recording editor")
-        if comments.isShown { commentActions } else if likes.isShown { likeActions } else if cloud.isShown { cloudActions } else { captureActions }
-    }
-
-    /// One place to share from, on every page (design pass choice 6):
-    /// links, the cloud, the system Share menu and Export.
-    @ViewBuilder private var shareMenu: some View {
-        let items = model.selectedItems
-        let item = items.count == 1 ? items.first : nil
-        let uploads = cloud.selectedUploads
-        Menu {
-            if cloud.isShown {
-                Button(uploads.count > 1 ? "Copy Links" : "Copy Link", systemImage: "link") { cloud.copyLinks(uploads) }
-                ShareLink(items: uploads.compactMap { URL(string: $0.url) }) {
-                    Label("Share…", systemImage: "square.and.arrow.up")
-                }
-            } else {
-                Button("Copy Link", systemImage: "link") { if let item { model.copyLink(item) } }
-                    .disabled(item?.cloudURL == nil)
-                Button("Share to Cloud…", systemImage: "arrow.up.circle") { pendingCloudUpload = item }
-                    .disabled(item == nil || item?.cloudURL != nil || !CloudUploader.shared.isConfigured || model.isBusy)
-                ShareLink(items: items.map(\.fileURL)) {
-                    Label("Share…", systemImage: "square.and.arrow.up")
-                }
-                Divider()
-                Button("Export…", systemImage: "arrow.down.doc") { model.perform(.export) }
-                    .disabled(model.isBusy)
-            }
-        } label: { Label("Share", systemImage: "square.and.arrow.up") }
-        .disabled(comments.isShown || likes.isShown || (cloud.isShown ? uploads.isEmpty : items.isEmpty))
-        .help("Share")
-        .popover(item: $pendingCloudUpload, arrowEdge: .bottom) { item in
-            CloudUploadOptionsPopover(suggestedTitle: item.name) { options in
-                model.upload(item, options: options)
-            }
-        }
-    }
-
-    /// Likes open on their share page; there's nothing to preview, edit or delete.
-    @ViewBuilder private var likeActions: some View {
-        Menu {
-            ForEach(Array(likes.menuItems().enumerated()), id: \.offset) { _, item in
-                if item.startsGroup { Divider() }
-                Button(item.title, action: item.perform).disabled(!item.isEnabled)
-            }
-        } label: { Label("Actions", systemImage: "ellipsis.circle") }
-        .disabled(likes.selection.isEmpty)
-        .help("Like actions")
-    }
-
-    /// Uploads are final, so the Cloud page has no Edit.
-    @ViewBuilder private var cloudActions: some View {
-        Menu {
-            ForEach(Array(cloud.menuItems().enumerated()), id: \.offset) { _, item in
-                if item.startsGroup { Divider() }
-                Button(item.title, action: item.perform).disabled(!item.isEnabled)
-            }
-        } label: { Label("Actions", systemImage: "ellipsis.circle") }
-        .disabled(cloud.selection.isEmpty)
-        .help("Upload actions")
-    }
-
-    @ViewBuilder private var captureActions: some View {
-        Menu {
-            Button("Copy", systemImage: "doc.on.doc") { model.perform(.copy) }
-            Button("Export…", systemImage: "square.and.arrow.up") { model.perform(.export) }
-            Button("Rename", systemImage: "pencil") { model.perform(.rename) }
-                .disabled(model.selection.count != 1)
-            Button("Reveal in Finder", systemImage: "folder") { model.perform(.reveal) }
-            Divider()
-            Button("Move to Trash…", systemImage: "trash", role: .destructive) { model.perform(.trash) }
-        } label: { Label("Actions", systemImage: "ellipsis.circle") }
-        .disabled(model.selection.isEmpty || model.isBusy)
-        .help("Capture actions")
     }
 }
 

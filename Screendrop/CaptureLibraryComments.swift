@@ -126,7 +126,7 @@ final class CommentsLibraryModel {
         case .edit: if let comment = selectedComments.first { open(comment) }
         case .copy: copyText(selectedComments)
         case .trash: pendingDelete = selectedComments
-        case .preview, .rename, .export, .reveal: break
+        case .preview, .rename, .export, .share, .reveal: break
         }
     }
 

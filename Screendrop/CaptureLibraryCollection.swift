@@ -7,12 +7,13 @@ enum CaptureLibraryAction: String {
     case rename = "Rename"
     case copy = "Copy"
     case export = "Export…"
+    case share = "Share…"
     case reveal = "Reveal in Finder"
     case trash = "Move to Trash"
 
     /// The captures' context menu, for `count` selected.
     static func menu(selected count: Int, perform: @escaping (Self) -> Void) -> [LibraryMenuItem] {
-        [Self.preview, .edit, .rename, .copy, .export, .reveal, .trash].map { action in
+        [Self.preview, .edit, .rename, .copy, .export, .share, .reveal, .trash].map { action in
             LibraryMenuItem(
                 title: action.rawValue,
                 isEnabled: !(action == .rename || action == .edit || action == .preview) || count == 1,

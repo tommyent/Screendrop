@@ -123,7 +123,7 @@ final class LikesLibraryModel {
         switch action {
         case .edit: if let like = selectedLikes.first { open(like) }
         case .copy: copyLinks(selectedLikes)
-        case .preview, .rename, .export, .reveal, .trash: break
+        case .preview, .rename, .export, .share, .reveal, .trash: break
         }
     }
 
