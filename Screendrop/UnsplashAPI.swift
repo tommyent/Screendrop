@@ -55,6 +55,13 @@ nonisolated enum UnsplashAPI {
         return request
     }
 
+    /// The pick report Unsplash requires. The key goes only to Unsplash's
+    /// own API host, whatever the response said the link was.
+    static func downloadPing(for photo: Photo, accessKey: String) -> URLRequest? {
+        guard photo.downloadLocation.scheme == "https", photo.downloadLocation.host == "api.unsplash.com" else { return nil }
+        return authorized(URLRequest(url: photo.downloadLocation), accessKey: accessKey)
+    }
+
     static func check(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }
         switch http.statusCode {

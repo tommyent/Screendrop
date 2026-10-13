@@ -44,10 +44,6 @@ struct AnnotationBackgroundInspector: View {
                 onEndPreview: onEndPreview
             )
 
-            if !settings.requiresCanvasLayout {
-                InspectorHint("Pick a background to frame the screenshot.")
-            }
-
             frameControls
                 // Without a canvas there is nothing to shape, pad, round or
                 // shadow. Dimmed rather than hidden, so picking a fill
@@ -224,6 +220,7 @@ struct InspectorBackgroundRow: View {
         .help("Choose a background")
         .accessibilityLabel("Background")
         .accessibilityValue(style.displayTitle)
+        .closesOnEditorEscape($isPickerPresented)
         .popover(isPresented: $isPickerPresented, arrowEdge: .leading) {
             // No title: the row it hangs off already says Background, and
             // the picker's own No Background tile replaces upstream's None.

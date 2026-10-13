@@ -188,6 +188,7 @@ struct AnnotationStyleStrip: View {
             .buttonStyle(.plain)
             .help("Save this look as a style")
             .accessibilityLabel("Save Style")
+            .closesOnEditorEscape($isNameEditorPresented)
             .popover(isPresented: $isNameEditorPresented, arrowEdge: .bottom) {
                 nameEditor
             }

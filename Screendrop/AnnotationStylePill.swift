@@ -22,6 +22,7 @@ struct AnnotationStylePillButton: View {
         .disabled(!isAvailable)
         .help("Colour and size")
         .accessibilityLabel("Colour and size, \(model.selectedSwatch.title)")
+        .closesOnEditorEscape($isPresented)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             HStack(spacing: 12) {
                 AnnotationSwatchStrip(
