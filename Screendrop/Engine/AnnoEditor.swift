@@ -117,6 +117,11 @@ struct AnnoViewport {
 @MainActor
 final class AnnoEditor {
     private(set) var document = AnnoDocument()
+    /// Pasted pictures' pixels by asset ID (sd-eec). Outside the document and its snapshots, so
+    /// undo and history move only the shapes that point here; an undone paste's pixels stay
+    /// for redo, and a save writes only the ones a shape still uses.
+    var imageAssets: [String: AnnoImageAsset] = [:]
+    var images: [String: CGImage] { imageAssets.mapValues(\.image) }
     var selectedIds: Set<AnnoShapeID> = []
     var viewport = AnnoViewport()
 

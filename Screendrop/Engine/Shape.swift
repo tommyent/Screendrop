@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 
 /// The shape model, ported from the drawing-app's `Model/Shape.swift` and widened to cover the
 /// tools Screendrop has that a whiteboard doesn't (redactions, the spotlight highlight, numbered
@@ -167,6 +168,32 @@ struct NumberedProps: Codable, Equatable {
     var swatch: AnnotationSwatch = .red
 }
 
+/// A pasted picture (sd-eec), drawn into a `w` x `h` box. Its pixels live in the editor's
+/// `imageAssets` and the sidecar's `images` under `assetID`, so shapes and undo history carry
+/// only this reference, never the megabytes.
+struct ImageProps: Codable, Equatable {
+    var assetID: String
+    var w: Double
+    var h: Double
+}
+
+/// A pasted picture's pixels: the encoded bytes the sidecar keeps, and the decoded image every
+/// draw uses, made once.
+struct AnnoImageAsset: @unchecked Sendable {
+    let data: Data
+    let image: CGImage
+
+    /// Nil for bytes ImageIO can't decode.
+    init?(data: Data) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(
+                  source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+        else { return nil }
+        self.data = data
+        self.image = image
+    }
+}
+
 // MARK: - Shape
 
 enum AnnoShapeKind: Codable, Equatable {
@@ -178,6 +205,7 @@ enum AnnoShapeKind: Codable, Equatable {
     case highlight(HighlightProps)
     case numbered(NumberedProps)
     case magnifier(MagnifierProps)
+    case image(ImageProps)
 }
 
 struct AnnoShape: Codable, Equatable, Identifiable {
@@ -216,7 +244,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .draw(p): p.strokeWidth
         case let .arrow(p): p.strokeWidth
         case let .magnifier(p): p.strokeWidth
-        case .text, .redaction, .highlight, .numbered: 0
+        case .text, .redaction, .highlight, .numbered, .image: 0
         }
     }
 
@@ -237,6 +265,8 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case .highlight: .highlight
         case .numbered: .numberedCircle
         case .magnifier: .magnifier
+        // No tool makes it; Select is the one that handles it.
+        case .image: .select
         }
     }
 
@@ -248,7 +278,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .text(p): p.swatch
         case let .numbered(p): p.swatch
         case let .magnifier(p): p.swatch
-        case .redaction, .highlight: nil
+        case .redaction, .highlight, .image: nil
         }
     }
 
@@ -259,7 +289,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
         case let .draw(p): p.isClosed
         case .arrow: false
         // Text, redactions, the highlight and numbered callouts are solid objects.
-        case .text, .redaction, .highlight, .numbered, .magnifier: true
+        case .text, .redaction, .highlight, .numbered, .magnifier, .image: true
         }
     }
 
@@ -317,6 +347,11 @@ struct AnnoShape: Codable, Equatable, Identifiable {
 
     var numberedProps: NumberedProps? {
         if case let .numbered(p) = kind { return p }
+        return nil
+    }
+
+    var imageProps: ImageProps? {
+        if case let .image(p) = kind { return p }
         return nil
     }
 }

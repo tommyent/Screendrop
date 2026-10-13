@@ -404,6 +404,7 @@ final class AnnotationEditorModel {
                 sourceURL: baseURL,
                 shapes: shapes,
                 bindings: bindings,
+                images: engine.images,
                 backgroundSettings: backgroundSettings
             )
             defer { try? FileManager.default.removeItem(at: annotatedURL) }
@@ -639,7 +640,7 @@ final class AnnotationEditorModel {
             case var .text(p): p.swatch = swatch; shape.kind = .text(p)
             case var .numbered(p): p.swatch = swatch; shape.kind = .numbered(p)
             case var .magnifier(p): p.swatch = swatch; shape.kind = .magnifier(p)
-            case .redaction, .highlight: break
+            case .redaction, .highlight, .image: break
             }
         }
     }
@@ -1080,6 +1081,9 @@ extension AnnotationEditorModel {
         case var .highlight(p):
             p.w *= sx; p.h *= sy
             shape.kind = .highlight(p)
+        case var .image(p):
+            p.w *= sx; p.h *= sy
+            shape.kind = .image(p)
         case var .numbered(p):
             p.diameter *= uniform
             shape.kind = .numbered(p)

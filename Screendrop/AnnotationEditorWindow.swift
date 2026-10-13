@@ -380,6 +380,7 @@ struct AnnotationEditorWindow: View {
                         sourceURL: baseURL,
                         shapes: model.shapes,
                         bindings: model.bindings,
+                        images: model.engine.images,
                         backgroundSettings: model.backgroundSettings,
                         destinationURL: destinationURL,
                         contentType: ScreenshotFileActions.exportContentType

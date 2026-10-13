@@ -616,6 +616,10 @@ extension AnnoEditor {
                 props.w = Swift.max(1, abs(props.w * sx))
                 props.h = Swift.max(1, abs(props.h * sy))
                 shape.kind = .highlight(props)
+            case var .image(props):
+                props.w = Swift.max(1, abs(props.w * sx))
+                props.h = Swift.max(1, abs(props.h * sy))
+                shape.kind = .image(props)
             case var .numbered(props):
                 // A callout stays a circle, so it takes the average of the two scales.
                 props.diameter = Swift.max(8, abs(props.diameter * (abs(sx) + abs(sy)) / 2))
