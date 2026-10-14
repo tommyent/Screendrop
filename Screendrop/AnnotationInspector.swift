@@ -192,9 +192,16 @@ struct AnnotationEditorInspector: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            // Reserve clearance so the final inspector controls are never
-            // hidden behind the floating preview peek pill.
-            .padding(.bottom, PreviewPeekTab.pillHeight * 1.1)
+            // The Revert To bar keeps clear of the floating preview peek pill
+            // itself; without the bar, the end of the list must.
+            .padding(.bottom, showsRevertBar ? 12 : PreviewPeekTab.pillHeight * 1.1)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showsRevertBar {
+                InspectorRevertBar(background: sidebarBackground) {
+                    AnnotationEditorRevertItems(editor: model)
+                }
+            }
         }
         .environment(\.annotationEditorHistory, model)
         .scrollContentBackground(.hidden)
@@ -214,6 +221,11 @@ struct AnnotationEditorInspector: View {
     }
 
     private var sidebarBackground: Color { WorkspaceChrome.background }
+
+    /// Revert To applies to History captures, which keep their original.
+    private var showsRevertBar: Bool {
+        model.sourceURL.map(ScreenshotHistoryStore.shared.isHistoryURL) ?? false
+    }
 
     private var usesDefaultFrame: Bool {
         let settings = model.backgroundSettings
