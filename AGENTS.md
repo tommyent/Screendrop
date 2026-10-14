@@ -65,7 +65,7 @@ All annotation positions/sizes are normalized to `[0, 1]` relative to the source
 
 ## Conventions
 
-- **No new SPM packages or external dependencies.** Besides the existing Sparkle and DockProgress packages, the project uses only Apple frameworks (SwiftUI, AppKit, ScreenCaptureKit, CoreGraphics, CoreImage, ImageIO, Carbon).
+- **No new SPM packages or external dependencies.** Besides the existing DockProgress package, the project uses only Apple frameworks (SwiftUI, AppKit, ScreenCaptureKit, CoreGraphics, CoreImage, ImageIO, Carbon).
 - **`@Observable` macro** (Observation framework) is used for state - not `ObservableObject`/`@Published`.
 - **App sandbox is disabled** (`ENABLE_APP_SANDBOX = NO`) - the app needs screen capture permissions and direct filesystem access.
 - Screenshots are saved as lossless PNG to `NSTemporaryDirectory()` first, then optionally compressed to JPEG on export.

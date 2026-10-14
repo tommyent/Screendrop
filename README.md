@@ -166,7 +166,7 @@ xcodebuild test -project Screendrop.xcodeproj -scheme "Screendrop Dev" \
   DEVELOPMENT_TEAM=YOUR_TEAM_ID -allowProvisioningUpdates
 ```
 
-The tests use Swift Testing, need no app host, and never touch your captures or settings; see [ScreendropTests/README.md](ScreendropTests/README.md). Sparkle and DockProgress are the only package dependencies, and Xcode resolves them. [Editor performance](docs/editor-performance.md) and [export performance](docs/export-performance.md) describe the standalone checks and benchmarks.
+The tests use Swift Testing, need no app host, and never touch your captures or settings; see [ScreendropTests/README.md](ScreendropTests/README.md). DockProgress is the only package dependency, and Xcode resolves it. [Editor performance](docs/editor-performance.md) and [export performance](docs/export-performance.md) describe the standalone checks and benchmarks.
 
 If Screendrop was installed before, Sukusho brings over its captures, recordings, settings and Cloud token once, the first time it opens. Screendrop's own copy is left unchanged.
 
