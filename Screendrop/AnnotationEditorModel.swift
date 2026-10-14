@@ -140,6 +140,7 @@ final class AnnotationEditorModel {
     private var openedSessionDocument: AnnotationDocument?
     private var sessionOpenedAt = Date()
     private var keptOpeningSession = false
+    private var sessionSnapshotFailureMessage: String?
     private(set) var sessionSnapshots: [CaptureSessionSnapshot] = []
     var previousSessionSnapshots: [CaptureSessionSnapshot] {
         sessionSnapshots.filter { $0.openedAt != sessionOpenedAt }
@@ -263,6 +264,7 @@ final class AnnotationEditorModel {
         openedSnapshot = nil
         openedSessionDocument = nil
         keptOpeningSession = false
+        sessionSnapshotFailureMessage = nil
         sessionSnapshots = []
         inspectorEditingDepth = 0
         croppedInSession = false
@@ -370,6 +372,7 @@ final class AnnotationEditorModel {
         openedSnapshot = nil
         openedSessionDocument = nil
         keptOpeningSession = false
+        sessionSnapshotFailureMessage = nil
         sessionSnapshots = []
         inspectorEditingDepth = 0
         croppedInSession = false
@@ -663,7 +666,13 @@ final class AnnotationEditorModel {
         defer { scheduleIdleSave() }
         guard snapshot != history[historyIndex] else { return }
         do { try keepOpeningSession() }
-        catch { errorMessage = "Unable to keep the opening session: \(error.localizedDescription)" }
+        catch {
+            let message = "Unable to keep the opening session: \(error.localizedDescription)"
+            if sessionSnapshotFailureMessage != message {
+                sessionSnapshotFailureMessage = message
+                errorMessage = message
+            }
+        }
         history.removeSubrange((historyIndex + 1)..<history.count)
         history.append(snapshot)
         if history.count > 201 { history.removeFirst() }
@@ -1296,6 +1305,8 @@ extension AnnotationEditorModel {
             document: CaptureSessionSnapshots.encode(document), baseImage: base, openedAt: sessionOpenedAt
         )
         keptOpeningSession = true
+        if errorMessage == sessionSnapshotFailureMessage { errorMessage = nil }
+        sessionSnapshotFailureMessage = nil
     }
 
     func revertToSession(_ session: CaptureSessionSnapshot) {

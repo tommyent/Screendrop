@@ -231,6 +231,7 @@ final class RecordingStudioModel {
     private var autosaveTask: Task<Void, Never>?
     /// The project as this window opened it, for Revert To › Last Opened.
     private var openedDocument: RecordingEditDocument?
+    private var openedOnDraft = false
     private var sessionOpenedAt = Date()
     private var keptOpeningSession = false
     private(set) var sessionSnapshots: [CaptureSessionSnapshot] = []
@@ -470,7 +471,8 @@ final class RecordingStudioModel {
         loadStylePoster()
 
         if let session {
-            if session.hasUnsavedDraft {
+            openedOnDraft = session.hasUnsavedDraft
+            if openedOnDraft {
                 // Reopened on a draft that outlived its editor.
                 hasUnsavedChanges = true
             } else {
@@ -1264,8 +1266,6 @@ final class RecordingStudioModel {
         guard isLoaded, !isApplyingDocument else { return }
         hasUnsavedChanges = true
         hasEditsSinceOpening = true
-        do { try keepOpeningSession() }
-        catch { lastSaveSucceeded = false }
         // The uploaded link no longer matches; bring Upload back.
         if case .finished = shareState { shareState = .idle }
         projectSaveTask?.cancel()
@@ -1336,7 +1336,12 @@ final class RecordingStudioModel {
             return
         }
         do { if document != openedDocument { try keepOpeningSession() } }
-        catch { lastSaveSucceeded = false; return }
+        catch {
+            lastSaveSucceeded = false
+            hasUnsavedChanges = true
+            // A saved opening is safe in edit.json; an opening draft is not.
+            if openedOnDraft { return }
+        }
         if document == lastSavedDocument {
             // Edited back to the saved state (undo, or a discard landing):
             // the draft is now noise and would reopen the project dirty.
@@ -2433,7 +2438,7 @@ final class RecordingStudioModel {
         let store = CaptureSessionSnapshots(directory: session.sessionSnapshotsURL)
         let keptDocuments: [RecordingEditDocument]
         do {
-            keptDocuments = try store.entries().map {
+            keptDocuments = try store.strictEntries().map {
                 try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: store.read($0).document)
             }
         } catch { return } // An unreadable snapshot may still need an imported soundtrack.

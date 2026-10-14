@@ -25,11 +25,23 @@ nonisolated struct CaptureSessionSnapshots {
     }
 
     func entries() throws -> [CaptureSessionSnapshot] {
+        Array(try allEntries(strict: false).prefix(5))
+    }
+
+    /// Cleanup must account for every retained folder, including failed prunes.
+    func strictEntries() throws -> [CaptureSessionSnapshot] {
+        try allEntries(strict: true)
+    }
+
+    private func allEntries(strict: Bool) throws -> [CaptureSessionSnapshot] {
         let manager = FileManager.default
         guard manager.fileExists(atPath: directory.path) else { return [] }
         return try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
             .filter { UUID(uuidString: $0.lastPathComponent) != nil }
-            .map { try metadata(in: $0) }
+            .compactMap { folder -> CaptureSessionSnapshot? in
+                if strict { return try metadata(in: folder) }
+                return try? metadata(in: folder)
+            }
             .sorted {
                 $0.openedAt == $1.openedAt ? $0.id.uuidString > $1.id.uuidString : $0.openedAt > $1.openedAt
             }
@@ -37,16 +49,18 @@ nonisolated struct CaptureSessionSnapshots {
 
     @discardableResult
     func keep(document: Data, baseImage: URL? = nil, openedAt: Date) throws -> [CaptureSessionSnapshot] {
-        var fingerprint = SHA256.hash(data: document).map { String(format: "%02x", $0) }.joined()
-        if let baseImage {
-            let file = try FileHandle(forReadingFrom: baseImage)
-            defer { try? file.close() }
-            var digest = SHA256()
-            while let data = try file.read(upToCount: 1_048_576), !data.isEmpty { digest.update(data: data) }
-            fingerprint += digest.finalize().map { String(format: "%02x", $0) }.joined()
+        let fingerprint = SHA256.hash(data: document).map { String(format: "%02x", $0) }.joined()
+        let existing = try allEntries(strict: false)
+        if let newest = existing.first, newest.fingerprint == fingerprint {
+            if let baseImage, let ext = newest.baseExtension {
+                let previousBase = folder(for: newest.id).appendingPathComponent("base.\(ext)")
+                if FileManager.default.contentsEqual(atPath: baseImage.path, andPath: previousBase.path) {
+                    return prune(existing)
+                }
+            } else if baseImage == nil, newest.baseExtension == nil {
+                return prune(existing)
+            }
         }
-        let existing = try entries()
-        if existing.first?.fingerprint == fingerprint { return try prune(existing) }
 
         let ext = baseImage.map { $0.pathExtension.isEmpty ? "png" : $0.pathExtension.lowercased() }
         let entry = CaptureSessionSnapshot(id: UUID(), openedAt: openedAt, fingerprint: fingerprint, baseExtension: ext)
@@ -62,7 +76,9 @@ nonisolated struct CaptureSessionSnapshots {
         try document.write(to: staging.appendingPathComponent("document.json"), options: .atomic)
         try Self.encode(entry).write(to: staging.appendingPathComponent("session.json"), options: .atomic)
         try manager.moveItem(at: staging, to: folder(for: entry.id))
-        return try prune(try entries())
+        return prune(([entry] + existing).sorted {
+            $0.openedAt == $1.openedAt ? $0.id.uuidString > $1.id.uuidString : $0.openedAt > $1.openedAt
+        })
     }
 
     func read(_ entry: CaptureSessionSnapshot) throws -> (document: Data, baseImage: URL?) {
@@ -94,8 +110,8 @@ nonisolated struct CaptureSessionSnapshots {
         }
     }
 
-    private func prune(_ entries: [CaptureSessionSnapshot]) throws -> [CaptureSessionSnapshot] {
-        for entry in entries.dropFirst(5) { try FileManager.default.removeItem(at: folder(for: entry.id)) }
+    private func prune(_ entries: [CaptureSessionSnapshot]) -> [CaptureSessionSnapshot] {
+        for entry in entries.dropFirst(5) { try? FileManager.default.removeItem(at: folder(for: entry.id)) }
         return Array(entries.prefix(5))
     }
 }
