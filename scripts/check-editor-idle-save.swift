@@ -110,16 +110,91 @@ struct IdleSaveChecks {
         }
         let deduped = try store.keep(document: Data("{\"state\":6}".utf8), baseImage: secondBase, openedAt: Date())
         try check(deduped == kept, "Identical state at another path created a duplicate")
+        let locked = directory.appendingPathComponent(kept.last!.id.uuidString)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: locked.path) }
         try png(width: 220).write(to: secondBase)
         let changed = try store.keep(document: Data("{\"state\":6}".utf8), baseImage: secondBase, openedAt: Date())
         try check(changed.count == 5 && changed[0].id != kept[0].id, "Changed base pixels were deduplicated")
+        try check(FileManager.default.fileExists(atPath: locked.path) && store.strictEntries().count == 6,
+                  "Prune failure fixture didn't keep the undeletable folder")
+        let retried = try store.keep(document: Data("{\"state\":6}".utf8), baseImage: secondBase, openedAt: Date())
+        try check(retried == changed && store.entries().count == 5, "Failed prune blocked retry or duplicated the published state")
+        try FileManager.default.setAttributes([.immutable: false], ofItemAtPath: locked.path)
+        _ = try store.keep(document: Data("{\"state\":6}".utf8), baseImage: secondBase, openedAt: Date())
+        try check(!FileManager.default.fileExists(atPath: locked.path) && store.strictEntries().count == 5,
+                  "Retry didn't prune after the folder became removable")
         do {
             _ = try store.keep(document: Data(), baseImage: directory.appendingPathComponent("missing.png"), openedAt: Date())
             throw Failure(description: "Missing base was published")
         } catch is Failure { throw Failure(description: "Missing base was published") } catch {}
         let afterFailure = try store.entries()
         try check(afterFailure == changed, "Failed copy displaced a complete session")
+        let unreadable = try unreadableSnapshotFolders(in: directory)
+        try check(store.entries() == changed, "Unreadable folders counted as sessions")
+        let afterUnreadable = try store.keep(document: Data("new state".utf8), baseImage: firstBase, openedAt: Date())
+        try check(afterUnreadable.count == 5 && unreadable.allSatisfy { FileManager.default.fileExists(atPath: $0.path) },
+                  "Unreadable folders blocked keeping or were deleted")
+        do {
+            _ = try store.strictEntries()
+            throw Failure(description: "Strict listing skipped unreadable metadata")
+        } catch is Failure { throw Failure(description: "Strict listing skipped unreadable metadata") } catch {}
         print("PASS session store: newest-first, five kept, old folders pruned, content dedupe, changed pixels, failed copy preserves history")
+        print("PASS failed pruning permits save/retry, visible list stays at five, strict list keeps all; unreadable/future metadata skipped and preserved")
+    }
+
+    @MainActor static func unreadableSnapshotFolders(in directory: URL) throws -> [URL] {
+        var folders: [URL] = []
+        for kind in 0..<3 {
+            let id = UUID(), folder = directory.appendingPathComponent(id.uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            if kind == 1 { try Data("garbled".utf8).write(to: folder.appendingPathComponent("session.json")) }
+            if kind == 2 {
+                var future = CaptureSessionSnapshot(id: id, openedAt: Date(), fingerprint: "future", baseExtension: nil)
+                future.version = 2
+                try CaptureSessionSnapshots.encode(future).write(to: folder.appendingPathComponent("session.json"))
+            }
+            folders.append(folder)
+        }
+        return folders
+    }
+
+    @MainActor static func sessionImageStorageFailures() async throws {
+        let directory = ScreenshotHistoryStore.historyDirectory
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = directory.appendingPathComponent("sessions-failures.png")
+        try png().write(to: source)
+        let sessions = ScreenshotHistoryStore.sessionSnapshotsURL(for: source)
+        let unreadable = try unreadableSnapshotFolders(in: sessions)
+        let model = try openImage(source)
+        model.engine.replaceDocument(shapes: [rect()])
+        _ = try await model.commitEdits()
+        try check(model.saveStatus == "Saved" && model.sessionSnapshots.count == 1
+                  && unreadable.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }, "Unreadable snapshots blocked image saving")
+        model.releaseEditorResources()
+
+        let failed = try openImage(source), savedBytes = try Data(contentsOf: source)
+        let backup = sessions.appendingPathExtension("backup")
+        try FileManager.default.moveItem(at: sessions, to: backup)
+        try Data([0]).write(to: sessions)
+        failed.engine.replaceDocument(shapes: [rect(x: 20)])
+        try check(failed.errorMessage != nil, "Image snapshot failure wasn't reported")
+        failed.errorMessage = nil // dismiss the first failure
+        failed.engine.replaceDocument(shapes: [rect(x: 30)])
+        failed.engine.replaceDocument(shapes: [rect(x: 40)])
+        try check(failed.errorMessage == nil, "Repeated changes reported the same snapshot failure again")
+        do {
+            _ = try await failed.commitEdits()
+            throw Failure(description: "Image save overwrote its unkept opening state")
+        } catch is Failure { throw Failure(description: "Image save overwrote its unkept opening state") } catch {}
+        try check(failed.hasUnsavedChanges && failed.saveStatus == "Not Saved" && Data(contentsOf: source) == savedBytes,
+                  "Failed snapshot lost image edits or saved pixels")
+        try FileManager.default.moveItem(at: sessions, to: sessions.appendingPathExtension("failed-marker"))
+        try FileManager.default.moveItem(at: backup, to: sessions)
+        _ = try await failed.commitEdits()
+        try check(!failed.hasUnsavedChanges && failed.saveStatus == "Saved", "Image save didn't recover")
+        failed.releaseEditorResources()
+        print("PASS image saving ignores unreadable snapshots; actual storage failure reports once across edits, preserves pixels and recovers")
     }
 
     @MainActor static func openImage(_ url: URL) throws -> AnnotationEditorModel {
@@ -298,7 +373,9 @@ struct IdleSaveChecks {
         await first.load()
         let originalPadding = first.style.padding
         first.style.padding += 12
-        try check(first.sessionSnapshots.count == 1 && first.saveProject(reportingFailure: false), "Studio first real edit wasn't kept/saved")
+        try check(first.sessionSnapshots.isEmpty, "Studio kept a snapshot on the didSet path")
+        try await until { first.sessionSnapshots.count == 1 && session.hasUnsavedDraft }
+        try check(first.saveProject(reportingFailure: false), "Studio first real edit wasn't kept/saved")
         try check(first.previousSessionSnapshots.isEmpty, "Studio menu repeated this session's Last Opened state")
         let firstEntry = first.sessionSnapshots[0]
         first.teardown()
@@ -327,6 +404,7 @@ struct IdleSaveChecks {
         third.zoomEnabled = unchangedZoom // didSet without a real change
         try check(third.sessionSnapshots == before, "Studio no-op assignment kept a snapshot")
         third.style.padding += 6
+        third.flushDraft()
         try check(third.sessionSnapshots == before, "Studio duplicated the newest opening state")
         try check(third.previousSessionSnapshots == before, "Studio deduplication hid a different session with an identical opening state")
         // Soundtrack cleanup must see saved sessions, even when the current
@@ -343,6 +421,17 @@ struct IdleSaveChecks {
         try check(third.saveProject(reportingFailure: false), "Studio soundtrack cleanup fixture didn't save")
         third.teardown()
         try check(FileManager.default.fileExists(atPath: keptAudio.path) && !FileManager.default.fileExists(atPath: unusedAudio.path), "Studio cleanup deleted a snapshot's soundtrack or retained unused audio")
+        let unreadable = try unreadableSnapshotFolders(in: session.sessionSnapshotsURL)
+        let damaged = RecordingStudioModel(url: root)
+        await damaged.load()
+        damaged.audioVolume = 0.4
+        damaged.flushDraft()
+        try check(damaged.saveProject(reportingFailure: false), "Unreadable snapshots blocked Studio saving")
+        let unknownAudio = root.appendingPathComponent("\(RecordingSession.replacementAudioBaseName).unknown.wav")
+        try Data([9]).write(to: unknownAudio)
+        damaged.teardown()
+        try check(unreadable.allSatisfy { FileManager.default.fileExists(atPath: $0.path) }
+                  && FileManager.default.fileExists(atPath: unknownAudio.path), "Strict cleanup ignored unreadable snapshot metadata")
         let failed = RecordingStudioModel(url: root)
         await failed.load()
         let savedBytes = try Data(contentsOf: session.editDocumentURL)
@@ -352,13 +441,37 @@ struct IdleSaveChecks {
         failed.audioVolume = 0.7
         failed.flushDraft()
         try check(failed.saveStatus == "Not Saved" && !failed.saveProject(reportingFailure: false), "Studio snapshot failure didn't report/block the save")
-        try check(try Data(contentsOf: session.editDocumentURL) == savedBytes && !session.hasUnsavedDraft, "Snapshot failure overwrote Studio's opening state")
+        try check(try Data(contentsOf: session.editDocumentURL) == savedBytes && session.loadDraftDocument()?.audioVolume == 0.7
+                  && failed.hasUnsavedChanges, "Snapshot failure lost Studio crash safety or overwrote its saved opening state")
         try FileManager.default.moveItem(at: session.sessionSnapshotsURL, to: root.appendingPathComponent("failed-marker"))
         try FileManager.default.moveItem(at: backup, to: session.sessionSnapshotsURL)
         try check(failed.saveProject(reportingFailure: false), "Studio couldn't retry after snapshot storage recovered")
         failed.teardown()
+        var openingDraft = session.loadEditDocument()!
+        openingDraft.audioVolume = 0.5
+        try session.writeDraftDocument(openingDraft)
+        let draftBytes = try Data(contentsOf: session.draftDocumentURL)
+        let draftOpened = RecordingStudioModel(url: root)
+        await draftOpened.load()
+        let draftBackup = root.appendingPathComponent("sessions-draft-backup")
+        try FileManager.default.moveItem(at: session.sessionSnapshotsURL, to: draftBackup)
+        try Data([0]).write(to: session.sessionSnapshotsURL)
+        draftOpened.audioVolume = 0.2
+        draftOpened.flushDraft()
+        try check(!draftOpened.saveProject(reportingFailure: false) && draftOpened.hasUnsavedChanges
+                  && draftOpened.lastSaveSucceeded == false && Data(contentsOf: session.draftDocumentURL) == draftBytes,
+                  "Failing snapshot overwrote the opening crash draft or let close/quit ignore its dirty edits")
+        try FileManager.default.moveItem(at: session.sessionSnapshotsURL, to: root.appendingPathComponent("draft-failed-marker"))
+        try FileManager.default.moveItem(at: draftBackup, to: session.sessionSnapshotsURL)
+        draftOpened.flushDraft()
+        let keptDraft = try CaptureSessionSnapshots(directory: session.sessionSnapshotsURL).read(draftOpened.sessionSnapshots[0])
+        try check(try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: keptDraft.document).audioVolume == 0.5,
+                  "Recovery kept the edited draft instead of the session's opening draft")
+        try check(session.loadDraftDocument()?.audioVolume == 0.2 && draftOpened.saveProject(reportingFailure: false),
+                  "Recovered store didn't preserve the opening draft before saving new edits")
+        draftOpened.teardown()
         print("PASS Studio sessions: no-edit boundary, first edit, dated restore, one Undo/Redo, auto-save, no-op/dedupe and snapshot soundtrack retention")
-        print("PASS snapshot storage failure blocks draft/commit, reports Not Saved, preserves disk edits and retries after recovery")
+        print("PASS Studio tolerates unreadable snapshots but skips soundtrack cleanup; saved-open drafts survive store failure, opening crash drafts stay protected and dirty")
     }
 
     @MainActor static func savesOnlyRefreshExistingPreviews() async throws {
@@ -933,6 +1046,7 @@ struct IdleSaveChecks {
         try check(actualHome == isolated && support.hasPrefix(isolated + "/"), "Foundation storage escaped isolated home")
         NSApplication.shared.setActivationPolicy(.prohibited)
         try sessionStoreRetention()
+        try await sessionImageStorageFailures()
         try await sessionImageRestore()
         try await sessionPrunedRestoreAndPictures()
         try sessionTrash()
