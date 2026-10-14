@@ -432,13 +432,7 @@ struct RecordingStudioRevertCommand: View {
     var body: some View {
         if let studio, studio.isProject {
             Menu("Revert To") {
-                Button("Original") { studio.revertToOriginal() }
-                Button("Last Opened") { studio.revertToLastOpened() }
-                    .disabled(!studio.hasEditsSinceOpening)
-                if !studio.previousSessionSnapshots.isEmpty { Divider() }
-                ForEach(studio.previousSessionSnapshots) { snapshot in
-                    Button(snapshot.title) { studio.revertToSession(snapshot) }
-                }
+                RecordingStudioRevertItems(studio: studio)
             }
             .disabled(!studio.canRevert)
         }
@@ -2987,7 +2981,17 @@ private struct StudioInspector: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .padding(.bottom, PreviewPeekTab.pillHeight * 1.1)
+            // The Revert To bar keeps clear of the preview peek pill itself;
+            // without the bar (a plain movie), the end of the list must.
+            .padding(.bottom, model.isProject ? 12 : PreviewPeekTab.pillHeight * 1.1)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if model.isProject {
+                InspectorRevertBar(background: sidebarBackground) {
+                    RecordingStudioRevertItems(studio: model)
+                }
+                .disabled(!model.canRevert)
+            }
         }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .all)
