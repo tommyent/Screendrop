@@ -18,6 +18,24 @@ struct InspectorRevertBar<Items: View>: View {
     private let previewStack = ScreenshotPreviewStack.shared
 
     var body: some View {
+        VStack(spacing: 0) {
+            // A footer under the list, whatever its last section is.
+            Rectangle()
+                .fill(Palette.hairline)
+                .frame(height: 0.5)
+                .accessibilityHidden(true)
+
+            menu
+                .padding(.horizontal, InspectorMetrics.horizontalPadding)
+                .padding(.top, 10)
+                .padding(.bottom, clearsPeekPill ? PreviewPeekTab.pillHeight * 1.1 : 12)
+        }
+        .background(background)
+    }
+
+    /// The button menu style with a plain button style draws the label as
+    /// given; the borderless style dropped the pill and centred the text.
+    private var menu: some View {
         Menu {
             items()
         } label: {
@@ -37,15 +55,12 @@ struct InspectorRevertBar<Items: View>: View {
             .inspectorField()
             .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .frame(maxWidth: .infinity)
         .help("Go back to the original, to how this window opened, or to an earlier session")
         .accessibilityLabel("Revert To")
-        .padding(.horizontal, InspectorMetrics.horizontalPadding)
-        .padding(.top, 8)
-        .padding(.bottom, clearsPeekPill ? PreviewPeekTab.pillHeight * 1.1 : 12)
-        .background(background)
     }
 
     /// While an editor is open the preview stack waits as a pill at the
