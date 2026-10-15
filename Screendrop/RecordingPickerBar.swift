@@ -26,6 +26,7 @@ struct RecordingPickerControls: View {
     @AppStorage(ScreendropPreferences.recordingCameraDeviceIDKey) private var cameraID = ""
     @AppStorage(ScreendropPreferences.recordingMicrophoneDeviceIDKey) private var microphoneID = ""
     @AppStorage(ScreendropPreferences.recordingSystemAudioKey) private var systemAudio = false
+    @AppStorage(ScreendropPreferences.recordingCleanDesktopKey) private var cleanDesktop = true
     @AppStorage(ScreendropPreferences.recordingStartDelaySecondsKey) private var startDelaySeconds = 0
     @AppStorage(ScreendropPreferences.recordingTeleprompterEnabledKey) private var teleprompterEnabled = false
 
@@ -91,6 +92,20 @@ struct RecordingPickerControls: View {
             }
 
             timerMenu
+
+            Toggle(isOn: $cleanDesktop) {
+                BarActionLabel(
+                    id: .cleanDesktop,
+                    title: cleanDesktop ? "Clean desktop on" : "Clean desktop off",
+                    systemImage: cleanDesktop ? "sparkles" : "desktopcomputer",
+                    tint: cleanDesktop ? BarMetrics.activeTint : BarMetrics.inactiveTint
+                )
+            }
+            .toggleStyle(.button)
+            .buttonStyle(BarButtonStyle())
+            .accessibilityLabel("Clean desktop")
+            .accessibilityHint("Leaves desktop icons, the menu bar, Dock and notification banners out of screen and area recordings. Your desktop stays unchanged.")
+            .disabled(CaptureCountdownPresenter.shared.isRunning)
 
             BarActionButton(
                 id: .close,
