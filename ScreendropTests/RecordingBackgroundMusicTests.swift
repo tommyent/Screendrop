@@ -89,6 +89,15 @@ struct RecordingBackgroundMusicTests {
             == [0...1, 2.5...3.5])
     }
 
+    @Test func envelopeGridIsBoundedToFinalSecond() {
+        let duration = 1800.013
+        let times = RecordingMusicEnvelope.sampleTimes(duration: duration, speech: [10...11, 1000...1001])
+        #expect(times.count < 65)
+        #expect(times.first == 0 && times.last == duration)
+        #expect(times.filter { $0 < duration - 1 } == [0, 10, 10.05, 11, 11.3, 1000, 1000.05, 1001, 1001.3])
+        #expect(RecordingMusicEnvelope.sampleTimes(duration: 0.5, speech: []).allSatisfy { (0...0.5).contains($0) })
+    }
+
     @Test func attackReleaseFadeAndDisabledDucking() throws {
         var settings = RecordingBackgroundMusic(fileName: "test.wav", displayName: "Test")
         let timeline = RecordingClipTimeline.full(sourceDuration: 5)

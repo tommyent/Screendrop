@@ -80,13 +80,7 @@ nonisolated enum RecordingMusicEnvelope {
         var gain = 1.0
         var previousTime = 0.0
         var result: [Point] = []
-        var times = (0...Int(ceil(duration / window))).map { min(duration, Double($0) * window) }
-        times.append(max(0, duration - 1))
-        for range in mapped {
-            times += [range.lowerBound, min(duration, range.lowerBound + 0.05),
-                      range.upperBound, min(duration, range.upperBound + 0.3)]
-        }
-        for time in Set(times).sorted() {
+        for time in sampleTimes(duration: duration, speech: mapped) {
             while rangeIndex < mapped.count, mapped[rangeIndex].upperBound <= previousTime { rangeIndex += 1 }
             let active = rangeIndex < mapped.count && mapped[rangeIndex].lowerBound <= previousTime
             let step = (time - previousTime) * (1 - minimum) / (active ? 0.05 : 0.3)
@@ -103,5 +97,20 @@ nonisolated enum RecordingMusicEnvelope {
             previousTime = time
         }
         return result
+    }
+
+    static func sampleTimes(duration: Double, speech: [ClosedRange<Double>]) -> [Double] {
+        guard duration.isFinite, duration > 0 else { return [] }
+        let fadeStart = max(0, duration - 1)
+        // Only gain × fade needs a grid; the rest is linear between speech/attack/release events.
+        var times = (0...Int(ceil((duration - fadeStart) / window))).map {
+            min(duration, fadeStart + Double($0) * window)
+        }
+        times.append(0)
+        for range in speech {
+            times += [range.lowerBound, min(duration, range.lowerBound + 0.05),
+                      range.upperBound, min(duration, range.upperBound + 0.3)]
+        }
+        return Set(times).sorted()
     }
 }
