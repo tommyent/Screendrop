@@ -20,7 +20,7 @@ nonisolated enum RecordingChapterPlanner {
             guard chapter.start >= 0,
                   timeline.segments.contains(where: { chapter.start >= $0.sourceStart && chapter.start < $0.sourceEnd }),
                   let time = timeline.editorTime(forSourceTime: chapter.start),
-                  time < timeline.duration,
+                  time < timeline.duration - 0.5,
                   result.last.map({ time - $0.start > 0.001 }) ?? true else { continue }
             var mapped = chapter
             mapped.start = time

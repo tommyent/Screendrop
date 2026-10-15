@@ -63,6 +63,15 @@ struct RecordingChapterTests {
         #expect(proposed.map(\.start) == [20])
     }
 
+    @Test func chaptersNearTheRenderedEndAreDropped() throws {
+        let chapters = [RecordingChapter(title: "Kept", start: 9.49), RecordingChapter(title: "Half second", start: 9.5), RecordingChapter(title: "At playhead end", start: 9.999)]
+        let timeline = RecordingClipTimeline.full(sourceDuration: 10)
+        #expect(RecordingChapterPlanner.mapped(chapters, through: timeline).map(\.title) == ["Kept"])
+        let payload = try #require(JSONSerialization.jsonObject(with: RecordingChapterPlanner.shareData(chapters, through: timeline)) as? [[String: Any]])
+        #expect(payload.count == 1)
+        #expect(payload[0]["title"] as? String == "Kept")
+    }
+
     @Test func oldMetadataAndNewChaptersRoundTrip() throws {
         var metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: Data(#"{"version":1,"displayName":"Existing"}"#.utf8))
         #expect(metadata.chapters == nil)
