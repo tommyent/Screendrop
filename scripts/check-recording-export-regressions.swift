@@ -390,6 +390,48 @@ struct RecordingExportRegressionChecks {
         }
     }
 
+    static func backgroundMusicStorage(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-storage.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let input = directory.appendingPathComponent("download.wav")
+        try audioTone(at: input, frequency: 660)
+        let original = try Data(contentsOf: session.screenURL)
+        let model = RecordingStudioModel(url: session.directoryURL)
+        await model.load()
+        try check(model.isLoaded, "Music storage fixture did not load")
+        model.setBackgroundMusic(fileURL: input, displayName: "Test music", credit: "Test credit", startOffset: 2)
+        try FileManager.default.removeItem(at: input) // Picker removes its temp on callback return.
+        for _ in 0..<500 where model.backgroundMusic == nil && model.backgroundMusicError == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let stored = model.currentDocument()
+        try check(stored.backgroundMusic?.startOffset == 2 && stored.backgroundMusic?.credit == "Test credit", "Music import lost metadata")
+        try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Synchronous copy did not survive deleted download")
+        try check(model.saveProject(), "Music project did not save")
+        let storedURL = session.directoryURL.appendingPathComponent(stored.backgroundMusic!.fileName)
+        let musicBytes = try Data(contentsOf: storedURL)
+        model.musicVolume = 0.4
+        model.removeBackgroundMusic()
+        try check(model.currentDocument().backgroundMusic == nil, "Music removal did not clear selection")
+        await model.discardChanges()
+        try check(model.backgroundMusic != nil && model.currentDocument().backgroundMusic == stored.backgroundMusic, "Discard did not restore saved music")
+        let bad = directory.appendingPathComponent("invalid-audio.wav")
+        try Data("not audio".utf8).write(to: bad)
+        model.setBackgroundMusic(fileURL: bad, displayName: "Invalid", credit: nil, startOffset: 0)
+        for _ in 0..<500 where model.backgroundMusicError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        try check(model.backgroundMusicError != nil && model.currentDocument().backgroundMusic == stored.backgroundMusic, "Invalid import replaced valid music")
+        model.teardown()
+        try check(try Data(contentsOf: storedURL) == musicBytes && Data(contentsOf: session.screenURL) == original, "Music cleanup touched a referenced file or the source")
+        let data = try CaptureManifest.encoder.encode(stored)
+        try check(try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data) == stored, "Music document did not round trip")
+        var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacy.removeValue(forKey: "backgroundMusic")
+        let old = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: JSONSerialization.data(withJSONObject: legacy))
+        try check(old.backgroundMusic == nil && old.formatVersion == 6, "Legacy document selected music or changed version")
+        print("PASS: music copies before picker callback returns; metadata/save/discard/legacy round trip; invalid import preserves selection; cleanup preserves source and saved music")
+    }
+
     static func voiceIsolation(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("voice.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -559,6 +601,7 @@ struct RecordingExportRegressionChecks {
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
         try await quickLookInstant(in: directory)
+        try await backgroundMusicStorage(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
         try await cancelShareRetry(in: directory)

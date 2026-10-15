@@ -231,6 +231,97 @@ final class RecordingStudioModel {
     /// Why the last import was rejected, shown next to the Replace control.
     private(set) var replacementAudioError: String?
 
+    private(set) var backgroundMusic: RecordingReplacementAudio?
+    private(set) var backgroundMusicSettings: RecordingBackgroundMusic?
+    private(set) var backgroundMusicError: String?
+    private var backgroundMusicTask: Task<Void, Never>?
+    var hasBackgroundMusic: Bool { backgroundMusicSettings != nil }
+
+    var musicStartOffset: CGFloat {
+        get { CGFloat(backgroundMusicSettings?.startOffset ?? 0) }
+        set { changeBackgroundMusic { $0.startOffset = RecordingBackgroundMusic.startOffset(Double(newValue), duration: backgroundMusic?.duration ?? 0) } }
+    }
+    var musicVolume: CGFloat {
+        get { CGFloat(backgroundMusicSettings?.volume ?? 0.25) }
+        set { changeBackgroundMusic { $0.volume = Double(newValue.isFinite ? min(1, max(0, newValue)) : 0.25) } }
+    }
+    var musicLoops: Bool {
+        get { backgroundMusicSettings?.loop ?? true }
+        set { changeBackgroundMusic { $0.loop = newValue } }
+    }
+    var musicDucks: Bool {
+        get { backgroundMusicSettings?.duck ?? true }
+        set { changeBackgroundMusic { $0.duck = newValue } }
+    }
+    var musicDuckAmount: RecordingBackgroundMusic.DuckAmount {
+        get { backgroundMusicSettings?.duckAmount ?? .medium }
+        set { changeBackgroundMusic { $0.duckAmount = newValue } }
+    }
+
+    private func changeBackgroundMusic(_ change: (inout RecordingBackgroundMusic) -> Void) {
+        guard var settings = backgroundMusicSettings else { return }
+        change(&settings)
+        guard settings != backgroundMusicSettings else { return }
+        backgroundMusicSettings = settings
+        applyReplacementAudioToPlayback()
+    }
+
+    /// The picker deletes its download on return; copy synchronously before resolving audio.
+    func setBackgroundMusic(fileURL: URL, displayName: String, credit: String?, startOffset: TimeInterval) {
+        guard isLoaded, let session else { return }
+        pause()
+        backgroundMusicTask?.cancel()
+        backgroundMusicError = nil
+        let destination = session.directoryURL
+            .appendingPathComponent("\(RecordingBackgroundMusic.baseName).\(UUID().uuidString)")
+            .appendingPathExtension(fileURL.pathExtension.isEmpty ? "m4a" : fileURL.pathExtension)
+        do { try FileManager.default.copyItem(at: fileURL, to: destination) }
+        catch {
+            backgroundMusicError = "Could not import music: \(error.localizedDescription)"
+            return
+        }
+        backgroundMusicTask = Task { [weak self] in
+            var adopted = false
+            defer { if !adopted { try? FileManager.default.removeItem(at: destination) } }
+            let resolved = await RecordingReplacementAudio.load(url: destination, displayName: displayName)
+            guard let self, !self.isTornDown, !Task.isCancelled else { return }
+            self.backgroundMusicTask = nil
+            guard let resolved else {
+                self.backgroundMusicError = "That file has no readable audio track."
+                return
+            }
+            var settings = self.backgroundMusicSettings ?? RecordingBackgroundMusic(fileName: destination.lastPathComponent, displayName: displayName)
+            settings.fileName = destination.lastPathComponent
+            settings.displayName = displayName
+            settings.credit = credit
+            settings.startOffset = RecordingBackgroundMusic.startOffset(startOffset, duration: resolved.duration)
+            self.backgroundMusic = resolved
+            self.backgroundMusicSettings = settings
+            adopted = true
+            self.applyReplacementAudioToPlayback()
+        }
+    }
+
+    func removeBackgroundMusic() {
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
+        pause()
+        backgroundMusic = nil
+        backgroundMusicSettings = nil
+        backgroundMusicError = nil
+        applyReplacementAudioToPlayback()
+    }
+
+    private func resolveBackgroundMusic() async {
+        backgroundMusic = nil
+        backgroundMusicError = nil
+        guard let settings = backgroundMusicSettings, let session else { return }
+        let resolved = await RecordingReplacementAudio.load(url: session.directoryURL.appendingPathComponent(settings.fileName), displayName: settings.displayName)
+        guard !Task.isCancelled, !isTornDown, backgroundMusicSettings == settings else { return }
+        backgroundMusic = resolved
+        if resolved == nil { backgroundMusicError = "The background music file is missing or unreadable. Add it again or remove it." }
+    }
+
     private var voiceIsolationEnabled = false
     private var isolatedMicrophone: RecordingReplacementAudio?
     private var microphoneTrackID: CMPersistentTrackID?
@@ -564,6 +655,7 @@ final class RecordingStudioModel {
             }
         }
 
+        await resolveBackgroundMusic()
         await resolveVoiceIsolation()
         guard !isTornDown, !Task.isCancelled else { return }
         do {
@@ -625,6 +717,9 @@ final class RecordingStudioModel {
 
         cancelVoiceIsolation()
         voiceIsolationEnabled = document.isolateVoice
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
+        backgroundMusicSettings = document.backgroundMusic
         voiceIsolationError = nil
         replacementAudioReference = document.replacementAudioFileName.map {
             ($0, document.replacementAudioDisplayName)
@@ -679,6 +774,8 @@ final class RecordingStudioModel {
         redactionFailureObserver = nil
         redactionStatusObserver = nil
         audioExportTask?.cancel()
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
         replacementAudioTask?.cancel()
         cancelVoiceIsolation()
         cancelShare()
@@ -708,6 +805,8 @@ final class RecordingStudioModel {
         screenAsset = nil
         screenVideoTrack = nil
         isolatedMicrophone = nil
+        backgroundMusic = nil
+        backgroundMusicSettings = nil
         microphoneTrackID = nil
         replacementAudio = nil
         replacementAudioReference = nil
@@ -1516,6 +1615,7 @@ final class RecordingStudioModel {
             audioExportFormat: audioExportFormat,
             audioVolume: Double(audioVolume),
             isolateVoice: voiceIsolationEnabled && isolatedMicrophone != nil,
+            backgroundMusic: backgroundMusicSettings,
             redactions: redactions
         )
     }
@@ -1660,6 +1760,7 @@ final class RecordingStudioModel {
             replacementAudio = nil
         }
 
+        await resolveBackgroundMusic()
         await resolveVoiceIsolation()
         guard !isTornDown, !Task.isCancelled else { return }
         isApplyingDocument = false
@@ -2826,6 +2927,7 @@ final class RecordingStudioModel {
                 try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: store.read($0).document)
             }
         } catch { return } // An unreadable snapshot may still need an imported soundtrack.
+        let referencedMusic = Set([savedDocument?.backgroundMusic?.fileName, draftDocument?.backgroundMusic?.fileName, lastSavedDocument?.backgroundMusic?.fileName, backgroundMusicSettings?.fileName].compactMap { $0 } + keptDocuments.compactMap { $0.backgroundMusic?.fileName })
         let referencedNames = Set([
             savedDocument?.replacementAudioFileName,
             draftDocument?.replacementAudioFileName,
@@ -2836,8 +2938,8 @@ final class RecordingStudioModel {
             atPath: session.directoryURL.path
         )) ?? []
         for name in names
-        where name.hasPrefix("\(RecordingSession.replacementAudioBaseName).")
-            && !referencedNames.contains(name) {
+        where (name.hasPrefix("\(RecordingSession.replacementAudioBaseName).") && !referencedNames.contains(name))
+            || (name.hasPrefix("\(RecordingBackgroundMusic.baseName).") && !referencedMusic.contains(name)) {
             try? FileManager.default.removeItem(
                 at: session.directoryURL.appendingPathComponent(name)
             )
