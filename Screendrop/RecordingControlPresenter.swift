@@ -33,6 +33,8 @@ struct RecordingSessionControls: View {
         HStack(spacing: BarMetrics.itemSpacing) {
             elapsed
 
+            MicrophoneMeter()
+
             BarDivider()
 
             BarActionButton(
@@ -114,5 +116,36 @@ struct RecordingSessionControls: View {
                 ? "Recording paused at \(manager.formattedElapsedTime)"
                 : "Recording, \(manager.formattedElapsedTime) elapsed"
         )
+    }
+}
+
+/// A thin level bar beside the clock while the take has a microphone, red
+/// for a moment after it clips. Its own view so the ~20 level updates a
+/// second redraw only the bar, not the transport.
+private struct MicrophoneMeter: View {
+    @State private var manager = ScreenRecordingManager.shared
+
+    private static let height: CGFloat = 18
+
+    var body: some View {
+        if let level = manager.microphoneLevel {
+            Capsule()
+                .fill(BarMetrics.activeTint.opacity(0.15))
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(manager.isMicrophoneClipping ? BarMetrics.recordTint : BarMetrics.activeTint)
+                        .frame(height: Self.height * level)
+                }
+                .clipShape(Capsule())
+                .frame(width: 4, height: Self.height)
+                .animation(.linear(duration: 0.05), value: level)
+                .padding(.horizontal, 6)
+                .frame(height: BarMetrics.controlSize)
+                .accessibilityElement()
+                .accessibilityLabel("Microphone level")
+                .accessibilityValue(
+                    manager.isMicrophoneClipping ? "Too loud" : "\(Int((level * 100).rounded())) percent"
+                )
+        }
     }
 }
