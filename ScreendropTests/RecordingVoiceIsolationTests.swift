@@ -18,7 +18,7 @@ struct RecordingVoiceIsolationTests {
 
     @Test func silenceAndInvalidWindows() {
         #expect(RecordingAudioLag.measure(input: [0, 0], output: [0, 0, 0], maximumLag: 1) == 0)
-        #expect(RecordingAudioLag.measure(input: [1, 2], output: [0, 0, 0], maximumLag: 1) == 0)
+        #expect(RecordingAudioLag.measure(input: [1, 2], output: [0, 0, 0], maximumLag: 1) == nil)
         #expect(RecordingAudioLag.measure(input: [], output: [], maximumLag: 0) == nil)
         #expect(RecordingAudioLag.measure(input: [1], output: [1], maximumLag: 1) == nil)
         #expect(RecordingAudioLag.measure(input: [.nan], output: [1], maximumLag: 0) == nil)

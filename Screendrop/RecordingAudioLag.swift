@@ -25,8 +25,8 @@ nonisolated enum RecordingAudioLag {
                     let score = dot / sqrt(max(inputEnergy * energy, 1e-20))
                     if score > bestScore { bestScore = score; bestLag = lag }
                 }
-                // Fully suppressed noise has no audible timing to correct.
-                if outputEnergy < 1e-10 { return 0 }
+                // A suppressed window cannot establish the delay of speech elsewhere in the take.
+                if outputEnergy < 1e-10 { return nil }
                 return bestScore >= 0.1 ? bestLag : nil
             }
         }

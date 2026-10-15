@@ -4,7 +4,7 @@ import AVFoundation
 import Foundation
 
 nonisolated enum RecordingVoiceIsolation {
-    static let fileName = "mic-isolated.m4a"
+    static let fileName = "mic-isolated-v2.m4a"
     static let sampleRate = 48_000.0
     // shortcut: lag search stops at 250 ms; extend it if a future OS unit exceeds that delay.
     static let maximumLag = 12_000
@@ -65,15 +65,15 @@ nonisolated enum RecordingVoiceIsolation {
             lastPercent = percent
             progress(value)
         }
-        let peakFrame = try await extract(track: track, asset: asset, total: total, format: format, url: inputURL) {
+        try await extract(track: track, asset: asset, total: total, format: format, url: inputURL) {
             report($0 * 0.2)
         }
         try Task.checkCancellation()
-        try renderOffline(inputURL: inputURL, outputURL: outputURL, format: format) { report(0.2 + $0 * 0.6) }
+        let peakFrame = try renderOffline(inputURL: inputURL, outputURL: outputURL, format: format) { report(0.2 + $0 * 0.6) }
         let input = try AVAudioFile(forReading: inputURL)
         let output = try AVAudioFile(forReading: outputURL)
         let windowCount = min(Int(total), Int(sampleRate * 2))
-        // Prefer strong signal after the model's first second of adaptation, where possible.
+        // Center on surviving output so removed input noise cannot select a silent window.
         let start = min(max(peakFrame - AVAudioFramePosition(sampleRate), AVAudioFramePosition(sampleRate)), total - AVAudioFramePosition(windowCount))
         input.framePosition = start
         output.framePosition = start
@@ -99,7 +99,7 @@ nonisolated enum RecordingVoiceIsolation {
     }
 
     private static func extract(track: AVAssetTrack, asset: AVAsset, total: AVAudioFramePosition,
-                                format: AVAudioFormat, url: URL, progress: (Double) -> Void) async throws -> AVAudioFramePosition {
+                                format: AVAudioFormat, url: URL, progress: (Double) -> Void) async throws {
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: sampleRate,
@@ -115,8 +115,6 @@ nonisolated enum RecordingVoiceIsolation {
         let silence = try buffer(format)
         silence.frameLength = silence.frameCapacity
         memset(silence.floatChannelData![0], 0, Int(silence.frameLength) * MemoryLayout<Float>.size)
-        var peakFrame: AVAudioFramePosition = 0
-        var peakEnergy: Float = 0
         var written: AVAudioFramePosition = 0
         func pad(to frame: AVAudioFramePosition) throws {
             while written < frame {
@@ -143,20 +141,16 @@ nonisolated enum RecordingVoiceIsolation {
                                             destination: chunk.floatChannelData![0]) == kCMBlockBufferNoErr else {
                 throw IsolationError.invalidAudio
             }
-            var energy: Float = 0
-            vDSP_measqv(chunk.floatChannelData![0], 1, &energy, vDSP_Length(count))
-            if energy > peakEnergy { peakEnergy = energy; peakFrame = written }
             try file.write(from: chunk)
             written += AVAudioFramePosition(count)
             progress(Double(written) / Double(total))
         }
         guard reader.status != .failed else { throw reader.error ?? IsolationError.invalidAudio }
         try pad(to: total)
-        return peakFrame
     }
 
     private static func renderOffline(inputURL: URL, outputURL: URL, format: AVAudioFormat,
-                                      progress: (Double) -> Void) throws {
+                                      progress: (Double) -> Void) throws -> AVAudioFramePosition {
         let input = try AVAudioFile(forReading: inputURL)
         let output = try AVAudioFile(forWriting: outputURL, settings: format.settings)
         defer { output.close() }
@@ -190,12 +184,17 @@ nonisolated enum RecordingVoiceIsolation {
         let chunk = try buffer(format)
         let total = input.length + AVAudioFramePosition(maximumLag)
         var written: AVAudioFramePosition = 0
+        var peakFrame: AVAudioFramePosition = 0
+        var peakEnergy: Float = 0
         var retries = 0
         while written < total {
             try Task.checkCancellation()
             let status = try engine.renderOffline(AVAudioFrameCount(min(4096, total - written)), to: chunk)
             switch status {
             case .success where chunk.frameLength > 0:
+                var energy: Float = 0
+                vDSP_measqv(chunk.floatChannelData![0], 1, &energy, vDSP_Length(chunk.frameLength))
+                if energy > peakEnergy { peakEnergy = energy; peakFrame = written }
                 try output.write(from: chunk)
                 written += AVAudioFramePosition(chunk.frameLength)
                 retries = 0
@@ -206,6 +205,7 @@ nonisolated enum RecordingVoiceIsolation {
             default: throw IsolationError.renderFailed
             }
         }
+        return peakFrame
     }
 
     private static func samples(_ file: AVAudioFile, count: Int) throws -> [Float] {
