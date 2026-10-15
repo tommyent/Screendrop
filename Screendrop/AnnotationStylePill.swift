@@ -73,8 +73,8 @@ struct AnnotationStylePillButton: View {
                     Text("Opacity")
                     Slider(value: Binding(
                         get: { model.selectedSwatch.alpha },
-                        set: { model.setSwatchAlpha($0) }
-                    ), in: 0...1, step: 0.01) {
+                        set: { model.setSwatchAlpha(($0 * 100).rounded() / 100) }
+                    ), in: 0...1) {
                         Text("Opacity")
                     } onEditingChanged: { setOpacityEditing($0) }
                     .labelsHidden()
