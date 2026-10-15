@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AFB600000000000000000005 /* Screendrop/RecordingMusicAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB600000000000000000006 /* Screendrop/RecordingMusicAnalysis.swift */; };
 		AFB600000000000000000003 /* Screendrop/RecordingMusicEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB600000000000000000004 /* Screendrop/RecordingMusicEnvelope.swift */; };
 		AFB600000000000000000001 /* Screendrop/RecordingBackgroundMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB600000000000000000002 /* Screendrop/RecordingBackgroundMusic.swift */; };
 		AF1700000000000000000004 /* Screendrop/RecordingReplacementAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */; };
@@ -93,6 +94,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AFB600000000000000000006 /* Screendrop/RecordingMusicAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingMusicAnalysis.swift; sourceTree = SOURCE_ROOT; };
 		AFB600000000000000000004 /* Screendrop/RecordingMusicEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingMusicEnvelope.swift; sourceTree = SOURCE_ROOT; };
 		AFB600000000000000000002 /* Screendrop/RecordingBackgroundMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingBackgroundMusic.swift; sourceTree = SOURCE_ROOT; };
 		AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingReplacementAudio.swift; sourceTree = SOURCE_ROOT; };
@@ -235,6 +237,7 @@
 			children = (
 				AFB600000000000000000002 /* Screendrop/RecordingBackgroundMusic.swift */,
 				AFB600000000000000000004 /* Screendrop/RecordingMusicEnvelope.swift */,
+				AFB600000000000000000006 /* Screendrop/RecordingMusicAnalysis.swift */,
 				AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */,
 				AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */,
 				AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */,
@@ -424,6 +427,7 @@
 			files = (
 				AFB600000000000000000001 /* Screendrop/RecordingBackgroundMusic.swift in Sources */,
 				AFB600000000000000000003 /* Screendrop/RecordingMusicEnvelope.swift in Sources */,
+				AFB600000000000000000005 /* Screendrop/RecordingMusicAnalysis.swift in Sources */,
 				AF1700000000000000000004 /* Screendrop/RecordingReplacementAudio.swift in Sources */,
 				AF1700000000000000000003 /* Screendrop/RecordingCompositionBuilder.swift in Sources */,
 				AF1700000000000000000002 /* Screendrop/RecordingVoiceIsolation.swift in Sources */,

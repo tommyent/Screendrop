@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import OSLog
 
 nonisolated struct RecordingMusicAnalysis: Sendable {
     var levels: [Float]
@@ -73,6 +74,7 @@ nonisolated struct RecordingMusicAnalysis: Sendable {
 /// Source-time analysis survives trims, speed changes and repeated export routes.
 actor RecordingMusicAnalysisCache {
     static let shared = RecordingMusicAnalysisCache()
+    nonisolated static let logger = Logger(subsystem: "com.tommyent.Sukusho", category: "MusicAnalysis")
     private struct Key: Hashable {
         var url: URL
         var trackID: CMPersistentTrackID
@@ -84,12 +86,43 @@ actor RecordingMusicAnalysisCache {
     func analysis(url: URL, trackID: CMPersistentTrackID) async throws -> RecordingMusicAnalysis {
         let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
         let key = Key(url: url.standardizedFileURL, trackID: trackID, size: values.fileSize, modified: values.contentModificationDate)
-        if let task = entries[key] { return try await task.value }
-        let task = Task { try await RecordingMusicAnalysis.read(url: url, trackID: trackID) }
-        // Keep only a handful of source tracks; analysis is cheap to recreate on reopening.
-        if entries.count >= 4 { entries.removeAll() }
-        entries[key] = task
-        do { return try await task.value }
-        catch { entries[key] = nil; throw error }
+        let task: Task<RecordingMusicAnalysis, Error>
+        if let cached = entries[key] { task = cached }
+        else {
+            task = Task { try await RecordingMusicAnalysis.read(url: url, trackID: trackID) }
+            // Keep only a handful of source tracks; analysis is cheap to recreate on reopening.
+            if entries.count >= 4 { entries.removeAll() }
+            entries[key] = task
+        }
+        do { return try await Self.wait(for: task) }
+        catch {
+            if !(error is CancellationError) { entries[key] = nil }
+            throw error
+        }
+    }
+
+    func availableAnalysis(url: URL, trackID: CMPersistentTrackID) async throws -> RecordingMusicAnalysis? {
+        do { return try await analysis(url: url, trackID: trackID) }
+        catch is CancellationError { throw CancellationError() }
+        catch {
+            Self.logger.warning("Audio analysis failed; music continues without that waveform or ducking: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// A stream's wait is cancellable even while the shared cache task keeps decoding.
+    nonisolated static func wait(for task: Task<RecordingMusicAnalysis, Error>) async throws -> RecordingMusicAnalysis {
+        try Task.checkCancellation()
+        let stream = AsyncThrowingStream<RecordingMusicAnalysis, Error> { continuation in
+            let waiter = Task {
+                do { continuation.yield(try await task.value); continuation.finish() }
+                catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { _ in waiter.cancel() }
+        }
+        var iterator = stream.makeAsyncIterator()
+        guard let result = try await iterator.next() else { throw CancellationError() }
+        try Task.checkCancellation()
+        return result
     }
 }

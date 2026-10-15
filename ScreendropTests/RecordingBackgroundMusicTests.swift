@@ -61,6 +61,27 @@ struct RecordingBackgroundMusicTests {
         #expect(RecordingMusicEnvelope.speechRanges(levels: speech) == [1...2])
     }
 
+    @Test func cancelledWaitLeavesSharedAnalysisRunning() async throws {
+        let shared = Task<RecordingMusicAnalysis, Error> {
+            try await Task.sleep(for: .seconds(5))
+            return RecordingMusicAnalysis(levels: [])
+        }
+        defer { shared.cancel() }
+        let waiter = Task { try await RecordingMusicAnalysisCache.wait(for: shared) }
+        await Task.yield()
+        let start = ContinuousClock.now
+        waiter.cancel()
+        await #expect(throws: CancellationError.self) { try await waiter.value }
+        #expect(ContinuousClock.now - start < .seconds(1))
+        #expect(!shared.isCancelled)
+    }
+
+    @Test func unreadableAnalysisIsOptional() async throws {
+        let cache = RecordingMusicAnalysisCache()
+        let absent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        #expect(try await cache.availableAnalysis(url: absent, trackID: 999) == nil)
+    }
+
     @Test func speechMapsThroughCutsAndSpeed() {
         let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 1, sourceEnd: 3),
             .init(sourceStart: 5, sourceEnd: 9, speed: 2)])

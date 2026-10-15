@@ -238,6 +238,20 @@ final class RecordingStudioModel {
     private var playbackMusicTrackID: CMPersistentTrackID?
     private var microphoneMusicAnalysis: RecordingMusicAnalysis?
     private(set) var musicWaveform: [Float] = []
+#if DEBUG
+    @ObservationIgnored var musicAnalysisOverride: ((URL, CMPersistentTrackID) async -> RecordingMusicAnalysis?)?
+#endif
+
+    private func availableMusicAnalysis(url: URL, trackID: CMPersistentTrackID) async throws -> RecordingMusicAnalysis? {
+#if DEBUG
+        if let musicAnalysisOverride {
+            let result = await musicAnalysisOverride(url, trackID)
+            try Task.checkCancellation()
+            return result
+        }
+#endif
+        return try await RecordingMusicAnalysisCache.shared.availableAnalysis(url: url, trackID: trackID)
+    }
     var hasBackgroundMusic: Bool { backgroundMusicSettings != nil }
 
     var musicStartOffset: CGFloat {
@@ -305,10 +319,10 @@ final class RecordingStudioModel {
                 return
             }
             do {
-                let waveform = try await RecordingMusicAnalysisCache.shared.analysis(url: destination, trackID: resolved.track.trackID).waveform
+                let waveform = try await self.availableMusicAnalysis(url: destination, trackID: resolved.track.trackID)?.waveform ?? []
                 let micAnalysis: RecordingMusicAnalysis?
                 if let id = self.microphoneTrackID, self.microphoneMusicAnalysis == nil {
-                    micAnalysis = try await RecordingMusicAnalysisCache.shared.analysis(url: self.screenURL, trackID: id)
+                    micAnalysis = try await self.availableMusicAnalysis(url: self.screenURL, trackID: id) ?? RecordingMusicAnalysis(levels: [])
                 } else { micAnalysis = self.microphoneMusicAnalysis }
                 try Task.checkCancellation()
                 guard !self.isTornDown else { return }
@@ -355,12 +369,12 @@ final class RecordingStudioModel {
             return
         }
         do {
-            let analysis = try await RecordingMusicAnalysisCache.shared.analysis(url: resolved.url, trackID: resolved.track.trackID)
+            let analysis = try await availableMusicAnalysis(url: resolved.url, trackID: resolved.track.trackID)
             if let id = microphoneTrackID, microphoneMusicAnalysis == nil {
-                microphoneMusicAnalysis = try await RecordingMusicAnalysisCache.shared.analysis(url: screenURL, trackID: id)
+                microphoneMusicAnalysis = try await availableMusicAnalysis(url: screenURL, trackID: id) ?? RecordingMusicAnalysis(levels: [])
             }
             guard !Task.isCancelled, !isTornDown, backgroundMusicSettings == settings else { return }
-            musicWaveform = analysis.waveform
+            musicWaveform = analysis?.waveform ?? []
             backgroundMusic = resolved
         } catch {
             backgroundMusicError = "Could not prepare music: \(error.localizedDescription)"

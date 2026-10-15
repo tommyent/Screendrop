@@ -63,8 +63,9 @@ nonisolated enum RecordingBackgroundMusicMixer {
         }
         let speech: [ClosedRange<Double>]
         if music.settings.duck, let microphoneTrackID {
-            speech = try await RecordingMusicAnalysisCache.shared.analysis(url: sourceURL, trackID: microphoneTrackID).speech
+            speech = try await RecordingMusicAnalysisCache.shared.availableAnalysis(url: sourceURL, trackID: microphoneTrackID)?.speech ?? []
         } else { speech = [] }
+        try Task.checkCancellation()
         let combined = try adding(to: asset, music: loaded, settings: music.settings, timeline: timeline)
         return (combined.asset, mix(asset: combined.asset, volume: volume, musicTrackID: combined.trackID,
                                     settings: music.settings, speech: speech, timeline: timeline))

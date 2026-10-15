@@ -485,6 +485,12 @@ struct RecordingExportRegressionChecks {
                 try check(abs(duration - cut.duration) < 0.06, "Music export missed cut duration: \(url.lastPathComponent) = \(duration), expected \(cut.duration)")
             }
         }
+        let unducked = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, microphoneTrackID: 9999,
+            backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: unducked) }
+        let fallbackLevel = try await level(unducked, at: 0.85, frequency: 660)
+        try check(fallbackLevel > 0.025, "Failed mic analysis did not export unducked music")
         let muted = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
             replacementURL: nil, format: .wav, volume: 0, microphoneTrackID: micID,
             backgroundMusic: configuration.backgroundMusic), progress: { _ in })
@@ -530,12 +536,14 @@ struct RecordingExportRegressionChecks {
         model.musicVolume = 0.4
         model.removeBackgroundMusic()
         try check(model.currentDocument().backgroundMusic == nil, "Music removal did not clear selection")
+        model.musicAnalysisOverride = { _, _ in nil }
         model.screenPlayer.isMuted = true
         model.cameraPlayer.isMuted = true
         model.play()
         try check(model.isPlaying, "Muted restore fixture did not start its synthetic playback clock")
         await model.discardChanges()
         try check(!model.isPlaying, "Restoring music left the previous player running during audio reload")
+        try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Unavailable analysis prevented Studio music restoration")
         try check(model.backgroundMusic != nil && model.currentDocument().backgroundMusic == stored.backgroundMusic, "Discard did not restore saved music")
         let bad = directory.appendingPathComponent("invalid-audio.wav")
         try Data("not audio".utf8).write(to: bad)
