@@ -814,7 +814,8 @@ final class AnnotationEditorModel {
         engine.applyStyleToSelection { shape in
             switch shape.kind {
             case var .geo(props): props.dash = enabled ? .draw : .solid; shape.kind = .geo(props)
-            case var .arrow(props): props.dash = enabled ? .draw : .solid; shape.kind = .arrow(props)
+            case var .arrow(props) where props.isHighlighter != true:
+                props.dash = enabled ? .draw : .solid; shape.kind = .arrow(props)
             default: break
             }
         }
@@ -891,7 +892,7 @@ final class AnnotationEditorModel {
     /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
         guard let shape = engine.selectedShapes.first else { return }
-        if let dash = shape.geoProps?.dash ?? shape.arrowProps?.dash {
+        if shape.tool.supportsHandDrawnStyle, let dash = shape.geoProps?.dash ?? shape.arrowProps?.dash {
             handDrawn = dash == .draw
             engine.currentDash = dash
         }

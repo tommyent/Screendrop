@@ -26,7 +26,7 @@ extension AnnoEditor {
         switch tool {
         case .select:
             beginSelectInteraction(pointer)
-        case .freehand, .highlighter:
+        case .freehand:
             beginDrawing(pointer)
         case .text:
             createText(at: pointer.pagePoint)
@@ -34,7 +34,7 @@ extension AnnoEditor {
             beginBoxShape(pointer)
         case .numberedCircle:
             createNumberedCircle(at: pointer.pagePoint)
-        case .line, .arrow:
+        case .line, .arrow, .highlighter:
             beginArrow(pointer)
         case .magnifier:
             beginMagnifier(pointer)
@@ -122,13 +122,11 @@ extension AnnoEditor {
         var props = DrawProps()
         props.swatch = currentSwatch
         props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
-        props.isHighlighter = tool == .highlighter ? true : nil
-        props.isPen = pointer.isPen && tool != .highlighter
+        props.isPen = pointer.isPen
         props.points = [Vec(0, 0, props.isPen ? pointer.pressure : 0.5)]
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .draw(props))
         document.add(shape)
-        setInteraction(.drawing(id: shape.id, origin: pointer.pagePoint,
-                                horizontal: tool == .highlighter && pointer.shift))
+        setInteraction(.drawing(id: shape.id, origin: pointer.pagePoint))
     }
 
     /// Rectangles, ellipses, redactions and the spotlight highlight all create by dragging a box.
@@ -167,9 +165,10 @@ extension AnnoEditor {
         var props = ArrowProps()
         props.swatch = currentSwatch
         props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
-        props.arrowheadStart = tool == .line ? .none : currentArrowheadStart
-        props.dash = currentDash
-        props.arrowheadEnd = tool == .line ? .none : currentArrowheadEnd
+        props.isHighlighter = tool == .highlighter ? true : nil
+        props.arrowheadStart = tool == .arrow ? currentArrowheadStart : .none
+        props.dash = tool == .highlighter ? .solid : currentDash
+        props.arrowheadEnd = tool == .arrow ? currentArrowheadEnd : .none
         props.start = Vec(0, 0)
         props.end = Vec(0, 0)
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .arrow(props))
@@ -207,8 +206,8 @@ extension AnnoEditor {
         switch interaction {
         case .idle:
             return
-        case let .drawing(id, origin, horizontal):
-            appendDrawPoint(id: id, origin: origin, horizontal: horizontal, pointer: pointer)
+        case let .drawing(id, origin):
+            appendDrawPoint(id: id, origin: origin, pointer: pointer)
         case let .creatingGeo(id, origin):
             resizeBoxWhileCreating(id: id, origin: origin, pointer: pointer)
         case let .creatingArrow(id):
@@ -238,7 +237,7 @@ extension AnnoEditor {
         case let .creatingMagnifier(id, _):
             selectedIds = [id]
             tool = .select
-        case let .drawing(id, _, _):
+        case let .drawing(id, _):
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
                     props.isComplete = true
@@ -274,7 +273,7 @@ extension AnnoEditor {
                 document.delete([id])
             } else {
                 selectedIds = [id]
-                tool = .select
+                if document.shape(id)?.tool != .highlighter { tool = .select }
             }
 
         case let .brushing(origin):
@@ -298,23 +297,19 @@ extension AnnoEditor {
 
     // MARK: - Drawing
 
-    private func appendDrawPoint(id: AnnoShapeID, origin: Vec, horizontal: Bool, pointer: PointerInfo) {
-        let point = horizontal ? pointer.pagePoint : snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
+    private func appendDrawPoint(id: AnnoShapeID, origin: Vec, pointer: PointerInfo) {
+        let point = snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
         document.update(id) { shape in
             guard case var .draw(props) = shape.kind else { return }
             let local = Vec(
                 point.x - origin.x,
-                horizontal ? 0 : point.y - origin.y,
-                props.isHighlighter != true && pointer.isPen ? pointer.pressure : 0.5
+                point.y - origin.y,
+                pointer.isPen ? pointer.pressure : 0.5
             )
             // Skip points that land on top of the previous one; they add nothing and cost a full
             // re-run of the stroke pipeline.
             if let last = props.points.last, Vec.distMin(last, local, 0.5) { return }
-            if horizontal {
-                props.points = [Vec(0, 0, 0.5), local]
-            } else {
-                props.points.append(local)
-            }
+            props.points.append(local)
             shape.kind = .draw(props)
         }
         if let shape = document.shape(id), let end = shape.drawProps?.points.last {
@@ -391,15 +386,17 @@ extension AnnoEditor {
     // MARK: - Arrow creation
 
     private func updateArrowEnd(id: AnnoShapeID, pointer: PointerInfo) {
-        guard let shape = document.shape(id) else { return }
+        guard let shape = document.shape(id), let props = shape.arrowProps else { return }
         var local = document.pointInShapeSpace(shape, pointer.pagePoint)
-        if pointer.shift, let props = shape.arrowProps {
+        if props.isHighlighter == true {
+            local = highlighterPoint(from: props.start, to: local)
+        } else if pointer.shift {
             local = axisSnapped(from: props.start, to: local)
         }
         let point = shape.pageTransform.applyToPoint(local)
-        let start = shape.pageTransform.applyToPoint(shape.arrowProps?.start ?? .zero)
+        let start = shape.pageTransform.applyToPoint(props.start)
         let snapped = snapPoint(point, excluding: [id], pointer: pointer,
-                                direction: pointer.shift ? Vec.sub(point, start) : nil)
+                                direction: pointer.shift || props.isHighlighter == true ? Vec.sub(point, start) : nil)
         local = document.pointInShapeSpace(shape, snapped)
         document.update(id) { shape in
             guard case var .arrow(props) = shape.kind else { return }
@@ -410,6 +407,11 @@ extension AnnoEditor {
         if let info = document.arrowInfo(id) {
             retainSnapGuides(alignedWith: AnnoSnapping.anchors(shape.pageTransform.applyToPoint(info.end.point)))
         }
+    }
+
+    private func highlighterPoint(from anchor: Vec, to point: Vec) -> Vec {
+        abs(point.x - anchor.x) >= abs(point.y - anchor.y)
+            ? Vec(point.x, anchor.y) : Vec(anchor.x, point.y)
     }
 
     /// Snap to the nearest 15° from the anchor, the way holding shift on a line should behave.
@@ -423,6 +425,7 @@ extension AnnoEditor {
 
     /// Bind an arrow terminal to whatever shape is under the pointer, or clear the binding.
     private func bindTerminal(arrowId: AnnoShapeID, terminal: ArrowTerminal, at pagePoint: Vec, precise: Bool) {
+        guard document.shape(arrowId)?.arrowProps?.isHighlighter != true else { return }
         // Arrows don't bind to arrows, to themselves, or to the tools that aren't really objects.
         let target = document.shapes.reversed().first { shape in
             guard shape.id != arrowId, !shape.isArrow, !shape.isHighlight, !shape.isRedaction else { return false }
@@ -694,8 +697,16 @@ extension AnnoEditor {
 
     private func dragArrowHandle(id: AnnoShapeID, handle: AnnoSelectionHandle, pointer: PointerInfo) {
         guard let shape = document.shape(id) else { return }
-        let point = handle == .arrowMiddle ? pointer.pagePoint
-            : snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
+        var point = pointer.pagePoint
+        if let props = shape.arrowProps, props.isHighlighter == true {
+            let anchor = handle == .arrowStart ? props.end : props.start
+            let local = highlighterPoint(from: anchor, to: document.pointInShapeSpace(shape, point))
+            point = shape.pageTransform.applyToPoint(local)
+            point = snapPoint(point, excluding: [id], pointer: pointer,
+                              direction: Vec.sub(point, shape.pageTransform.applyToPoint(anchor)))
+        } else if handle != .arrowMiddle {
+            point = snapPoint(point, excluding: [id], pointer: pointer)
+        }
         let local = document.pointInShapeSpace(shape, point)
 
         switch handle {
