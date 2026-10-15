@@ -593,6 +593,85 @@ struct RecordingExportRegressionChecks {
         print("PASS: music Add/Replace/Remove/settings support Undo/Redo; volume and start-offset drags each use one history step")
     }
 
+    static func backgroundMusicRetention(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-retention.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let sourceBytes = try Data(contentsOf: session.screenURL)
+        func song(_ label: String) throws -> RecordingBackgroundMusic {
+            let name = "\(RecordingBackgroundMusic.baseName).\(UUID().uuidString).wav"
+            try audioTone(at: session.directoryURL.appendingPathComponent(name), frequency: 660)
+            return RecordingBackgroundMusic(fileName: name, displayName: label, credit: label)
+        }
+        let saved = try song("Saved"), draft = try song("Draft only"), snapshotOnly = try song("Snapshot only"), orphan = try song("Orphan")
+        let replacement = "\(RecordingSession.replacementAudioBaseName).\(UUID().uuidString).wav"
+        try audioTone(at: session.directoryURL.appendingPathComponent(replacement), frequency: 440)
+        var savedDoc = RecordingEditDocument(style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [],
+            clipTimeline: .full(sourceDuration: 8), backgroundMusic: saved)
+        savedDoc.replacementAudioFileName = replacement
+        var draftDoc = savedDoc
+        draftDoc.backgroundMusic = draft
+        var snapshotDoc = savedDoc
+        snapshotDoc.backgroundMusic = snapshotOnly
+        snapshotDoc.clips = [.init(sourceStart: 4, sourceEnd: 8, speed: 2)]
+        try session.writeEditDocument(savedDoc)
+        try session.writeDraftDocument(draftDoc)
+        let store = CaptureSessionSnapshots(directory: session.sessionSnapshotsURL)
+        let snapshot = try store.keep(document: CaptureSessionSnapshots.encode(snapshotDoc), openedAt: Date()).first!
+        let retained = try [saved.fileName, draft.fileName, snapshotOnly.fileName, replacement].map { name in
+            (name, try Data(contentsOf: session.directoryURL.appendingPathComponent(name)))
+        }
+        let model = RecordingStudioModel(url: session.directoryURL)
+        await model.load()
+        try check(model.isLoaded && model.backgroundMusicSettings == draft, "Draft-only song did not reopen")
+        model.teardown()
+        for (name, bytes) in retained {
+            try check(try Data(contentsOf: session.directoryURL.appendingPathComponent(name)) == bytes, "Cleanup removed or changed referenced music: \(name)")
+        }
+        try check(!FileManager.default.fileExists(atPath: session.directoryURL.appendingPathComponent(orphan.fileName).path), "Cleanup did not collect orphan music")
+        try check(try Data(contentsOf: session.screenURL) == sourceBytes, "Music cleanup changed the source video")
+        let reopened = RecordingStudioModel(url: session.directoryURL)
+        await reopened.load()
+        try check(reopened.backgroundMusicSettings == draft, "Draft-only music did not survive close/reopen")
+        let previous = reopened.currentDocument()
+        reopened.revertToSession(snapshot)
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == snapshotOnly && reopened.backgroundMusic != nil && reopened.clipTimeline.segments == snapshotDoc.clips,
+                  "Revert to Session did not restore snapshot-only music and cuts")
+        reopened.undo()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == draft && reopened.clipTimeline.segments == previous.clips, "Undo snapshot restore did not restore draft music/cuts")
+        reopened.redo()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == snapshotOnly && reopened.clipTimeline.segments == snapshotDoc.clips, "Redo snapshot restore lost music/cuts")
+        reopened.revertToOriginal()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == nil, "Revert to Original retained music")
+        reopened.undo()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == snapshotOnly && reopened.backgroundMusic != nil, "Undo Revert to Original did not restore music")
+        reopened.teardown()
+
+        let broken = RecordingSession(directoryURL: directory.appendingPathComponent("music-unreadable-snapshot.screendroprec"))
+        try FileManager.default.createDirectory(at: broken.directoryURL, withIntermediateDirectories: false)
+        try FileManager.default.copyItem(at: session.screenURL, to: broken.screenURL)
+        let protectedURL = broken.directoryURL.appendingPathComponent("\(RecordingBackgroundMusic.baseName).\(UUID().uuidString).wav")
+        try audioTone(at: protectedURL, frequency: 440)
+        let protectedBytes = try Data(contentsOf: protectedURL)
+        let plain = RecordingEditDocument(style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [])
+        try broken.writeEditDocument(plain)
+        let brokenStore = CaptureSessionSnapshots(directory: broken.sessionSnapshotsURL)
+        let corruptEntry = try brokenStore.keep(document: CaptureSessionSnapshots.encode(plain), openedAt: Date()).first!
+        let corruptURL = broken.sessionSnapshotsURL.appendingPathComponent(corruptEntry.id.uuidString).appendingPathComponent("document.json")
+        try Data("unreadable snapshot".utf8).write(to: corruptURL)
+        let cautious = RecordingStudioModel(url: broken.directoryURL)
+        await cautious.load()
+        try check(cautious.isLoaded, "Unreadable snapshot fixture could not load the saved project")
+        cautious.teardown()
+        try check(try Data(contentsOf: protectedURL) == protectedBytes, "Unreadable snapshot did not protect potentially referenced music")
+        print("PASS: saved, draft-only and snapshot-only music retain bytes; orphan music is collected; replacement/source stay; snapshot Revert/Undo/Redo restores music and cuts; unreadable snapshots stop collection")
+    }
+
     static func backgroundMusicStorage(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-storage.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -837,6 +916,7 @@ struct RecordingExportRegressionChecks {
         try await quickLookInstant(in: directory)
         try await backgroundMusicMixing(in: directory)
         try await backgroundMusicHistory(in: directory)
+        try await backgroundMusicRetention(in: directory)
         try await backgroundMusicStorage(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
