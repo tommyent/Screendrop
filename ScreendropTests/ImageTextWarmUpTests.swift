@@ -34,8 +34,10 @@ struct ImageTextWarmUpTests {
             await calls.record()
             for await _ in stream { }
         }
-        #expect(await warmUp.waitUntilReady(timeout: .milliseconds(10)) == false)
-        #expect(await warmUp.waitUntilReady(timeout: .milliseconds(10)) == false)
+        warmUp.start()
+        while await calls.count == 0 { await Task.yield() }
+        #expect(await warmUp.waitUntilReady(timeout: .zero) == false)
+        #expect(await warmUp.waitUntilReady(timeout: .zero) == false)
         #expect(await calls.count == 1)
         continuation.finish()
         await warmUp.start().value
