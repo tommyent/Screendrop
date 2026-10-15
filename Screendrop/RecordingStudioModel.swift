@@ -1551,15 +1551,22 @@ final class RecordingStudioModel {
             }
             hasUnsavedChanges = true
         }
-        dropStaleRender(for: document, in: session)
+        dropStaleRender(in: session)
         return true
     }
 
     /// A cached flatten that no longer matches the edits is worse than no
-    /// cache: History previews it and Share would upload it.
-    private func dropStaleRender(for document: RecordingEditDocument, in session: RecordingSession) {
+    /// cache: History previews it and Share would upload it. It is judged by
+    /// the document a render would use (draft, else last save, else none),
+    /// not the in-memory baseline: an unedited recording's baseline is a
+    /// full default document, but the render made at Stop is stamped with none.
+    private func dropStaleRender(in session: RecordingSession) {
         guard session.existingFinalURL != nil else { return }
-        guard session.freshFinalURL(matching: document) == nil else { return }
+        do {
+            if session.freshFinalURL(matching: try session.editDocumentForRendering()) != nil { return }
+        } catch {
+            // Unreadable edits can't vouch for any render.
+        }
         session.removeFinalVideos()
     }
 
@@ -1585,7 +1592,7 @@ final class RecordingStudioModel {
             lastSavedDocument = document
             hasUnsavedChanges = false
             try? session.updateProjectMetadata { $0.savedAt = Date() }
-            dropStaleRender(for: document, in: session)
+            dropStaleRender(in: session)
             RecordingProjectStore.shared.reload()
             lastSaveSucceeded = true
             return true
