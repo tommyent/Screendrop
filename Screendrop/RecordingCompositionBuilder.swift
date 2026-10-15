@@ -11,21 +11,51 @@ nonisolated enum RecordingCompositionBuilder {
     static func makeAsset(
         from sourceAsset: AVAsset,
         timeline: RecordingClipTimeline,
-        sourceDuration: TimeInterval
+        sourceDuration: TimeInterval,
+        microphoneTrackID: CMPersistentTrackID? = nil,
+        isolatedMicrophone: AVAssetTrack? = nil
     ) throws -> AVAsset {
         let normalized = timeline.normalized(to: sourceDuration)
-        if normalized.isUnedited(sourceDuration: sourceDuration) {
+        if isolatedMicrophone == nil, normalized.isUnedited(sourceDuration: sourceDuration) {
             return sourceAsset
         }
 
         let composition = AVMutableComposition()
+        let trackPairs: [(AVAssetTrack, AVMutableCompositionTrack)]
+        if let isolatedMicrophone {
+            guard let microphoneTrackID else { throw CocoaError(.fileReadCorruptFile) }
+            let tracks = sourceAsset.tracks
+            guard tracks.contains(where: { $0.trackID == microphoneTrackID && $0.mediaType == .audio }) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            trackPairs = try tracks.map { original in
+                guard let destination = composition.addMutableTrack(
+                    withMediaType: original.mediaType, preferredTrackID: original.trackID
+                ) else { throw CocoaError(.fileReadCorruptFile) }
+                destination.preferredTransform = original.preferredTransform
+                return (original.trackID == microphoneTrackID ? isolatedMicrophone : original, destination)
+            }
+        } else {
+            trackPairs = []
+        }
         var insertionTime = CMTime.zero
         for clip in normalized.segments {
             let range = CMTimeRange(
                 start: CMTime(seconds: clip.sourceStart, preferredTimescale: 600),
                 duration: CMTime(seconds: clip.duration, preferredTimescale: 600)
             )
-            try composition.insertTimeRange(range, of: sourceAsset, at: insertionTime)
+            if trackPairs.isEmpty {
+                try composition.insertTimeRange(range, of: sourceAsset, at: insertionTime)
+            } else {
+                for (source, destination) in trackPairs {
+                    // Audio can begin late or end before the screen; retain those silent gaps.
+                    let available = CMTimeRangeGetIntersection(range, otherRange: source.timeRange)
+                    if available.duration > .zero {
+                        try destination.insertTimeRange(available, of: source,
+                            at: insertionTime + available.start - range.start)
+                    }
+                }
+            }
 
             // Retiming here scales every track inserted above together
             // (video and audio alike), so a sped-up clip never drifts out
@@ -58,7 +88,7 @@ nonisolated enum RecordingCompositionBuilder {
             withMediaType: .video,
             preferredTrackID: kCMPersistentTrackID_Invalid
         ) else {
-            throw RecordingStudioExporter.ExportError.noVideoTrack
+            throw CocoaError(.fileReadCorruptFile)
         }
 
         var insertionTime = CMTime.zero

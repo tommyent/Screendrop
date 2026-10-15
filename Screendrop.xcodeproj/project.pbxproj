@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AF1700000000000000000004 /* Screendrop/RecordingReplacementAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */; };
+		AF1700000000000000000003 /* Screendrop/RecordingCompositionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */; };
+		AF1700000000000000000002 /* Screendrop/RecordingVoiceIsolation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */; };
+		AF1700000000000000000001 /* Screendrop/RecordingAudioLag.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000101 /* Screendrop/RecordingAudioLag.swift */; };
 		AF0500000000000000000005 /* Screendrop/RecordingAgentPromptWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000105 /* Screendrop/RecordingAgentPromptWriter.swift */; };
 		AF0500000000000000000004 /* Screendrop/RecordingAgentPromptPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000104 /* Screendrop/RecordingAgentPromptPlan.swift */; };
 		AF0500000000000000000003 /* Screendrop/RecordingClipTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */; };
@@ -82,6 +86,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingReplacementAudio.swift; sourceTree = SOURCE_ROOT; };
+		AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingCompositionBuilder.swift; sourceTree = SOURCE_ROOT; };
+		AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingVoiceIsolation.swift; sourceTree = SOURCE_ROOT; };
+		AF1700000000000000000101 /* Screendrop/RecordingAudioLag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingAudioLag.swift; sourceTree = SOURCE_ROOT; };
 		AF0500000000000000000105 /* Screendrop/RecordingAgentPromptWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingAgentPromptWriter.swift; sourceTree = SOURCE_ROOT; };
 		AF0500000000000000000104 /* Screendrop/RecordingAgentPromptPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingAgentPromptPlan.swift; sourceTree = SOURCE_ROOT; };
 		AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingClipTimeline.swift; sourceTree = SOURCE_ROOT; };
@@ -210,6 +218,10 @@
 		AA6100000000000000000003 /* Tested logic */ = {
 			isa = PBXGroup;
 			children = (
+				AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */,
+				AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */,
+				AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */,
+				AF1700000000000000000101 /* Screendrop/RecordingAudioLag.swift */,
 				AF0500000000000000000105 /* Screendrop/RecordingAgentPromptWriter.swift */,
 				AF0500000000000000000104 /* Screendrop/RecordingAgentPromptPlan.swift */,
 				AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */,
@@ -389,6 +401,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF1700000000000000000004 /* Screendrop/RecordingReplacementAudio.swift in Sources */,
+				AF1700000000000000000003 /* Screendrop/RecordingCompositionBuilder.swift in Sources */,
+				AF1700000000000000000002 /* Screendrop/RecordingVoiceIsolation.swift in Sources */,
+				AF1700000000000000000001 /* Screendrop/RecordingAudioLag.swift in Sources */,
 				AF0500000000000000000005 /* Screendrop/RecordingAgentPromptWriter.swift in Sources */,
 				AF0500000000000000000004 /* Screendrop/RecordingAgentPromptPlan.swift in Sources */,
 				AF0500000000000000000003 /* Screendrop/RecordingClipTimeline.swift in Sources */,

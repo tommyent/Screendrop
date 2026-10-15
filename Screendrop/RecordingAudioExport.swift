@@ -82,6 +82,8 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         let replacementURL: URL?
         let format: RecordingAudioFormat
         var volume: Double = 1
+        var isolatedMicrophoneURL: URL? = nil
+        var microphoneTrackID: CMPersistentTrackID? = nil
     }
 
     enum ExportError: LocalizedError {
@@ -110,13 +112,21 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
             throw VideoTrimExportError.invalidRange
         }
 
+        let isolatedMicrophone = if let url = configuration.isolatedMicrophoneURL {
+            await RecordingReplacementAudio.load(url: url, displayName: "Isolated voice")
+        } else { nil as RecordingReplacementAudio? }
+        if configuration.isolatedMicrophoneURL != nil, isolatedMicrophone == nil {
+            throw RecordingVoiceIsolation.IsolationError.invalidAudio
+        }
         let audioAsset: AVAsset = if let replacementURL = configuration.replacementURL {
             AVURLAsset(url: replacementURL)
         } else {
             try RecordingCompositionBuilder.makeAsset(
                 from: sourceAsset,
                 timeline: timeline,
-                sourceDuration: sourceDuration
+                sourceDuration: sourceDuration,
+                microphoneTrackID: configuration.microphoneTrackID,
+                isolatedMicrophone: isolatedMicrophone?.track
             )
         }
 
@@ -202,35 +212,5 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         return directory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(pathExtension)
-    }
-}
-
-/// A soundtrack imported to stand in for the recording's own audio, with
-/// its track resolved once so Studio can rebuild the player item
-/// synchronously while the user drags a trim handle.
-nonisolated struct RecordingReplacementAudio {
-    // AVAssetTrack holds its asset weakly; keep the source alive for rebuilds.
-    private let asset: AVURLAsset
-    let url: URL
-    /// The file's name as the user chose it, for the inspector.
-    let displayName: String
-    let track: AVAssetTrack
-    let duration: TimeInterval
-
-    /// Resolves a picked file, or nil when it carries no audio.
-    static func load(url: URL, displayName: String) async -> RecordingReplacementAudio? {
-        let asset = AVURLAsset(url: url)
-        guard let track = try? await asset.loadTracks(withMediaType: .audio).first,
-              let duration = try? await asset.load(.duration).seconds,
-              duration.isFinite, duration > 0 else {
-            return nil
-        }
-        return RecordingReplacementAudio(
-            asset: asset,
-            url: url,
-            displayName: displayName,
-            track: track,
-            duration: duration
-        )
     }
 }

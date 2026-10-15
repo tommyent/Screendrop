@@ -180,7 +180,7 @@ final class RecordingStudioModel {
     var shareState: RecordingStudioShareState = .idle
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
+        exportTask != nil || voiceIsolationProgress != nil || voiceIsolationTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -215,6 +215,86 @@ final class RecordingStudioModel {
     }
     /// Why the last import was rejected, shown next to the Replace control.
     private(set) var replacementAudioError: String?
+
+    private var voiceIsolationEnabled = false
+    private var isolatedMicrophone: RecordingReplacementAudio?
+    private var microphoneTrackID: CMPersistentTrackID?
+    private var voiceIsolationTask: Task<Void, Never>?
+    private var voiceIsolationRequestID = UUID()
+    private(set) var voiceIsolationProgress: Double?
+    private(set) var voiceIsolationError: String?
+    var canIsolateVoice: Bool { session != nil && microphoneTrackID != nil }
+    var isolateVoice: Bool {
+        get { voiceIsolationEnabled }
+        set {
+            guard newValue != voiceIsolationEnabled, !newValue || canIsolateVoice else { return }
+            pause()
+            cancelVoiceIsolation()
+            voiceIsolationError = nil
+            voiceIsolationEnabled = newValue
+            if newValue {
+                voiceIsolationProgress = 0
+                let requestID = voiceIsolationRequestID
+                voiceIsolationTask = Task { [weak self] in
+                    guard let self, !Task.isCancelled, !self.isTornDown,
+                          self.voiceIsolationRequestID == requestID else { return }
+                    await self.resolveVoiceIsolation()
+                    guard self.voiceIsolationRequestID == requestID, !self.isTornDown else { return }
+                    self.voiceIsolationTask = nil
+                    self.applyVoiceIsolationToPlayback()
+                }
+            } else {
+                applyVoiceIsolationToPlayback()
+            }
+        }
+    }
+
+    private func applyVoiceIsolationToPlayback() {
+        do {
+            try rebuildScreenPlayerItem(preserving: currentTime)
+        } catch {
+            voiceIsolationEnabled = false
+            voiceIsolationError = "Voice isolation failed. The original microphone audio is still in use. \(error.localizedDescription)"
+            try? rebuildScreenPlayerItem(preserving: currentTime)
+        }
+        scheduleProjectSave()
+    }
+
+    private func cancelVoiceIsolation() {
+        voiceIsolationTask?.cancel()
+        voiceIsolationTask = nil
+        voiceIsolationRequestID = UUID()
+        voiceIsolationProgress = nil
+    }
+
+    private func resolveVoiceIsolation() async {
+        guard voiceIsolationEnabled, let session else { return }
+        let requestID = voiceIsolationRequestID
+        voiceIsolationProgress = 0
+        do {
+            guard let microphoneTrackID else { throw RecordingVoiceIsolation.IsolationError.missingMicrophone }
+            let url = session.directoryURL.appendingPathComponent(RecordingVoiceIsolation.fileName)
+            try await RecordingVoiceIsolation.render(sourceURL: screenURL,
+                microphoneTrackID: microphoneTrackID, destinationURL: url) { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    guard let self, self.voiceIsolationRequestID == requestID,
+                          self.voiceIsolationProgress != nil else { return }
+                    self.voiceIsolationProgress = progress
+                }
+            }
+            let loaded = await RecordingReplacementAudio.load(url: url, displayName: "Isolated voice")
+            try Task.checkCancellation()
+            guard voiceIsolationRequestID == requestID, !isTornDown else { return }
+            guard let loaded else { throw RecordingVoiceIsolation.IsolationError.invalidAudio }
+            isolatedMicrophone = loaded
+            voiceIsolationProgress = nil
+        } catch {
+            guard voiceIsolationRequestID == requestID, !isTornDown else { return }
+            voiceIsolationEnabled = false
+            voiceIsolationProgress = nil
+            voiceIsolationError = "Voice isolation failed. The original microphone audio is still in use. \(error.localizedDescription)"
+        }
+    }
 
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -360,6 +440,9 @@ final class RecordingStudioModel {
                 }
             }
             hasRecordedAudio = tracks.contains { $0.mediaType == .audio }
+            microphoneTrackID = RecordingVoiceIsolation.microphoneTrack(in: tracks,
+                includesMicrophone: manifest?.includesMicrophone == true,
+                includesSystemAudio: manifest?.includesSystemAudio == true)?.trackID
         } catch {
             guard !isTornDown, !Task.isCancelled else { return }
             loadError = "Could not open the recording: \(error.localizedDescription)"
@@ -456,6 +539,8 @@ final class RecordingStudioModel {
             }
         }
 
+        await resolveVoiceIsolation()
+        guard !isTornDown, !Task.isCancelled else { return }
         do {
             try rebuildScreenPlayerItem(preserving: 0)
         } catch {
@@ -485,6 +570,11 @@ final class RecordingStudioModel {
                 // in its pointer track) are its baseline too, so opening one
                 // saves nothing until it is edited.
                 lastSavedDocument = currentDocument()
+                if let document, document.isolateVoice != voiceIsolationEnabled {
+                    lastSavedDocument?.isolateVoice = document.isolateVoice
+                    hasUnsavedChanges = true
+                    scheduleProjectSave()
+                }
             }
             session.updateProjectMetadata { $0.lastOpenedAt = Date() }
         } else {
@@ -508,6 +598,9 @@ final class RecordingStudioModel {
         isApplyingDocument = true
         defer { isApplyingDocument = false }
 
+        cancelVoiceIsolation()
+        voiceIsolationEnabled = document.isolateVoice
+        voiceIsolationError = nil
         replacementAudioReference = document.replacementAudioFileName.map {
             ($0, document.replacementAudioDisplayName)
         }
@@ -552,6 +645,7 @@ final class RecordingStudioModel {
         exportTask?.cancel()
         audioExportTask?.cancel()
         replacementAudioTask?.cancel()
+        cancelVoiceIsolation()
         cancelShare()
         transcriptionTask?.cancel()
         projectSaveTask?.cancel()
@@ -579,6 +673,8 @@ final class RecordingStudioModel {
         screenAsset?.cancelLoading()
         screenAsset = nil
         screenVideoTrack = nil
+        isolatedMicrophone = nil
+        microphoneTrackID = nil
         replacementAudio = nil
         replacementAudioReference = nil
         editUndoManager.removeAllActions()
@@ -915,7 +1011,9 @@ final class RecordingStudioModel {
             playbackAsset = try RecordingCompositionBuilder.makeAsset(
                 from: screenAsset,
                 timeline: clipTimeline,
-                sourceDuration: sourceDuration
+                sourceDuration: sourceDuration,
+                microphoneTrackID: microphoneTrackID,
+                isolatedMicrophone: voiceIsolationEnabled ? isolatedMicrophone?.track : nil
             )
         }
 
@@ -1322,7 +1420,8 @@ final class RecordingStudioModel {
             replacementAudioFileName: replacementAudio?.url.lastPathComponent ?? replacementAudioReference?.fileName,
             replacementAudioDisplayName: replacementAudio?.displayName ?? replacementAudioReference?.displayName,
             audioExportFormat: audioExportFormat,
-            audioVolume: Double(audioVolume)
+            audioVolume: Double(audioVolume),
+            isolateVoice: voiceIsolationEnabled
         )
     }
 
@@ -1452,6 +1551,8 @@ final class RecordingStudioModel {
             replacementAudio = nil
         }
 
+        await resolveVoiceIsolation()
+        guard !isTornDown, !Task.isCancelled else { return }
         isApplyingDocument = false
 
         try? rebuildScreenPlayerItem(preserving: currentTime)
@@ -2022,6 +2123,8 @@ final class RecordingStudioModel {
             exportSettings: exportSettings,
             audioReplacementURL: audioReplacementURL,
             audioVolume: Double(audioVolume),
+            isolatedMicrophoneURL: voiceIsolationEnabled && !hasReplacementAudio ? isolatedMicrophone?.url : nil,
+            microphoneTrackID: microphoneTrackID,
             reframe: reframe,
             fitContentAspect: fitContentAspect,
             usesUniformPadding: exportAspect == .original
@@ -2211,7 +2314,7 @@ final class RecordingStudioModel {
     func export() {
         // One render at a time: the share pipeline uses the same exporter,
         // so a second encode would just fight it for the media engine.
-        guard exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
+        guard voiceIsolationProgress == nil, voiceIsolationTask == nil, exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
         pause()
         let previewURL = sessionURL
 
@@ -2330,7 +2433,7 @@ final class RecordingStudioModel {
     /// Writes the edited soundtrack on its own, for cleanup in a tool that
     /// has no API - the outbound half of the replace-audio round trip.
     func exportAudio() {
-        guard !audioExportState.isExporting, isLoaded, hasAudio else { return }
+        guard voiceIsolationProgress == nil, voiceIsolationTask == nil, !audioExportState.isExporting, isLoaded, hasAudio else { return }
         pause()
 
         audioExportState = .exporting(progress: 0)
@@ -2347,7 +2450,9 @@ final class RecordingStudioModel {
             clipTimeline: clipTimeline,
             replacementURL: replacementURL,
             format: audioExportFormat,
-            volume: Double(audioVolume)
+            volume: Double(audioVolume),
+            isolatedMicrophoneURL: voiceIsolationEnabled && !hasReplacementAudio ? isolatedMicrophone?.url : nil,
+            microphoneTrackID: microphoneTrackID
         )
         let suggestedFileName = audioExportSuggestedFileName
         let dockProgressID = DockExportProgressCoordinator.shared.start()
@@ -2516,7 +2621,7 @@ final class RecordingStudioModel {
     /// session's flattened deliverable, upload it, and copy the share
     /// link - without leaving the Studio or touching a save panel.
     func shareToCloud(options: CloudUploadOptions) {
-        guard !shareState.isBusy, !exportState.isExporting, isLoaded,
+        guard voiceIsolationProgress == nil, voiceIsolationTask == nil, !shareState.isBusy, !exportState.isExporting, isLoaded,
               canShareToCloud else {
             return
         }

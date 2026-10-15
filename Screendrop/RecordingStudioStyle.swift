@@ -22,7 +22,7 @@ struct RecordingCameraBubbleSettings: Equatable {
 }
 
 struct RecordingEditDocument: Codable, Equatable {
-    var formatVersion = 5
+    var formatVersion = 6
     var style: StoredRecordingStudioStyle
     var zoomEnabled: Bool
     var zoomCues: [ZoomCue]
@@ -63,6 +63,7 @@ struct RecordingEditDocument: Codable, Equatable {
     /// Raw RecordingAudioFormat value for the audio-only export.
     var audioExportFormat: String?
     var audioVolume: Double?
+    var isolateVoice = false
 
     private enum CodingKeys: String, CodingKey {
         case formatVersion
@@ -89,6 +90,7 @@ struct RecordingEditDocument: Codable, Equatable {
         case replacementAudioDisplayName
         case audioExportFormat
         case audioVolume
+        case isolateVoice
     }
 
     init(
@@ -110,7 +112,8 @@ struct RecordingEditDocument: Codable, Equatable {
         replacementAudioFileName: String? = nil,
         replacementAudioDisplayName: String? = nil,
         audioExportFormat: RecordingAudioFormat? = nil,
-        audioVolume: Double? = nil
+        audioVolume: Double? = nil,
+        isolateVoice: Bool = false
     ) {
         self.style = StoredRecordingStudioStyle(style)
         self.zoomEnabled = zoomEnabled
@@ -138,6 +141,7 @@ struct RecordingEditDocument: Codable, Equatable {
         self.replacementAudioDisplayName = replacementAudioDisplayName
         self.audioExportFormat = audioExportFormat.map(\.rawValue)
         self.audioVolume = audioVolume
+        self.isolateVoice = isolateVoice
     }
 
     var audioExportFormatValue: RecordingAudioFormat {
@@ -229,6 +233,7 @@ struct RecordingEditDocument: Codable, Equatable {
         )
         audioExportFormat = try container.decodeIfPresent(String.self, forKey: .audioExportFormat)
         audioVolume = try container.decodeIfPresent(Double.self, forKey: .audioVolume)
+        isolateVoice = try container.decodeIfPresent(Bool.self, forKey: .isolateVoice) ?? false
     }
 }
 
