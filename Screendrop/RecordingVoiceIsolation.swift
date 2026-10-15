@@ -51,10 +51,12 @@ nonisolated enum RecordingVoiceIsolation {
             }
         }
         let total = AVAudioFramePosition((duration * sampleRate).rounded())
-        let scratch = destinationURL.deletingLastPathComponent().appendingPathComponent(".voice-\(UUID().uuidString)")
+        let scratchName = ".voice-\(UUID().uuidString)"
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(scratchName)
         let inputURL = scratch.appendingPathExtension("input.caf")
         let outputURL = scratch.appendingPathExtension("output.caf")
-        let pendingURL = scratch.appendingPathExtension("m4a")
+        let pendingURL = destinationURL.deletingLastPathComponent()
+            .appendingPathComponent(scratchName).appendingPathExtension("m4a")
         defer {
             for url in [inputURL, outputURL, pendingURL] { try? FileManager.default.removeItem(at: url) }
         }

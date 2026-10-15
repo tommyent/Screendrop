@@ -83,7 +83,12 @@ struct RecordingVoiceIsolationTests {
         let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
         let destination = directory.appendingPathComponent(RecordingVoiceIsolation.fileName)
         try await RecordingVoiceIsolation.render(sourceURL: sourceURL, microphoneTrackID: track.trackID,
-            destinationURL: destination, progress: { _ in })
+            destinationURL: destination, progress: { progress in
+                if progress >= 0.2 && progress < 0.8 {
+                    let files = try? FileManager.default.contentsOfDirectory(atPath: directory.path)
+                    #expect(files?.contains(where: { $0.hasSuffix(".caf") }) == false)
+                }
+            })
         let rendered = AVURLAsset(url: destination)
         let duration = try await rendered.load(.duration).seconds
         #expect(abs(duration - sourceDuration) < 0.025)
