@@ -181,6 +181,164 @@ struct RecordingExportRegressionChecks {
         print("PASS: canceled model task stays busy, blocks retry until exit, and releases the task for a successful retry")
     }
 
+    static func audioTone(at url: URL, frequency: Float) throws {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 384000)!
+        buffer.frameLength = buffer.frameCapacity
+        for index in 0..<Int(buffer.frameLength) {
+            buffer.floatChannelData![0][index] = 0.15 * sin(2 * .pi * frequency * Float(index) / 48000)
+        }
+        let settings = url.pathExtension == "m4a"
+            ? [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1] as [String: Any]
+            : format.settings
+        let file = try AVAudioFile(forWriting: url, settings: settings)
+        try file.write(from: buffer)
+        file.close()
+    }
+
+    static func audioLevels(at url: URL) async throws -> [Float] {
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        let reader = try AVAssetReader(asset: asset)
+        reader.timeRange = CMTimeRange(start: CMTime(seconds: 0.2, preferredTimescale: 48000),
+                                      duration: CMTime(seconds: 0.5, preferredTimescale: 48000))
+        let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false
+        ])
+        let provider = reader.outputProvider(for: output)
+        try reader.start()
+        var samples: [Float] = []
+        while let ready = try await provider.next() {
+            try ready.withUnsafeSampleBuffer { sample in
+                guard let data = CMSampleBufferGetDataBuffer(sample) else { throw Failure(description: "Missing test audio") }
+                var chunk = [Float](repeating: 0, count: CMSampleBufferGetNumSamples(sample))
+                let result = chunk.withUnsafeMutableBytes {
+                    CMBlockBufferCopyDataBytes(data, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!)
+                }
+                try check(result == noErr, "Cannot decode test audio")
+                samples += chunk
+            }
+        }
+        try check(!samples.isEmpty, "Export has no audible samples")
+        return [220, 440, 900].map { frequency in
+            var real: Float = 0, imaginary: Float = 0
+            for (index, sample) in samples.enumerated() {
+                let phase = 2 * Float.pi * Float(frequency) * Float(index) / 48000
+                real += sample * cos(phase); imaginary += sample * sin(phase)
+            }
+            return 2 * sqrt(real * real + imaginary * imaginary) / Float(samples.count)
+        }
+    }
+
+    static func voiceIsolation(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("voice.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        let videoURL = directory.appendingPathComponent("voice-video.mov")
+        let systemURL = directory.appendingPathComponent("system.wav")
+        let micURL = directory.appendingPathComponent("microphone.wav")
+        let isolatedURL = session.directoryURL.appendingPathComponent(RecordingVoiceIsolation.fileName)
+        try await movie(at: videoURL)
+        try audioTone(at: systemURL, frequency: 900)
+        try audioTone(at: micURL, frequency: 220)
+        try audioTone(at: isolatedURL, frequency: 440)
+        let composition = AVMutableComposition()
+        let videoAsset = AVURLAsset(url: videoURL)
+        let systemAsset = AVURLAsset(url: systemURL)
+        let micAsset = AVURLAsset(url: micURL)
+        for asset in [videoAsset, systemAsset, micAsset] {
+            for track in try await asset.load(.tracks) {
+                let destination = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                try destination.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 8, timescale: 1)), of: track, at: .zero)
+            }
+        }
+        let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough)!
+        try await export.export(to: session.screenURL, as: .mov)
+        let sourceBytes = try Data(contentsOf: session.screenURL)
+        var manifest = CaptureManifest()
+        manifest.duration = 8; manifest.pixelWidth = 320; manifest.pixelHeight = 180
+        manifest.includesSystemAudio = true; manifest.includesMicrophone = true
+        try session.writeCaptureManifest(manifest)
+        var style = RecordingStudioStyle()
+        style.padding = 0; style.shadow = 0; style.cornerRadius = 0
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0.5, sourceEnd: 1.5), .init(sourceStart: 4, sourceEnd: 6, speed: 2)])
+        let redactions = [RecordingRedaction(start: 0, end: 8, rect: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3), mode: .pixelate)]
+        var document = RecordingEditDocument(style: style, zoomEnabled: false, zoomCues: [], clipTimeline: cut,
+                                             isolateVoice: true, redactions: redactions)
+        let data = try CaptureManifest.encoder.encode(document)
+        let decoded = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data)
+        try check(decoded.formatVersion == 6 && decoded.isolateVoice && decoded.redactions == redactions,
+                  "Version 6 did not preserve both isolation and redactions")
+        var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacy["formatVersion"] = 5
+        legacy.removeValue(forKey: "isolateVoice")
+        legacy.removeValue(forKey: "redactions")
+        let legacyData = try JSONSerialization.data(withJSONObject: legacy)
+        let oldDocument = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: legacyData)
+        try check(!oldDocument.isolateVoice && oldDocument.redactions.isEmpty, "Old edits enabled isolation or redactions")
+        try session.writeEditDocument(document)
+        let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        try check(configuration.isolatedMicrophoneURL == isolatedURL && configuration.microphoneTrackID != nil, "Shared export missed isolated microphone")
+        try check(configuration.redactions == redactions, "Isolation dropped shared-export redactions")
+        let movie = try await RecordingStudioExporter().export(configuration, progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: movie) }
+        let audio = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, isolatedMicrophoneURL: isolatedURL,
+            microphoneTrackID: configuration.microphoneTrackID), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: audio) }
+        for url in [movie, audio] {
+            let levels = try await audioLevels(at: url)
+            try check(levels[0] < 0.01 && levels[1] > 0.1 && levels[2] > 0.1,
+                      "Export mixed wrong microphone or removed system audio: \(levels)")
+        }
+        let model = RecordingStudioModel(url: session.directoryURL)
+        await model.load()
+        try check(model.isolateVoice && model.voiceIsolationError == nil, "Studio did not restore isolated voice")
+        try check(model.currentDocument().redactions == redactions, "Studio dropped redactions while restoring isolation")
+        model.isolateVoice = false
+        try check(!model.currentDocument().isolateVoice, "Studio off did not persist")
+        model.isolateVoice = true
+        try check(model.voiceIsolationProgress != nil && model.hasRunningWork, "Studio did not expose render progress")
+        model.isolateVoice = false
+        try await until { !model.hasRunningWork }
+        try check(!model.isolateVoice && model.voiceIsolationProgress == nil, "Canceled render restored a stale selection")
+        model.isolateVoice = true
+        try await until { !model.hasRunningWork }
+        try check(model.isolateVoice && model.voiceIsolationError == nil, "Studio could not reuse isolated track: \(String(describing: model.voiceIsolationError))")
+        model.teardown()
+        session.removeDraftDocument()
+        document.isolateVoice = false
+        try session.writeEditDocument(document)
+        let restored = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        try check(restored.isolatedMicrophoneURL == nil, "Off did not restore source microphone")
+        let firstUse = RecordingStudioModel(url: session.directoryURL)
+        await firstUse.load()
+        firstUse.isolateVoice = true
+        try check(firstUse.isIsolatingVoice && !firstUse.currentDocument().isolateVoice,
+                  "An unfinished isolation request reached the edit document")
+        firstUse.flushDraft()
+        try check(session.effectiveEditDocument()?.isolateVoice == false, "Draft flush persisted unfinished isolation")
+        try await until { !firstUse.hasRunningWork }
+        try check(firstUse.currentDocument().isolateVoice, "Completed isolation was not persistable")
+        firstUse.teardown()
+        try check(try Data(contentsOf: session.screenURL) == sourceBytes, "Isolation modified the original recording")
+        let broken = RecordingSession(directoryURL: directory.appendingPathComponent("missing-mic.screendroprec"))
+        try FileManager.default.createDirectory(at: broken.directoryURL, withIntermediateDirectories: false)
+        try FileManager.default.copyItem(at: videoURL, to: broken.screenURL)
+        try broken.writeCaptureManifest(manifest)
+        document.isolateVoice = true
+        try broken.writeEditDocument(document)
+        let failedModel = RecordingStudioModel(url: broken.directoryURL)
+        await failedModel.load()
+        try check(!failedModel.isolateVoice && failedModel.voiceIsolationError?.contains("original microphone audio") == true,
+                  "Render failure did not return to original audio with an explanation")
+        failedModel.flushDraft()
+        try check(broken.effectiveEditDocument()?.isolateVoice == false, "Failed render left the saved on-choice active for other exports")
+        failedModel.teardown()
+        print("PASS: version 6 preserves isolation and redactions; legacy off; shared video and audio exports use isolated mic plus system audio through cuts; Studio progress/cancel/cache/off, unfinished draft stays off, and failure fallback")
+    }
+
     static func main() async throws {
         guard let root = ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] else {
             throw Failure(description: "Run through check-recording-export-regressions.py")
@@ -189,6 +347,7 @@ struct RecordingExportRegressionChecks {
         let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
+        try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
         try await captionPixels(in: directory)
     }

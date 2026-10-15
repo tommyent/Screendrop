@@ -258,7 +258,7 @@ private struct RecordingStudioContent: View {
                 Label("Upload", systemImage: "icloud.and.arrow.up")
                     .labelStyle(.titleAndIcon)
             }
-            .disabled(!model.isLoaded || model.exportState.isExporting)
+            .disabled(!model.isLoaded || model.exportState.isExporting || model.isIsolatingVoice)
             .help("Upload this recording and copy the share link")
         case .rendering(let progress):
             SharePill(stage: "Rendering", progress: progress) {
@@ -309,7 +309,7 @@ private struct RecordingStudioContent: View {
                 Label("Export", systemImage: "arrow.down.circle")
                     .labelStyle(.titleAndIcon)
             }
-            .disabled(!model.isLoaded || model.shareState.isBusy)
+            .disabled(!model.isLoaded || model.shareState.isBusy || model.isIsolatingVoice)
         case .exporting(let progress):
             SharePill(stage: "Exporting", progress: progress, cancelLabel: "Cancel Export") {
                 model.cancelExport()
@@ -3665,6 +3665,22 @@ private struct StudioInspector: View {
                 InspectorSlider("Volume", value: $model.audioVolume, range: 0...2, format: .percent())
             }
 
+            if model.canIsolateVoice {
+                Toggle("Isolate voice", isOn: $model.isolateVoice)
+                    .toggleStyle(.switch)
+                    .disabled(model.hasReplacementAudio)
+                    .help("Reduce background noise in the source microphone track")
+                if let progress = model.voiceIsolationProgress {
+                    ProgressView("Isolating voice…", value: progress)
+                }
+                if model.hasReplacementAudio {
+                    InspectorHint("Reset to recorded audio to use voice isolation.")
+                }
+            }
+            if let message = model.voiceIsolationError {
+                InspectorHint(message, tint: .orange)
+            }
+
             HStack(spacing: InspectorMetrics.rowSpacing) {
                 if model.hasAudio {
                     audioExportButton
@@ -3704,6 +3720,7 @@ private struct StudioInspector: View {
                 isAudioExportOptionsPresented = true
             }
             .help("Export just the soundtrack of the current cut")
+            .disabled(model.isIsolatingVoice)
             .popover(isPresented: $isAudioExportOptionsPresented, arrowEdge: .bottom) {
                 StudioAudioExportOptions(format: $model.audioExportFormat) {
                     isAudioExportOptionsPresented = false
@@ -3844,6 +3861,8 @@ private struct StudioInspector: View {
         if let replacement = model.replacementAudio {
             return replacement.displayName
         }
+        if model.isIsolatingVoice { return "Isolating…" }
+        if model.isolateVoice { return "Voice isolated" }
         guard model.hasAudio, abs(model.audioVolume - 1) > 0.001 else { return nil }
         return "Volume \(InspectorValueFormat.percent().displayString(for: model.audioVolume))"
     }
