@@ -263,16 +263,24 @@ struct RecordingExportRegressionChecks {
         var style = RecordingStudioStyle()
         style.padding = 0; style.shadow = 0; style.cornerRadius = 0
         let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0.5, sourceEnd: 1.5), .init(sourceStart: 4, sourceEnd: 6, speed: 2)])
-        var document = RecordingEditDocument(style: style, zoomEnabled: false, zoomCues: [], clipTimeline: cut, isolateVoice: true)
+        let redactions = [RecordingRedaction(start: 0, end: 8, rect: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3), mode: .pixelate)]
+        var document = RecordingEditDocument(style: style, zoomEnabled: false, zoomCues: [], clipTimeline: cut,
+                                             isolateVoice: true, redactions: redactions)
         let data = try CaptureManifest.encoder.encode(document)
-        try check(try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data).isolateVoice, "Voice choice was not persisted")
+        let decoded = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data)
+        try check(decoded.formatVersion == 6 && decoded.isolateVoice && decoded.redactions == redactions,
+                  "Version 6 did not preserve both isolation and redactions")
         var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacy["formatVersion"] = 5
         legacy.removeValue(forKey: "isolateVoice")
+        legacy.removeValue(forKey: "redactions")
         let legacyData = try JSONSerialization.data(withJSONObject: legacy)
-        try check(try !CaptureManifest.decoder.decode(RecordingEditDocument.self, from: legacyData).isolateVoice, "Old edits enabled voice isolation")
+        let oldDocument = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: legacyData)
+        try check(!oldDocument.isolateVoice && oldDocument.redactions.isEmpty, "Old edits enabled isolation or redactions")
         try session.writeEditDocument(document)
         let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
         try check(configuration.isolatedMicrophoneURL == isolatedURL && configuration.microphoneTrackID != nil, "Shared export missed isolated microphone")
+        try check(configuration.redactions == redactions, "Isolation dropped shared-export redactions")
         let movie = try await RecordingStudioExporter().export(configuration, progress: { _ in })
         defer { try? FileManager.default.removeItem(at: movie) }
         let audio = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
@@ -287,6 +295,7 @@ struct RecordingExportRegressionChecks {
         let model = RecordingStudioModel(url: session.directoryURL)
         await model.load()
         try check(model.isolateVoice && model.voiceIsolationError == nil, "Studio did not restore isolated voice")
+        try check(model.currentDocument().redactions == redactions, "Studio dropped redactions while restoring isolation")
         model.isolateVoice = false
         try check(!model.currentDocument().isolateVoice, "Studio off did not persist")
         model.isolateVoice = true
@@ -327,7 +336,7 @@ struct RecordingExportRegressionChecks {
         failedModel.flushDraft()
         try check(broken.effectiveEditDocument()?.isolateVoice == false, "Failed render left the saved on-choice active for other exports")
         failedModel.teardown()
-        print("PASS: voice choice round-trip and legacy off; shared video and audio exports use isolated mic plus system audio through cuts; Studio progress/cancel/cache/off and failure fallback")
+        print("PASS: version 6 preserves isolation and redactions; legacy off; shared video and audio exports use isolated mic plus system audio through cuts; Studio progress/cancel/cache/off, unfinished draft stays off, and failure fallback")
     }
 
     static func main() async throws {

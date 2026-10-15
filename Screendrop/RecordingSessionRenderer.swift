@@ -36,7 +36,7 @@ enum RecordingSessionRenderer {
         for session: RecordingSession,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
-        try await ensureDeliverable(for: session, editDocument: session.effectiveEditDocument(), onProgress: onProgress)
+        try await ensureDeliverable(for: session, editDocument: session.editDocumentForRendering(), onProgress: onProgress)
     }
 
     /// Keep evidence and rendered pixels on the same frozen edit, even if Studio changes during export.
@@ -74,7 +74,7 @@ enum RecordingSessionRenderer {
     static func makeConfiguration(
         for session: RecordingSession
     ) async throws -> RecordingStudioExporter.Configuration {
-        try await makeConfiguration(for: session, editDocument: session.effectiveEditDocument())
+        try await makeConfiguration(for: session, editDocument: session.editDocumentForRendering())
     }
 
     private static func makeConfiguration(
@@ -235,7 +235,8 @@ enum RecordingSessionRenderer {
             microphoneTrackID: microphoneTrackID,
             reframe: reframe,
             fitContentAspect: fitContentAspect,
-            usesUniformPadding: aspect == .original
+            usesUniformPadding: aspect == .original,
+            redactions: document?.redactions ?? []
         )
     }
 

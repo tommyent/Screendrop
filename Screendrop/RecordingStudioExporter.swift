@@ -19,6 +19,7 @@
 import AppKit
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import CoreText
 import Foundation
 import ImageIO
@@ -68,6 +69,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         /// `reframe`.
         let fitContentAspect: CGFloat?
         let usesUniformPadding: Bool
+        let redactions: [RecordingRedaction]
 
         init(
             screenURL: URL,
@@ -92,7 +94,8 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             microphoneTrackID: CMPersistentTrackID? = nil,
             reframe: ReframeTrack? = nil,
             fitContentAspect: CGFloat? = nil,
-            usesUniformPadding: Bool = false
+            usesUniformPadding: Bool = false,
+            redactions: [RecordingRedaction] = []
         ) {
             self.screenURL = screenURL
             self.cameraURL = cameraURL
@@ -117,6 +120,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             self.reframe = reframe
             self.fitContentAspect = fitContentAspect
             self.usesUniformPadding = usesUniformPadding
+            self.redactions = redactions
         }
     }
 
@@ -181,6 +185,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let timing = RecordingExportTiming(settings: configuration.exportSettings)
         let sourceAsset = AVURLAsset(url: configuration.screenURL)
         let sourceDuration = try await sourceAsset.load(.duration).seconds
+        for region in configuration.redactions { try region.validate(sourceDuration: sourceDuration) }
         let clipTimeline = configuration.clipTimeline.normalized(to: sourceDuration)
         guard clipTimeline.duration >= RecordingClipSegment.minimumDuration else {
             throw VideoTrimExportError.invalidRange
@@ -360,7 +365,9 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             timing: timing,
             reframe: configuration.reframe,
             fitContentAspect: configuration.fitContentAspect,
-            usesUniformPadding: configuration.usesUniformPadding
+            usesUniformPadding: configuration.usesUniformPadding,
+            redactions: configuration.redactions,
+            clipTimeline: clipTimeline
         )
 
         let screenAudioOutput = audioOutput
@@ -525,7 +532,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             let sourceRepeats = (pending == nil || pending!.time > nextTime)
                 && clipTimeline.location(at: nextTime)?.segmentID == location.segmentID
             let renderStart = CFAbsoluteTimeGetCurrent()
-            let begun = compositor.begin(
+            let begun = try compositor.begin(
                 screenFrame: sourceBuffer,
                 cameraFrame: cameraBuffer,
                 editorTime: editorTime,
@@ -710,6 +717,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
     private let colorSpace: CGColorSpace
     private let backdrop: CGImage?
     private let timing: RecordingExportTiming
+    private let redactions: [RecordingRedaction]
+    private let clipTimeline: RecordingClipTimeline
+    private let redactionContext = CIContext(options: [.cacheIntermediates: false])
     private var metalRenderer: StudioMetalScreenRenderer?
     private var metalFailed = false
     private(set) var metalFrameCount = 0
@@ -743,7 +753,9 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         timing: RecordingExportTiming,
         reframe: ReframeTrack? = nil,
         fitContentAspect: CGFloat? = nil,
-        usesUniformPadding: Bool = false
+        usesUniformPadding: Bool = false,
+        redactions: [RecordingRedaction] = [],
+        clipTimeline: RecordingClipTimeline
     ) {
         self.canvasSize = canvasSize
         self.videoCropRect = RecordingVideoCropGeometry.normalized(videoCropRect)
@@ -766,6 +778,8 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         self.karaokeTimeline = karaokeTimeline
         self.reframe = reframe
         self.timing = timing
+        self.redactions = redactions
+        self.clipTimeline = clipTimeline
         self.pointerScale = style.cursorScale
         self.colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
         self.backdrop = Self.renderBackdrop(
@@ -808,7 +822,13 @@ nonisolated private final class StudioFrameCompositor: @unchecked Sendable {
         sourceTime: TimeInterval,
         sourceRepeatsOnNextFrame: Bool,
         into destination: CVPixelBuffer
-    ) -> PendingFrame {
+    ) throws -> PendingFrame {
+        let active = redactions.filter {
+            $0.covers(editorTime: editorTime, frameDuration: timing.frameInterval, timeline: clipTimeline)
+        }
+        let screenFrame = try RecordingRedactionFilter.buffer(from: screenFrame, redactions: active, context: redactionContext)
+        // shortcut: active masks bypass settled reuse; cache filtered sources if export cost warrants it.
+        let bypassScreenCache = bypassScreenCache || !active.isEmpty
         let sampleRects = timing.screenSampleRects(at: editorTime) { time in
             layout.frameRect(for: viewportFrame(at: time))
         }
