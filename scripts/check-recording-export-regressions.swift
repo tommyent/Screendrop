@@ -63,6 +63,56 @@ struct RecordingExportRegressionChecks {
         return zip(lhs, rhs).count { abs(Int($0.0) - Int($0.1)) > 20 }
     }
 
+    static func chapterRenameUndo(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("chapter.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let chapter = RecordingChapter(title: "Chapter 1", start: 0)
+
+        for synchronize in [false, true] {
+            try session.updateProjectMetadata { $0.chapters = [chapter] }
+            let model = RecordingStudioModel(url: session.directoryURL)
+            defer { model.teardown() }
+            await model.load()
+            try check(model.isLoaded && model.chapters == [chapter], "Chapter fixture did not load")
+            var draft = StudioChapterNameDraft(text: "Masked section")
+            draft.commit(model: model, chapter: chapter) // Return
+            try check(model.chapterError == nil && draft.text == nil, "Return did not commit the rename")
+            try check(session.loadProjectMetadata()?.chapters?.first?.title == "Masked section", "Rename was not saved")
+
+            // Recreate the stale field value seen in VM check 5 after Return.
+            draft.text = "Masked section"
+            model.undo()
+            try check(model.chapters == [chapter] && session.loadProjectMetadata()?.chapters == [chapter], "One Undo did not restore Chapter 1")
+            if synchronize { draft.storedTitleChanged() } // The field's chapter.title onChange
+            try check((draft.text ?? model.chapters[0].title) == (synchronize ? "Chapter 1" : "Masked section"), "Field did not follow the stored title")
+            let undone = try Data(contentsOf: session.projectMetadataURL)
+            draft.commit(model: model, chapter: model.chapters[0]) // Focus loss without typing
+
+            if !synchronize {
+                try check(session.loadProjectMetadata()?.chapters?.first?.title == "Masked section" && !model.canRedo, "Control did not reproduce the lost Undo")
+                print("PASS: control without title synchronization reproduces stale field/focus-loss overwrite")
+                continue
+            }
+            try check(model.chapters == [chapter] && Data(contentsOf: session.projectMetadataURL) == undone,
+                      "Focus loss overwrote the undone title")
+            try check(!model.canUndo && model.canRedo, "Focus loss added an undo step or discarded Redo")
+            print("PASS: rename -> Return -> one Undo -> focus loss keeps Chapter 1 in field/model/project.json; no extra commit")
+
+            draft.text = "Uncommitted edit"
+            model.redo()
+            draft.storedTitleChanged()
+            try check(draft.text == nil && model.chapters[0].title == "Masked section", "Redo did not replace the field draft")
+            let redone = try Data(contentsOf: session.projectMetadataURL)
+            draft.commit(model: model, chapter: model.chapters[0])
+            try check(Data(contentsOf: session.projectMetadataURL) == redone, "Focus loss overwrote Redo")
+            draft.text = "Fresh edit after Redo"
+            draft.commit(model: model, chapter: model.chapters[0])
+            try check(session.loadProjectMetadata()?.chapters?.first?.title == "Fresh edit after Redo", "Fresh user editing no longer commits")
+            print("PASS: Redo drops a pending draft; focus loss writes nothing; a fresh user edit still commits")
+        }
+    }
+
     static func captionPixels(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("fixture.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -397,6 +447,7 @@ struct RecordingExportRegressionChecks {
         let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
+        try await chapterRenameUndo(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
         try await cancelShareRetry(in: directory)
