@@ -3,6 +3,7 @@ import AVFoundation
 import CoreGraphics
 import CoreVideo
 import Foundation
+import Darwin
 
 // Compiles actual app sources, without windows, speech recognition, or real recordings.
 @main
@@ -710,6 +711,7 @@ struct RecordingExportRegressionChecks {
     }
 
     static func main() async throws {
+        setbuf(stdout, nil)
         guard let root = ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] else {
             throw Failure(description: "Run through check-recording-export-regressions.py")
         }

@@ -171,7 +171,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         do {
             while let sampleBuffer = output.copyNextSampleBuffer() {
                 try Task.checkCancellation()
-                guard let sampleBuffer = try Self.clipped(sampleBuffer, endingAt: reader.timeRange.end) else { break }
+                guard let sampleBuffer = try Self.clipped(sampleBuffer, endingAt: reader.timeRange.end) else { continue }
                 while !input.isReadyForMoreMediaData {
                     try Task.checkCancellation()
                     if writer.status == .failed { throw ExportError.writerFailed(writer.error) }

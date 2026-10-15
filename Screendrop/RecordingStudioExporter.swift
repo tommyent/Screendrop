@@ -199,13 +199,24 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         if configuration.isolatedMicrophoneURL != nil, isolatedMicrophone == nil {
             throw RecordingVoiceIsolation.IsolationError.invalidAudio
         }
-        let screenAsset = try RecordingCompositionBuilder.makeAsset(
-            from: sourceAsset,
-            timeline: clipTimeline,
-            sourceDuration: sourceDuration,
-            microphoneTrackID: configuration.microphoneTrackID,
-            isolatedMicrophone: isolatedMicrophone?.track
-        )
+        let baseAsset: AVAsset
+        if !configuration.exportSettings.removeAudio, let url = configuration.audioReplacementURL {
+            guard let replacement = await RecordingReplacementAudio.load(url: url, displayName: url.lastPathComponent),
+                  let sourceVideo = try await sourceAsset.loadTracks(withMediaType: .video).first else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            baseAsset = try RecordingCompositionBuilder.makeAsset(videoTrack: sourceVideo,
+                timeline: clipTimeline, sourceDuration: sourceDuration, replacementAudio: replacement)
+        } else {
+            baseAsset = try RecordingCompositionBuilder.makeAsset(from: sourceAsset,
+                timeline: clipTimeline, sourceDuration: sourceDuration,
+                microphoneTrackID: configuration.microphoneTrackID, isolatedMicrophone: isolatedMicrophone?.track)
+        }
+        let prepared = try await RecordingBackgroundMusicMixer.prepare(asset: baseAsset,
+            music: configuration.exportSettings.removeAudio ? nil : configuration.backgroundMusic,
+            sourceURL: configuration.screenURL, microphoneTrackID: configuration.microphoneTrackID,
+            timeline: clipTimeline, volume: configuration.audioVolume)
+        let screenAsset = prepared.asset
         guard let videoTrack = try await screenAsset.loadTracks(withMediaType: .video).first else {
             throw ExportError.noVideoTrack
         }
@@ -238,21 +249,13 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         screenReader.timeRange = exportTimeRange
 
         var audioOutput: AVAssetReaderAudioMixOutput?
-        var replacementReader: AVAssetReader?
         if !configuration.exportSettings.removeAudio {
-            let base: AVAsset = configuration.audioReplacementURL.map { AVURLAsset(url: $0) } ?? screenAsset
-            let prepared = try await RecordingBackgroundMusicMixer.prepare(asset: base, music: configuration.backgroundMusic,
-                sourceURL: configuration.screenURL, microphoneTrackID: configuration.microphoneTrackID,
-                timeline: clipTimeline, volume: configuration.audioVolume)
-            let tracks = try await prepared.asset.loadTracks(withMediaType: .audio)
+            let tracks = try await screenAsset.loadTracks(withMediaType: .audio)
             if !tracks.isEmpty {
-                let reader = try AVAssetReader(asset: prepared.asset)
-                reader.timeRange = exportTimeRange
                 let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: nil)
                 output.audioMix = prepared.mix
                 output.alwaysCopiesSampleData = false
-                reader.add(output)
-                replacementReader = reader
+                screenReader.add(output)
                 audioOutput = output
             }
         }
@@ -325,10 +328,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         guard screenReader.startReading() else {
             throw screenReader.error ?? ExportError.writerFailed(nil)
         }
-        if let replacementReader, !replacementReader.startReading() {
-            screenReader.cancelReading()
-            throw replacementReader.error ?? ExportError.writerFailed(nil)
-        }
         guard writer.startWriting() else {
             throw ExportError.writerFailed(writer.error)
         }
@@ -382,14 +381,10 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             if screenReader.status == .failed {
                 throw ExportError.readerFailed(screenReader.error)
             }
-            if let replacementReader, replacementReader.status == .failed {
-                throw ExportError.readerFailed(replacementReader.error)
-            }
             try cameraFeed?.checkFailure()
             guard renderedFrames > 0 else { throw ExportError.readerFailed(nil) }
         } catch {
             screenReader.cancelReading()
-            replacementReader?.cancelReading()
             cameraFeed?.cancel()
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: outputURL)
@@ -554,7 +549,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
 
         while let sampleBuffer = output.copyNextSampleBuffer() {
             if cancelFlag.isCancelled { throw ExportError.cancelled }
-            guard let sampleBuffer = try RecordingAudioExporter.clipped(sampleBuffer, endingAt: endTime) else { break }
+            guard let sampleBuffer = try RecordingAudioExporter.clipped(sampleBuffer, endingAt: endTime) else { continue }
             while !input.isReadyForMoreMediaData {
                 if cancelFlag.isCancelled { throw ExportError.cancelled }
                 if writer.status == .failed { throw ExportError.writerFailed(writer.error) }
