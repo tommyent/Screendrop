@@ -142,6 +142,9 @@ final class RecordingStudioModel {
     private(set) var previewReframe: ReframeTrack?
     private var reframeFocusTimeline: PointerTimeline?
     private var reframeFocusResolved = false
+    private(set) var chapters: [RecordingChapter] = []
+    private(set) var chapterError: String?
+
     private(set) var subtitleCues: [RecordingSubtitleCue] = []
     private(set) var subtitleTimeline = SubtitleTimeline.empty
     /// Word-level timing behind the cues; empty for projects transcribed
@@ -340,6 +343,7 @@ final class RecordingStudioModel {
         wallpaperCacheLease = AnnotationBackgroundRenderer.beginWallpaperUse()
 
         if let session {
+            chapters = session.loadProjectMetadata()?.chapters ?? []
             manifest = session.loadCaptureManifest()
             pointerCapture = session.loadPointerCapture() ?? PointerCaptureFile()
         }
@@ -486,7 +490,7 @@ final class RecordingStudioModel {
                 // saves nothing until it is edited.
                 lastSavedDocument = currentDocument()
             }
-            session.updateProjectMetadata { $0.lastOpenedAt = Date() }
+            try? session.updateProjectMetadata { $0.lastOpenedAt = Date() }
         } else {
             // A bare movie has nowhere to save its edits; this baseline only
             // tells the close prompt whether there are any to lose.
@@ -1383,7 +1387,7 @@ final class RecordingStudioModel {
             session.removeDraftDocument()
             lastSavedDocument = document
             hasUnsavedChanges = false
-            session.updateProjectMetadata { $0.savedAt = Date() }
+            try? session.updateProjectMetadata { $0.savedAt = Date() }
             dropStaleRender(for: document, in: session)
             RecordingProjectStore.shared.reload()
             lastSaveSucceeded = true
@@ -1679,6 +1683,57 @@ final class RecordingStudioModel {
     var activeSubtitleCue: RecordingSubtitleCue? {
         guard hasSubtitles else { return nil }
         return subtitleTimeline.cue(at: clipTimeline.sourceTime(at: currentTime))
+    }
+
+    // MARK: - Chapters
+
+    var visibleChapters: [RecordingChapter] {
+        RecordingChapterPlanner.mapped(chapters, through: clipTimeline)
+    }
+
+    func addChapterAtPlayhead() {
+        guard isLoaded, duration > 0 else { return }
+        let time = min(currentTime, max(0, duration - 0.001))
+        guard !visibleChapters.contains(where: { abs($0.start - time) < 0.5 }) else { return }
+        applyChapters(chapters + [RecordingChapter(
+            title: "Chapter \(chapters.count + 1)", start: clipTimeline.sourceTime(at: time)
+        )], actionName: "Add Chapter")
+    }
+
+    func suggestChapters() {
+        applyChapters(RecordingChapterPlanner.suggest(
+            cues: subtitleCues, words: transcriptWords, timeline: clipTimeline, keeping: chapters
+        ), actionName: "Suggest Chapters")
+    }
+
+    func renameChapter(id: UUID, title: String) {
+        var next = chapters
+        guard let index = next.firstIndex(where: { $0.id == id }) else { return }
+        next[index].title = String(title.prefix(200))
+        applyChapters(next, actionName: "Rename Chapter")
+    }
+
+    func removeChapter(id: UUID) {
+        applyChapters(chapters.filter { $0.id != id }, actionName: "Remove Chapter")
+    }
+
+    func jumpToChapter(_ chapter: RecordingChapter) {
+        pause()
+        seek(to: chapter.start)
+    }
+
+    private func applyChapters(_ next: [RecordingChapter], actionName: String) {
+        guard let session, next != chapters else { return }
+        do {
+            try session.updateProjectMetadata { $0.chapters = next }
+            let previous = chapters
+            registerUndo(actionName) { $0.applyChapters(previous, actionName: actionName) }
+            chapters = next
+            chapterError = nil
+            RecordingProjectStore.shared.reload()
+        } catch {
+            chapterError = "Chapters could not be saved: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Transcript editing

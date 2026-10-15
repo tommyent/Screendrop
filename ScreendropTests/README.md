@@ -34,3 +34,5 @@ It excludes only `AppEntry.swift`, uses the existing built DockProgress dependen
 
 Session snapshot checks cover unedited opens, five-session retention, deduplication, cropped pixels and pasted pictures after restore, Undo/Redo and auto-save in both editors, and Studio soundtrack retention and write failures. Recovery cases include unreadable metadata, failed pruning, error suppression and both saved-open and crash-draft-open sessions during storage failures. Library Trash uses a disposable destination to check that the snapshot folder moves with its capture; no files go to the user's Trash.
 
+
+`RecordingChapterTests` checks pause proposals, preservation of manual names, cut/speed mapping, source-anchor restoration, opening-sentence bounds, invalid anchors and backward-compatible project metadata. Chapter edits are navigation metadata; they do not change the render document.

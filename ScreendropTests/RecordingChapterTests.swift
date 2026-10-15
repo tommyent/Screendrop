@@ -1,0 +1,46 @@
+import Foundation
+import Testing
+
+struct RecordingChapterTests {
+    @Test func suggestsLongPausesAndPreservesExistingNames() {
+        let cues = [RecordingSubtitleCue(start: 1, end: 3, text: "Corrected opening."),
+                    RecordingSubtitleCue(start: 26, end: 28, text: "Export settings. More detail"),
+                    RecordingSubtitleCue(start: 31, end: 33, text: "A nearby pause")]
+        let manual = RecordingChapter(title: "My introduction", start: 0)
+        let chapters = RecordingChapterPlanner.suggest(cues: cues, words: [], timeline: .full(sourceDuration: 60), keeping: [manual])
+        #expect(chapters.map(\.title) == ["My introduction", "Export settings"])
+        #expect(chapters.map(\.start) == [0, 26])
+        #expect(RecordingChapterPlanner.suggest(cues: [], words: [], timeline: .full(sourceDuration: 60), keeping: [manual]) == [manual])
+    }
+
+    @Test func mappingDropsCutAnchorsHonorsSpeedAndRestoresOriginals() {
+        let chapters = [RecordingChapter(title: "First", start: 2), RecordingChapter(title: "Cut", start: 12), RecordingChapter(title: "Later", start: 25)]
+        let edited = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 10, speed: 2), .init(sourceStart: 20, sourceEnd: 30)])
+        let mapped = RecordingChapterPlanner.mapped(chapters, through: edited)
+        #expect(mapped.map(\.start) == [1, 10])
+        #expect(mapped.map(\.title) == ["First", "Later"])
+        #expect(RecordingChapterPlanner.mapped(chapters, through: .full(sourceDuration: 30)) == chapters)
+    }
+
+    @Test func wordGapsRemainAnchoredAfterSilenceCuts() {
+        let words = [RecordingTranscriptWord(text: "First", start: 1, end: 3), RecordingTranscriptWord(text: "Next", start: 30, end: 32)]
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 24), .init(sourceStart: 29.5, sourceEnd: 40)])
+        let chapters = RecordingChapterPlanner.suggest(cues: [.init(start: 30, end: 32, text: "Corrected next")], words: words, timeline: timeline, keeping: [])
+        #expect(chapters.map(\.start) == [1, 30])
+        #expect(chapters.last?.title == "Corrected next")
+    }
+
+    @Test func oldMetadataAndNewChaptersRoundTrip() throws {
+        var metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: Data(#"{"version":1,"displayName":"Existing"}"#.utf8))
+        #expect(metadata.chapters == nil)
+        metadata.chapters = [RecordingChapter(title: "Start", start: 0)]
+        #expect(try JSONDecoder().decode(RecordingProjectMetadata.self, from: JSONEncoder().encode(metadata)) == metadata)
+    }
+
+    @Test func openingSentenceAndInvalidAnchorsAreBounded() {
+        #expect(RecordingChapterPlanner.title(from: "  A corrected\n opening. Another sentence") == "A corrected opening")
+        #expect(RecordingChapterPlanner.title(from: String(repeating: "x", count: 100)).count == 80)
+        let chapters = [RecordingChapter(title: "End", start: 10), RecordingChapter(title: "Invalid", start: .nan), RecordingChapter(title: "First", start: 0), RecordingChapter(title: "Duplicate", start: 0)]
+        #expect(RecordingChapterPlanner.mapped(chapters, through: .full(sourceDuration: 10)).count == 1)
+    }
+}

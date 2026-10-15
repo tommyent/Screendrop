@@ -64,7 +64,7 @@ extension CaptureLibraryModel {
         var historyIDs = Set<UUID>()
         for item in selectedItems {
             if let session = item.session {
-                session.updateProjectMetadata { metadata in
+                try? session.updateProjectMetadata { metadata in
                     var tags = (metadata.tags ?? []).filter { $0.caseInsensitiveCompare(name) != .orderedSame }
                     if applied { tags.append(name) }
                     metadata.tags = tags.isEmpty ? nil : tags

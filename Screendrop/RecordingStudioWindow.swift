@@ -2758,6 +2758,7 @@ private enum StudioInspectorSection: String, Hashable, CaseIterable {
     case cursor
     case keystrokes
     case transcription
+    case chapters
     case camera
     case audio
 }
@@ -2941,6 +2942,16 @@ private struct StudioInspector: View {
                         }
                     ) {
                         transcriptionControls
+                    }
+                }
+
+                if model.isProject {
+                    InspectorDisclosureSection(
+                        "Chapters",
+                        summary: "\(model.visibleChapters.count)",
+                        isExpanded: expansionBinding(for: .chapters)
+                    ) {
+                        chapterControls
                     }
                 }
 
@@ -3314,6 +3325,48 @@ private struct StudioInspector: View {
             onTap: { model.keystrokePlacement = $0 },
             label: { Text($0.title).font(.inspectorSegment) }
         )
+    }
+
+    private var chapterControls: some View {
+        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            InspectorActionButton("Add at Playhead", systemImage: "plus") {
+                model.addChapterAtPlayhead()
+            }
+            InspectorActionButton("Suggest Chapters", systemImage: "list.bullet") {
+                model.suggestChapters()
+            }
+            .disabled(!model.hasSubtitles)
+            .help("Suggest breaks at narration pauses after Transcribe Narration")
+
+            InspectorHint("Chapters save immediately. Undo restores changes.")
+            if let error = model.chapterError {
+                InspectorHint(error, tint: .orange)
+            }
+            ForEach(model.visibleChapters) { chapter in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button {
+                        model.jumpToChapter(chapter)
+                    } label: {
+                        Text(String(format: "%d:%02d", Int(chapter.start) / 60, Int(chapter.start) % 60))
+                            .monospacedDigit()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to \(chapter.title)")
+                    TextField("Chapter name", text: Binding(
+                        get: { model.chapters.first(where: { $0.id == chapter.id })?.title ?? "" },
+                        set: { model.renameChapter(id: chapter.id, title: $0) }
+                    ))
+                    .textFieldStyle(.plain)
+                    Button("Remove chapter", systemImage: "trash", role: .destructive) {
+                        model.removeChapter(id: chapter.id)
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(chapter.title)")
+                }
+                .font(.inspectorValue)
+            }
+        }
     }
 
     // MARK: Transcription

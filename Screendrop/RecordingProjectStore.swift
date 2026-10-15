@@ -68,7 +68,7 @@ final class RecordingProjectStore {
     func rename(_ session: RecordingSession, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard name != (session.customName ?? "") else { return }
-        session.updateProjectMetadata { $0.displayName = name.isEmpty ? nil : name }
+        try? session.updateProjectMetadata { $0.displayName = name.isEmpty ? nil : name }
         reload()
     }
 

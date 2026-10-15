@@ -243,17 +243,20 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         return try? CaptureManifest.decoder.decode(RecordingProjectMetadata.self, from: data)
     }
 
-    func writeProjectMetadata(_ metadata: RecordingProjectMetadata) {
-        guard let data = try? CaptureManifest.encoder.encode(metadata) else { return }
-        try? data.write(to: projectMetadataURL, options: .atomic)
+    func writeProjectMetadata(_ metadata: RecordingProjectMetadata) throws {
+        let data = try CaptureManifest.encoder.encode(metadata)
+        try data.write(to: projectMetadataURL, options: .atomic)
     }
 
     /// Read-modify-write so touching one field never drops the others.
-    func updateProjectMetadata(_ mutate: (inout RecordingProjectMetadata) -> Void) {
-        var metadata = loadProjectMetadata() ?? RecordingProjectMetadata()
+    func updateProjectMetadata(_ mutate: (inout RecordingProjectMetadata) -> Void) throws {
+        var metadata = RecordingProjectMetadata()
+        if FileManager.default.fileExists(atPath: projectMetadataURL.path) {
+            metadata = try CaptureManifest.decoder.decode(RecordingProjectMetadata.self, from: Data(contentsOf: projectMetadataURL))
+        }
         metadata.version = RecordingProjectMetadata.currentVersion
         mutate(&metadata)
-        writeProjectMetadata(metadata)
+        try writeProjectMetadata(metadata)
     }
 
     // MARK: - Render stamp
