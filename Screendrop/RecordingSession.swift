@@ -259,7 +259,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     // MARK: - Render stamp
 
     private struct RenderStamp: Codable {
-        static let currentLayoutVersion = 2
+        static let currentLayoutVersion = 3
         var layoutVersion = currentLayoutVersion
         var document: RecordingEditDocument?
     }
@@ -282,8 +282,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     /// Export and Share can then skip the render instead of trusting that
     /// nothing has changed since it was made.
     func freshFinalURL(matching document: RecordingEditDocument?) -> URL? {
-        // Older shared renders omitted replacement audio for every aspect,
-        // even though their stamp named the selected soundtrack.
+        // Older renders could include cut caption wording or omit replacement audio.
         guard let existing = existingFinalURL,
               let data = try? Data(contentsOf: renderStampURL),
               let renderStamp = try? CaptureManifest.decoder.decode(RenderStamp.self, from: data),

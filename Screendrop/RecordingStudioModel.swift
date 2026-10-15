@@ -1996,6 +1996,7 @@ final class RecordingStudioModel {
     private func makeExportConfiguration() throws -> RecordingStudioExporter.Configuration {
         let audioReplacementURL = try replacementAudioURLForExport(includeAudio: !exportSettings.removeAudio)
         let reframe = makeReframeTrack()
+        let captions = RecordingTranscript(words: transcriptWords, cues: subtitleCues).renderCaptions(in: clipTimeline)
         let fitContentAspect: CGFloat? =
             (exportAspect == .original || exportAspectMode == .fit) && videoSize.height > 0
                 ? videoSize.width / videoSize.height
@@ -2010,10 +2011,10 @@ final class RecordingStudioModel {
             showsPressEffects: showsPressEffects,
             keystrokeTimeline: showsKeystrokes && hasKeystrokes ? keystrokeTimeline : nil,
             keystrokePlacement: keystrokePlacement,
-            subtitleTimeline: showsSubtitles && hasSubtitles ? subtitleTimeline : nil,
+            subtitleTimeline: showsSubtitles && !captions.cues.isEmpty ? SubtitleTimeline(cues: captions.cues) : nil,
             subtitleStyle: subtitleStyle,
-            karaokeTimeline: showsSubtitles && hasSubtitles && !karaokeTimeline.isEmpty
-                ? karaokeTimeline
+            karaokeTimeline: showsSubtitles && !captions.cues.isEmpty && !captions.words.isEmpty
+                ? KaraokeTimeline(cues: captions.cues, words: captions.words)
                 : nil,
             canvasSize: basePreviewCanvasSize,
             videoCropRect: videoCropRect,

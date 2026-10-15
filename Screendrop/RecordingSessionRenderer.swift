@@ -160,8 +160,10 @@ enum RecordingSessionRenderer {
             : nil
 
         let showsSubtitles = document?.showsSubtitles ?? true
-        let cues = document?.subtitleCues ?? []
-        let words = document?.subtitleWords ?? []
+        let captions = RecordingTranscript(words: document?.subtitleWords ?? [], cues: document?.subtitleCues ?? [])
+            .renderCaptions(in: clipTimeline)
+        let cues = captions.cues
+        let words = captions.words
 
         let aspect = document?.exportAspectPreset ?? .original
         let aspectMode = document?.exportAspectContentMode ?? .fill
