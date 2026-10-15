@@ -98,6 +98,19 @@ struct RecordingChapterTests {
         #expect(try JSONDecoder().decode(RecordingProjectMetadata.self, from: JSONEncoder().encode(metadata)) == metadata)
     }
 
+    @Test func automaticFallbacksAreNumberedAndLegacyChaptersStayManual() throws {
+        let legacy = try JSONDecoder().decode(RecordingChapter.self, from: Data(#"{"id":"00000000-0000-0000-0000-000000000001","title":"Chapter 7","start":0}"#.utf8))
+        let automatic = RecordingChapter(title: "Old narration", start: 5, autoTitle: true)
+        let timeline = RecordingClipTimeline.full(sourceDuration: 10)
+        let chapters = [legacy, automatic]
+        #expect(RecordingChapterPlanner.mapped(chapters, through: timeline).map(\.title) == ["Chapter 7", "Chapter 2"])
+        let cues = [RecordingSubtitleCue(start: 0, end: 2, text: "Legacy narration."),
+                    RecordingSubtitleCue(start: 5, end: 7, text: "Corrected narration! More detail.")]
+        #expect(RecordingChapterPlanner.mapped(chapters, through: timeline, cues: cues).map(\.title) == ["Chapter 7", "Corrected narration"])
+        let payload = try #require(JSONSerialization.jsonObject(with: RecordingChapterPlanner.shareData(chapters, through: timeline)) as? [[String: Any]])
+        #expect(payload.map { $0["title"] as? String } == ["Chapter 7", "Chapter 2"])
+    }
+
     @Test func retiredMetadataFieldsDecodeAndAreDroppedOnSave() throws {
         let data = Data(#"{"version":1,"displayName":"Existing","narrationSummary":"Old summary","chapters":[{"id":"00000000-0000-0000-0000-000000000001","title":"Previously generated name","start":0,"autoTitle":true,"autoTitleSource":"old fingerprint"}]}"#.utf8)
         let metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: data)

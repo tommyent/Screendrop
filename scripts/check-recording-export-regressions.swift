@@ -113,6 +113,57 @@ struct RecordingExportRegressionChecks {
         }
     }
 
+    static func chapterAtPlayhead(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("chapter-at-playhead.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let legacy = RecordingChapter(title: "Chapter 7", start: 0)
+        let closing = RecordingChapter(title: "Closing", start: 7)
+        try session.updateProjectMetadata { $0.chapters = [legacy, closing] }
+        let cue = RecordingSubtitleCue(start: 4, end: 5, text: "Corrected opening! More detail.")
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 2, speed: 2), .init(sourceStart: 4, sourceEnd: 8)])
+        try session.writeEditDocument(RecordingEditDocument(
+            style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [], clipTimeline: timeline,
+            subtitleCues: [.init(start: 2, end: 4, text: "Removed narration."), cue,
+                           .init(start: 7, end: 8, text: "Later narration.")]
+        ))
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        try check(model.isLoaded, "Add-at-playhead fixture did not load")
+        model.currentTime = 1
+        model.addChapterAtPlayhead()
+        let added = model.chapters.last!
+        try check(added.start == 4 && added.title == "Corrected opening" && added.autoTitle == true,
+                  "Add at Playhead did not store the surviving corrected title at its source anchor")
+        try check(session.loadProjectMetadata()?.chapters == model.chapters, "Automatic chapter was not persisted")
+        model.addChapterAtPlayhead()
+        try check(model.chapters.count == 3, "Duplicate playhead chapter was added")
+        model.undo()
+        try check(model.chapters == [legacy, closing], "Undo Add Chapter failed")
+        model.redo()
+        try check(model.chapters.last == added && session.loadProjectMetadata()?.chapters == model.chapters, "Redo Add Chapter was not persisted")
+        model.updateSubtitleText(id: cue.id, text: "Updated narration.")
+        try check(model.visibleChapters.first(where: { $0.id == added.id })?.title == "Updated narration", "Automatic chapter did not follow transcript edits")
+        try check(model.visibleChapters.first?.title == "Chapter 7", "A legacy numbered chapter was renamed")
+        model.renameChapter(id: added.id, title: "My title")
+        model.updateSubtitleText(id: cue.id, text: "Another edit.")
+        try check(model.visibleChapters.first(where: { $0.id == added.id })?.title == "My title"
+                  && session.loadProjectMetadata()?.chapters?.last?.autoTitle == false, "Manual rename did not stop automatic titles")
+        model.currentTime = 3
+        model.addChapterAtPlayhead()
+        try check(model.chapters.last?.title == "Chapter 3" && model.chapters.last?.autoTitle == true,
+                  "Silence before the next chapter did not use a numbered automatic fallback")
+        try check(model.saveProject(reportingFailure: false), "Chapter fixture save failed")
+        model.teardown()
+        let reopened = RecordingStudioModel(url: session.directoryURL)
+        defer { reopened.teardown() }
+        await reopened.load()
+        try check(reopened.chapters == model.chapters && reopened.visibleChapters.map(\.title) == ["Chapter 7", "My title", "Chapter 3", "Closing"],
+                  "Reopening did not preserve chapter names and automatic flags")
+        print("PASS: Add at Playhead uses surviving corrected narration/source time, follows transcript edits until renamed, preserves legacy titles, bounds silence by the next chapter, persists and supports Undo/Redo")
+    }
+
     static func captionPixels(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("fixture.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -447,6 +498,7 @@ struct RecordingExportRegressionChecks {
         let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
+        try await chapterAtPlayhead(in: directory)
         try await chapterRenameUndo(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
