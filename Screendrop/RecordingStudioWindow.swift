@@ -1215,29 +1215,40 @@ private struct StudioSubtitleBarView: View {
     }
 }
 
+struct StudioChapterNameDraft {
+    var text: String?
+
+    mutating func storedTitleChanged() {
+        text = nil
+    }
+
+    mutating func commit(model: RecordingStudioModel, chapter: RecordingChapter) {
+        guard let text else { return }
+        if text != chapter.title { model.renameChapter(id: chapter.id, title: text) }
+        if model.chapterError == nil { self.text = nil }
+    }
+}
+
 private struct StudioChapterNameField: View {
     let model: RecordingStudioModel
     let chapter: RecordingChapter
-    @State private var draft: String?
+    @State private var draft = StudioChapterNameDraft()
     @FocusState private var isEditing: Bool
 
     var body: some View {
         TextField("Chapter name", text: Binding(
-            get: { draft ?? chapter.title },
-            set: { draft = $0 }
+            get: { draft.text ?? chapter.title },
+            set: { draft.text = $0 }
         ))
         .textFieldStyle(.plain)
         .focused($isEditing)
-        .onSubmit { commit() }
+        .onSubmit { draft.commit(model: model, chapter: chapter) }
         .onChange(of: isEditing) { _, editing in
-            if !editing { commit() }
+            if !editing { draft.commit(model: model, chapter: chapter) }
         }
-    }
-
-    private func commit() {
-        guard let draft else { return }
-        if draft != chapter.title { model.renameChapter(id: chapter.id, title: draft) }
-        if model.chapterError == nil { self.draft = nil }
+        .onChange(of: chapter.title) {
+            draft.storedTitleChanged()
+        }
     }
 }
 
