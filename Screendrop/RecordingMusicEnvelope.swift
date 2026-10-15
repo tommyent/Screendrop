@@ -32,9 +32,12 @@ nonisolated enum RecordingMusicEnvelope {
     static func speechRanges(levels: [Float], window: Double = window) -> [ClosedRange<Double>] {
         guard !levels.isEmpty else { return [] }
         let sorted = levels.sorted()
-        let high = Double(sorted.last ?? 0)
-        guard high > 0.0001 else { return [] }
         let noise = Double(sorted[Int(Double(sorted.count - 1) * 0.2)])
+        // Exclude the noise floor so a short utterance in a long silence still has a reference level.
+        let aboveNoise = sorted.filter { Double($0) > max(0.0001, noise * 2.5) }
+        let reference = aboveNoise.isEmpty ? sorted : aboveNoise
+        let high = Double(reference[Int(Double(reference.count - 1) * 0.95)])
+        guard high > 0.0001 else { return [] }
         let threshold = max(0.0001, min(high * 0.5, max(noise * 2.5, high * 0.15)))
         var result: [ClosedRange<Double>] = []
         var start: Double?
@@ -42,7 +45,9 @@ nonisolated enum RecordingMusicEnvelope {
             let active = index < levels.count && Double(levels[index]) >= threshold
             if active, start == nil { start = Double(index) * window }
             if !active, let beginning = start {
-                result.append(beginning...Double(index) * window)
+                let end = Double(index) * window
+                // Filter transients before bridging, or repeated key presses become one long run.
+                if end - beginning >= 0.08 - 0.000_001 { result.append(beginning...end) }
                 start = nil
             }
         }

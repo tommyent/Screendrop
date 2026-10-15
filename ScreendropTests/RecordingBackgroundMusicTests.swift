@@ -40,10 +40,25 @@ struct RecordingBackgroundMusicTests {
         #expect(RecordingMusicEnvelope.speechRanges(levels: levels) == [1...2])
         #expect(RecordingMusicEnvelope.speechRanges(levels: Array(repeating: 0, count: 100)).isEmpty)
         #expect(RecordingMusicEnvelope.speechRanges(levels: Array(repeating: 0.05, count: 100)) == [0...2])
-        // A short utterance in a long silent recording must still lower the music.
-        #expect(!RecordingMusicEnvelope.speechRanges(levels: Array(repeating: 0, count: 1000) + [0.05, 0.05]).isEmpty)
-        #expect(RecordingMusicEnvelope.speechRanges(levels: Array(repeating: 0.001, count: 1000) + [0.05, 0.05]) == [20...20.04])
+        #expect(RecordingMusicEnvelope.speechRanges(levels: Array(repeating: 0, count: 1000) + [0.05, 0.05]).isEmpty)
+        #expect(RecordingMusicEnvelope.speechRanges(levels: Array(repeating: 0.001, count: 1000) + Array(repeating: 0.05, count: 6)) == [20...20.12])
         #expect(RecordingMusicEnvelope.bridge([0...1, 1.3...2]) == [0...1, 1.3...2])
+    }
+
+    @Test func clicksAndTypingDoNotDuckButQuietSpeechDoes() {
+        var clicks = [Float](repeating: 0.001, count: 250)
+        for index in stride(from: 10, to: 240, by: 10) { clicks[index] = 0.5 }
+        #expect(RecordingMusicEnvelope.speechRanges(levels: clicks).isEmpty)
+        var typing = [Float](repeating: 0.001, count: 250)
+        for index in stride(from: 10, to: 240, by: 7) {
+            typing[index] = 0.3
+            typing[index + 1] = 0.12
+        }
+        #expect(RecordingMusicEnvelope.speechRanges(levels: typing).isEmpty)
+        var speech = [Float](repeating: 0.001, count: 250)
+        for index in 50..<100 { speech[index] = 0.04 }
+        speech[200] = 1 // A desk bump must not raise the threshold above the quiet speech.
+        #expect(RecordingMusicEnvelope.speechRanges(levels: speech) == [1...2])
     }
 
     @Test func speechMapsThroughCutsAndSpeed() {
