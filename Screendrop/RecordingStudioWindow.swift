@@ -3108,12 +3108,22 @@ private struct StudioInspector: View {
             .padding(.bottom, model.isProject ? 12 : PreviewPeekTab.pillHeight * 1.1)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if model.isProject {
-                InspectorRevertBar(background: sidebarBackground) {
-                    RecordingStudioRevertItems(studio: model)
+            VStack(spacing: 0) {
+                InspectorActionButton("Export Agent Prompt…", systemImage: "text.document") {
+                    model.exportAgentPrompt()
                 }
-                .disabled(!model.canRevert)
+                .disabled(!model.isLoaded || model.hasRunningWork || model.transcriptionState.isTranscribing)
+                .padding(.horizontal, InspectorMetrics.horizontalPadding)
+                .padding(.vertical, 10)
+
+                if model.isProject {
+                    InspectorRevertBar(background: sidebarBackground) {
+                        RecordingStudioRevertItems(studio: model)
+                    }
+                    .disabled(!model.canRevert)
+                }
             }
+            .background(sidebarBackground)
         }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectStyle(.soft, for: .all)
