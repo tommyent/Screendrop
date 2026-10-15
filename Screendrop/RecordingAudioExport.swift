@@ -119,6 +119,11 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         if configuration.isolatedMicrophoneURL != nil, isolatedMicrophone == nil {
             throw RecordingVoiceIsolation.IsolationError.invalidAudio
         }
+        if let replacementURL = configuration.replacementURL {
+            guard await RecordingReplacementAudio.load(url: replacementURL, displayName: replacementURL.lastPathComponent) != nil else {
+                throw RecordingReplacementAudio.LoadError.unreadable
+            }
+        }
         let audioAsset: AVAsset = if let replacementURL = configuration.replacementURL {
             AVURLAsset(url: replacementURL)
         } else {

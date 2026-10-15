@@ -201,10 +201,10 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         }
         let baseAsset: AVAsset
         if !configuration.exportSettings.removeAudio, let url = configuration.audioReplacementURL {
-            guard let replacement = await RecordingReplacementAudio.load(url: url, displayName: url.lastPathComponent),
-                  let sourceVideo = try await sourceAsset.loadTracks(withMediaType: .video).first else {
-                throw CocoaError(.fileReadCorruptFile)
+            guard let replacement = await RecordingReplacementAudio.load(url: url, displayName: url.lastPathComponent) else {
+                throw RecordingReplacementAudio.LoadError.unreadable
             }
+            guard let sourceVideo = try await sourceAsset.loadTracks(withMediaType: .video).first else { throw ExportError.noVideoTrack }
             baseAsset = try RecordingCompositionBuilder.makeAsset(videoTrack: sourceVideo,
                 timeline: clipTimeline, sourceDuration: sourceDuration, replacementAudio: replacement)
         } else {

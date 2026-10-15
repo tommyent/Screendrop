@@ -14,7 +14,7 @@ struct RecordingExportRegressionChecks {
         if try !value() { throw Failure(description: message) }
     }
 
-    static func movie(at url: URL) async throws {
+    static func movie(at url: URL, colorAt: (Double) -> CGColor = { _ in CGColor(gray: 0.4, alpha: 1) }) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180,
@@ -32,7 +32,7 @@ struct RecordingExportRegressionChecks {
                         bitsPerComponent: 8, bytesPerRow: plane.properties.bytesPerRow,
                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue)
                 else { throw Failure(description: "Cannot create fixture pixels") }
-                context.setFillColor(CGColor(gray: 0.4, alpha: 1))
+                context.setFillColor(colorAt(Double(frame) / 10))
                 context.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
             }
             try await receiver.append(CVReadOnlyPixelBuffer(pixels), with: CMTime(value: Int64(frame), timescale: 10))
@@ -340,12 +340,12 @@ struct RecordingExportRegressionChecks {
         print("PASS: canceled model task stays busy, blocks retry until exit, and releases the task for a successful retry")
     }
 
-    static func audioTone(at url: URL, frequency: Float) throws {
+    static func audioTone(at url: URL, frequency: Float, active: (Double) -> Bool = { _ in true }) throws {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 384000)!
         buffer.frameLength = buffer.frameCapacity
         for index in 0..<Int(buffer.frameLength) {
-            buffer.floatChannelData![0][index] = 0.15 * sin(2 * .pi * frequency * Float(index) / 48000)
+            buffer.floatChannelData![0][index] = active(Double(index) / 48000) ? 0.15 * sin(2 * .pi * frequency * Float(index) / 48000) : 0
         }
         let settings = url.pathExtension == "m4a"
             ? [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1] as [String: Any]
@@ -510,6 +510,68 @@ struct RecordingExportRegressionChecks {
         }
         try check(try Data(contentsOf: session.screenURL) == original, "Mixing changed the source recording")
         print("PASS: Studio preview, shared video and audio-only exports retain voice/system audio, loop from offset, duck music on source mic and fade at edited end; independent volume; Replace/Isolate Voice remain compatible")
+    }
+
+    static func replacementVideoTiming(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("replacement-video.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        let videoURL = directory.appendingPathComponent("replacement-colors.mov")
+        try await movie(at: videoURL, colorAt: { time in
+            CGColor(red: time < 4 ? 1 : 0, green: 0, blue: time < 4 ? 0 : 1, alpha: 1)
+        })
+        let originalAudio = directory.appendingPathComponent("replacement-original.wav")
+        try audioTone(at: originalAudio, frequency: 220)
+        let composition = AVMutableComposition()
+        for url in [videoURL, originalAudio] {
+            let asset = AVURLAsset(url: url)
+            for track in try await asset.load(.tracks) {
+                let destination = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                try destination.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 8, timescale: 1)), of: track, at: .zero)
+            }
+        }
+        let sourceExport = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough)!
+        try await sourceExport.export(to: session.screenURL, as: .mov)
+        let replacementURL = session.directoryURL.appendingPathComponent("\(RecordingSession.replacementAudioBaseName).\(UUID().uuidString).wav")
+        try audioTone(at: replacementURL, frequency: 660, active: { $0 >= 2.5 })
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0.5, sourceEnd: 3), .init(sourceStart: 4, sourceEnd: 8, speed: 2)])
+        var style = RecordingStudioStyle()
+        style.padding = 0; style.shadow = 0; style.cornerRadius = 0
+        var settings = VideoCompressionSettings()
+        settings.resolution = .original
+        var document = RecordingEditDocument(style: style, zoomEnabled: false, zoomCues: [], clipTimeline: cut,
+            exportSettings: settings, replacementAudioFileName: replacementURL.lastPathComponent)
+        try session.writeEditDocument(document)
+        let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        try check(configuration.backgroundMusic == nil, "Replacement-only video fixture unexpectedly selected music")
+        let movie = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+        let duration = try await AVURLAsset(url: movie).load(.duration).seconds
+        try check(abs(duration - cut.duration) < 0.03, "Replacement video duration missed the cut")
+        let before = try await audioLevels(at: movie, time: 2.3, length: 0.12, frequencies: [220, 660])
+        let after = try await audioLevels(at: movie, time: 2.65, length: 0.12, frequencies: [660])
+        let end = try await audioLevels(at: movie, time: 4.25, length: 0.12, frequencies: [660])
+        let red = try await pixels(in: movie, at: 2.35), blue = try await pixels(in: movie, at: 2.65)
+        try check(before.allSatisfy { $0 < 0.005 } && after[0] > 0.1 && end[0] > 0.1,
+                  "Replacement was re-cut, sped up, ended early or leaked original audio")
+        try check(red[0] > 200 && red[2] < 50 && blue[2] > 200 && blue[0] < 50,
+                  "Replacement tone onset did not align with the video's cut boundary")
+        let invalid = session.directoryURL.appendingPathComponent("video-only.mov")
+        try FileManager.default.copyItem(at: videoURL, to: invalid)
+        document.replacementAudioFileName = invalid.lastPathComponent
+        try session.writeEditDocument(document)
+        do {
+            _ = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+            throw Failure(description: "Video export accepted a replacement without audio")
+        } catch let error as RecordingReplacementAudio.LoadError {
+            try check(error.localizedDescription.contains("no readable audio track"), "Video replacement error was unclear")
+        }
+        do {
+            _ = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+                replacementURL: invalid, format: .wav), progress: { _ in })
+            throw Failure(description: "Audio export accepted a replacement without audio")
+        } catch let error as RecordingReplacementAudio.LoadError {
+            try check(error.localizedDescription.contains("no readable audio track"), "Audio replacement error was unclear")
+        }
+        print("PASS: replacement VIDEO export without music preserves a cut/2x timeline, tone onset at the color boundary and audio to the end; invalid replacements give a clear video/audio error")
     }
 
     static func backgroundMusicHistory(in directory: URL) async throws {
@@ -914,6 +976,7 @@ struct RecordingExportRegressionChecks {
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
         try await quickLookInstant(in: directory)
+        try await replacementVideoTiming(in: directory)
         try await backgroundMusicMixing(in: directory)
         try await backgroundMusicHistory(in: directory)
         try await backgroundMusicRetention(in: directory)
