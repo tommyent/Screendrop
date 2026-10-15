@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Chapter anchors stay on the original movie so cuts and speed changes are reversible.
@@ -7,7 +6,6 @@ nonisolated struct RecordingChapter: Identifiable, Codable, Equatable, Sendable 
     var title: String
     var start: TimeInterval
     var autoTitle: Bool? = nil
-    var autoTitleSource: String? = nil
 }
 
 nonisolated enum RecordingChapterPlanner {
@@ -15,6 +13,10 @@ nonisolated enum RecordingChapterPlanner {
         let clean = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let sentence = clean.prefix { !".!?。！？".contains($0) }
         return String(sentence.prefix(80)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func openingSentenceTitle(cues: [RecordingSubtitleCue], words: [RecordingTranscriptWord], through timeline: RecordingClipTimeline) -> String {
+        title(from: survivingCues(cues, words: words, through: timeline).map(\.text).joined(separator: " "))
     }
 
     static func mapped(_ chapters: [RecordingChapter], through timeline: RecordingClipTimeline, cues: [RecordingSubtitleCue] = [], words: [RecordingTranscriptWord] = []) -> [RecordingChapter] {
@@ -35,18 +37,11 @@ nonisolated enum RecordingChapterPlanner {
             for index in result.indices where result[index].autoTitle == true {
                 let end = index + 1 < result.count ? result[index + 1].start : timeline.duration
                 let text = chapterText(readable, through: timeline, start: result[index].start, end: end)
-                if result[index].autoTitleSource != titleSource(text) {
-                    let title = title(from: text)
-                    result[index].title = title.isEmpty ? "Chapter" : title
-                }
+                let title = title(from: text)
+                result[index].title = title.isEmpty ? "Chapter" : title
             }
         }
         return result
-    }
-
-    static func titleSource(_ text: String) -> String {
-        // Keep an accepted model name until its narration changes, without retaining a second copy of the prose.
-        Data(SHA256.hash(data: Data(text.utf8))).base64EncodedString()
     }
 
     static func chapterText(_ cues: [RecordingSubtitleCue], through timeline: RecordingClipTimeline, start: TimeInterval, end: TimeInterval) -> String {

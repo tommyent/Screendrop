@@ -77,15 +77,12 @@ struct RecordingChapterTests {
         let original = RecordingClipTimeline.full(sourceDuration: 10)
         let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 3), .init(sourceStart: 4, sourceEnd: 10)])
         let rule = RecordingChapter(title: "Public opening private words", start: 0, autoTitle: true)
-        let model = RecordingChapter(title: "Private words overview", start: 0, autoTitle: true, autoTitleSource: RecordingChapterPlanner.titleSource("Public opening private words."))
-        for chapter in [rule, model] {
-            #expect(RecordingChapterPlanner.mapped([chapter], through: cut, cues: cues).first?.title == "Public opening")
-            let payload = try #require(JSONSerialization.jsonObject(with: RecordingChapterPlanner.shareData([chapter], through: cut, cues: cues)) as? [[String: Any]])
-            #expect(payload[0]["title"] as? String == "Public opening")
-            #expect(payload[0]["autoTitle"] == nil && payload[0]["autoTitleSource"] == nil)
-        }
-        #expect(RecordingChapterPlanner.mapped([model], through: original, cues: cues).first?.title == "Private words overview")
-        var manual = model
+        #expect(RecordingChapterPlanner.mapped([rule], through: cut, cues: cues).first?.title == "Public opening")
+        let payload = try #require(JSONSerialization.jsonObject(with: RecordingChapterPlanner.shareData([rule], through: cut, cues: cues)) as? [[String: Any]])
+        #expect(payload[0]["title"] as? String == "Public opening")
+        #expect(Set(payload[0].keys) == ["title", "start"])
+        #expect(RecordingChapterPlanner.mapped([rule], through: original, cues: cues).first?.title == "Public opening private words")
+        var manual = rule
         manual.title = "My chosen name"
         manual.autoTitle = false
         #expect(RecordingChapterPlanner.mapped([manual], through: cut, cues: cues).first?.title == "My chosen name")
@@ -99,6 +96,33 @@ struct RecordingChapterTests {
         #expect(metadata.chapters == nil)
         metadata.chapters = [RecordingChapter(title: "Start", start: 0)]
         #expect(try JSONDecoder().decode(RecordingProjectMetadata.self, from: JSONEncoder().encode(metadata)) == metadata)
+    }
+
+    @Test func retiredMetadataFieldsDecodeAndAreDroppedOnSave() throws {
+        let data = Data(#"{"version":1,"displayName":"Existing","narrationSummary":"Old summary","chapters":[{"id":"00000000-0000-0000-0000-000000000001","title":"Previously generated name","start":0,"autoTitle":true,"autoTitleSource":"old fingerprint"}]}"#.utf8)
+        let metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: data)
+        let chapter = try #require(metadata.chapters?.first)
+        #expect(metadata.displayName == "Existing" && chapter.autoTitle == true)
+        let cues = [RecordingSubtitleCue(start: 1, end: 2, text: "Opening sentence.")]
+        #expect(RecordingChapterPlanner.mapped([chapter], through: .full(sourceDuration: 10), cues: cues).first?.title == "Opening sentence")
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(metadata)) as? [String: Any])
+        #expect(Set(encoded.keys) == ["version", "displayName", "chapters"])
+        let chapters = try #require(encoded["chapters"] as? [[String: Any]])
+        #expect(Set(chapters[0].keys) == ["id", "title", "start", "autoTitle"])
+    }
+
+    @Test func openingSentenceUsesOnlySurvivingCorrectedText() {
+        let cues = [RecordingSubtitleCue(start: 0, end: 2, text: "Removed opening."),
+                    RecordingSubtitleCue(start: 4, end: 6, text: "  Corrected\n opening! More detail.")]
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 3, sourceEnd: 10, speed: 2)])
+        #expect(RecordingChapterPlanner.openingSentenceTitle(cues: cues, words: [], through: timeline) == "Corrected opening")
+        let partial = RecordingSubtitleCue(start: 0, end: 5, text: "Removed public")
+        let words = [RecordingTranscriptWord(text: "Removed ", start: 0, end: 1), RecordingTranscriptWord(text: "public", start: 4, end: 5)]
+        #expect(RecordingChapterPlanner.openingSentenceTitle(cues: [partial], words: words, through: timeline).isEmpty)
+        var corrected = partial
+        corrected.text = "public"
+        #expect(RecordingChapterPlanner.openingSentenceTitle(cues: [corrected], words: words, through: timeline) == "public")
+        #expect(RecordingChapterPlanner.openingSentenceTitle(cues: [], words: [], through: timeline).isEmpty)
     }
 
     @Test func openingSentenceAndInvalidAnchorsAreBounded() {
