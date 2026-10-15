@@ -192,7 +192,7 @@ final class RecordingStudioModel {
     private(set) var sharedVideoError: String?
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
+        exportTask != nil || shareTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -589,7 +589,6 @@ final class RecordingStudioModel {
         exportTask = nil
         audioExportTask = nil
         replacementAudioTask = nil
-        shareTask = nil
         transcriptionTask = nil
         projectSaveTask = nil
         timelineThumbnails.releaseResources()
@@ -2373,7 +2372,7 @@ final class RecordingStudioModel {
     func export() {
         // One render at a time: the share pipeline uses the same exporter,
         // so a second encode would just fight it for the media engine.
-        guard exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
+        guard !hasRunningWork, isLoaded else { return }
         pause()
         let previewURL = sessionURL
 
@@ -2492,7 +2491,7 @@ final class RecordingStudioModel {
     /// Writes the edited soundtrack on its own, for cleanup in a tool that
     /// has no API - the outbound half of the replace-audio round trip.
     func exportAudio() {
-        guard !audioExportState.isExporting, isLoaded, hasAudio else { return }
+        guard !hasRunningWork, isLoaded, hasAudio else { return }
         pause()
 
         audioExportState = .exporting(progress: 0)
@@ -2699,7 +2698,7 @@ final class RecordingStudioModel {
         guard canManageSharedVideo, let item = sharedHistoryItem, let id = sharedUploadID else { return }
         isDeletingSharedLink = true
         sharedVideoError = nil
-        shareTask = Task { [weak self] in
+        startShareTask { [weak self] in
             defer { self?.isDeletingSharedLink = false }
             do {
                 try await CloudUploader.shared.deleteFromCloud(uploadID: id)
@@ -2745,7 +2744,7 @@ final class RecordingStudioModel {
         shareItemID = nil
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
 
-        shareTask = Task { [weak self] in
+        startShareTask { [weak self] in
             // Bare (session-less) videos upload straight from the render's
             // temp file; whatever happens, it must not outlive the share.
             var temporaryUploadURL: URL?
@@ -2834,14 +2833,22 @@ final class RecordingStudioModel {
         }
     }
 
+    func startShareTask(_ operation: @escaping @MainActor () async -> Void) {
+        guard shareTask == nil else { return }
+        shareTask = Task { [weak self] in
+            defer {
+                if Task.isCancelled, self?.shareState.isBusy == true { self?.shareState = .idle }
+                self?.shareTask = nil
+            }
+            await operation()
+        }
+    }
+
     func cancelShare() {
+        // Cancellation is cooperative; keep replacement, deletion and close guarded until exit.
         shareTask?.cancel()
-        shareTask = nil
         if shareState.isBusy, let shareItemID {
             CloudUploader.shared.cancelUpload(for: shareItemID)
-        }
-        if shareState.isBusy {
-            shareState = .idle
         }
     }
 
