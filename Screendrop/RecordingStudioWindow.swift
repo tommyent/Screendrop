@@ -2907,6 +2907,7 @@ private struct StudioInspector: View {
     @State private var expandedSections = StudioInspectorSectionState.load()
     @State private var transcriptTab: StudioTranscriptTab = .captions
     @State private var isAudioExportOptionsPresented = false
+    @State private var isMusicPickerPresented = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
@@ -3750,7 +3751,10 @@ private struct StudioInspector: View {
                 InspectorHint(message, tint: .orange)
             }
 
-            StudioBackgroundMusicControls(model: model)
+            StudioBackgroundMusicControls(model: model) { isMusicPickerPresented = true }
+                .sheet(isPresented: $isMusicPickerPresented) {
+                    FreeToUseMusicPicker(setBackgroundMusic: model.setBackgroundMusic)
+                }
         }
         .disabled(model.isRestoringDocument)
     }
