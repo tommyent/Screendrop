@@ -1302,7 +1302,7 @@ final class RecordingStudioModel {
     }
 
     /// Every edit in the editor, as a storable document.
-    private func currentDocument() -> RecordingEditDocument {
+    func currentDocument() -> RecordingEditDocument {
         RecordingEditDocument(
             style: style,
             zoomEnabled: zoomEnabled,
@@ -2162,6 +2162,50 @@ final class RecordingStudioModel {
             exportSettings = settings
         }
         export()
+    }
+
+    func exportAgentPrompt() {
+        guard isLoaded, !hasRunningWork, !transcriptionState.isTranscribing else { return }
+        RecordingAgentPromptExport.chooseDirectory { [weak self] directory in
+            guard let self, self.isLoaded, !self.hasRunningWork, !self.transcriptionState.isTranscribing else { return }
+            self.pause()
+            self.flushDraft()
+            let document = self.currentDocument()
+            let session = self.session
+            let title = self.projectDisplayName
+            let timeline = self.clipTimeline
+            let configuration: RecordingStudioExporter.Configuration?
+            do { configuration = session == nil ? try self.makeExportConfiguration() : nil }
+            catch { self.exportState = .failed(error.localizedDescription); return }
+            self.exportState = .exporting(progress: 0)
+            let report: @Sendable (Double) -> Void = { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    if self?.exportState.isExporting == true { self?.exportState = .exporting(progress: progress) }
+                }
+            }
+            self.exportTask = Task { [weak self] in
+                do {
+                    let folder: URL
+                    if let session {
+                        folder = try await RecordingAgentPromptExport.write(session: session, document: document, to: directory, progress: report)
+                    } else if let configuration {
+                        let plan = RecordingAgentPromptPlan(title: title, timeline: timeline,
+                                                           cues: document.subtitleCues ?? [], words: document.subtitleWords ?? [], capture: nil)
+                        let movie = try await RecordingStudioExporter().export(configuration) { report($0 * 0.8) }
+                        defer { try? FileManager.default.removeItem(at: movie) }
+                        folder = try await RecordingAgentPromptWriter.write(movie: movie, plan: plan, to: directory) { report(0.8 + $0 * 0.2) }
+                    } else { return }
+                    RecordingAgentPromptExport.reveal(folder)
+                    self?.exportState = .finished(folder)
+                } catch is CancellationError {
+                    self?.exportState = .idle
+                } catch RecordingStudioExporter.ExportError.cancelled {
+                    self?.exportState = .idle
+                } catch {
+                    self?.exportState = .failed(error.localizedDescription)
+                }
+            }
+        }
     }
 
     func export() {

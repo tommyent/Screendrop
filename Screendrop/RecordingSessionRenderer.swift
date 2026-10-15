@@ -36,11 +36,19 @@ enum RecordingSessionRenderer {
         for session: RecordingSession,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
+        try await ensureDeliverable(for: session, editDocument: session.effectiveEditDocument(), onProgress: onProgress)
+    }
+
+    /// Keep evidence and rendered pixels on the same frozen edit, even if Studio changes during export.
+    static func ensureDeliverable(
+        for session: RecordingSession,
+        editDocument: RecordingEditDocument?,
+        onProgress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> URL {
         let manifest = session.loadCaptureManifest()
         let pointerSynthesized = manifest?.pointerSynthesized == true
         // Draft edits count: a flatten made for an upload must show what the
         // user last saw in Studio, not the last state they pressed Save on.
-        let editDocument = session.effectiveEditDocument()
         guard session.hasCamera || pointerSynthesized || editDocument != nil else {
             return session.screenURL
         }

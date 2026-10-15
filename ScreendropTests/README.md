@@ -19,6 +19,8 @@ The regular Build action builds the app; the Test action builds the app and runs
 
 Fixtures should be generated in memory. Keep any required recorded regression fixture small and local to the test bundle; never depend on an agent's temporary folder or a network URL. Use `#expect`/`#require`, which remain active in optimized builds, instead of `assert` or trapping `precondition`.
 
+`RecordingAgentPromptTests` compiles the production input/transcript schemas, clip timeline, prompt planner and folder writer. It checks cuts and speed, corrected versus recognizer text, cue-only and silent recordings, action grouping, Markdown escaping and legacy decoding. Its disposable red/blue movie checks JPEG pixels, relative links, collision handling, mismatched duration and cancellation cleanup. It does not run speech recognition, the full Studio renderer, Finder or clipboard actions.
+
 The editor tests port `scripts/check-editor-{snapping,fill,interaction,snapping-interaction,viewport,resources}.swift` and the export-only part of `check-editor-snapping-render.swift`. Geometry, pointer state transitions, undo/redo, presets, viewport transforms, caches and export bitmaps run without a view or window. The old windowless canvas-drawing checks and Vision/movie cancellation integration script stay separate: they aren't pure model tests.
 
 Idle saving also has a standalone race harness against the actual app sources, including `AnnotationEditorModel`, the renderer, file transaction and close guard. After a Dev build, pass its DerivedData folder:

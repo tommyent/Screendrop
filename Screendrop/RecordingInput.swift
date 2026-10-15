@@ -80,7 +80,7 @@ nonisolated struct PointerArtwork: Codable, Sendable, Equatable {
     var referenceSize: Size
 }
 
-extension PointerCaptureFile {
+nonisolated extension PointerCaptureFile {
     private enum CodingKeys: String, CodingKey {
         case formatVersion
         case travel
@@ -107,7 +107,7 @@ extension PointerCaptureFile {
     }
 }
 
-extension PointerTravelSample {
+nonisolated extension PointerTravelSample {
     private enum CodingKeys: String, CodingKey {
         case time
         case x

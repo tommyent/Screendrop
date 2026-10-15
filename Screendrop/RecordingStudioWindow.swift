@@ -424,6 +424,17 @@ struct RecordingStudioSaveCommand: View {
     }
 }
 
+struct RecordingStudioAgentPromptCommand: View {
+    @FocusedValue(\.recordingStudio) private var studio
+
+    var body: some View {
+        if let studio {
+            Button("Export Agent Prompt…") { studio.exportAgentPrompt() }
+                .disabled(!studio.isLoaded || studio.hasRunningWork || studio.transcriptionState.isTranscribing)
+        }
+    }
+}
+
 /// File › Revert To for the key Studio project. Each is one step Undo
 /// takes back; the project then saves as after any edit.
 struct RecordingStudioRevertCommand: View {
