@@ -50,6 +50,13 @@ struct AnnotationStylePreset: Codable, Equatable {
     var textBoxStyleRawValue: String?
     var geoFillRawValue: String?
     var handDrawn: Bool?
+    var highlighterSwatch: CodableSwatch?
+    var highlighterStrokeWidth: Double?
+
+    static let defaultHighlighterSwatch = AnnotationSwatch(
+        "yellow", title: "Yellow", red: AnnotationSwatch.yellow.red,
+        green: AnnotationSwatch.yellow.green, blue: AnnotationSwatch.yellow.blue, alpha: 0.35
+    )
 
     var selectedTool: AnnotationTool {
         (AnnotationTool(rawValue: selectedToolRawValue) ?? .rectangle).paletteTool

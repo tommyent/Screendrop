@@ -30,6 +30,28 @@ struct AnnotationDocumentTests {
         }
     }
 
+    @Test func oldFreehandAndMarkedDrawDocumentsRoundTrip() throws {
+        let plain = DrawProps(points: [Vec(0, 0), Vec(100, 40)], isComplete: true)
+        let legacyData = try JSONEncoder().encode(plain)
+        let legacyJSON = try #require(JSONSerialization.jsonObject(with: legacyData) as? [String: Any])
+        #expect(legacyJSON["isHighlighter"] == nil)
+        let decoded = try JSONDecoder().decode(DrawProps.self, from: legacyData)
+        #expect(decoded.isHighlighter == nil && AnnoShape(x: 0, y: 0, kind: .draw(decoded)).tool == .freehand)
+
+        var marker = plain
+        marker.isHighlighter = true
+        marker.swatch = AnnotationStylePreset.defaultHighlighterSwatch
+        marker.strokeWidth = 16
+        let document = AnnotationDocument(shapes: [AnnoShape(x: 0, y: 0, kind: .draw(marker)),
+                                                   AnnoShape(x: 0, y: 0, kind: .highlight(HighlightProps(w: 80, h: 40)))],
+                                          background: AnnotationBackgroundSettings())
+        let restored = try JSONDecoder().decode(AnnotationDocument.self, from: JSONEncoder().encode(document))
+        #expect(restored == document && restored.shapes[0].tool == .highlighter)
+        #expect(restored.shapes[0].swatch?.alpha == 0.35)
+        #expect(restored.shapes[1].tool == .highlight && AnnotationTool.highlight.rawValue == "highlight")
+        #expect(AnnotationTool.highlight.title == "Spotlight" && AnnotationTool.highlight.helpText.hasPrefix("Spotlight:"))
+    }
+
     @Test func unknownShapeRefusesAndPreservesAllThreeFiles() throws {
         try withFiles { display, base, sidecar in
             let document = AnnotationDocument(shapes: [AnnoShape(x: 10, y: 20, kind: .magnifier(.init()))],

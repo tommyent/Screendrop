@@ -77,6 +77,10 @@ final class AnnotationEditorModel {
     var selectedTool: AnnotationTool = .select
     var selectedSwatch: AnnotationSwatch = .red
     var strokeWidth: CGFloat = 4
+    private var penStyle = (swatch: AnnotationSwatch.red, width: CGFloat(4))
+    private var highlighterStyle = (swatch: AnnotationStylePreset.defaultHighlighterSwatch, width: CGFloat(16))
+    /// Selection can display a marker's style while Select (or another tool) remains armed.
+    private var isHighlighterStyle = false
     var geoFill: AnnoFillStyle = .none
     var handDrawn = false
     var magnifierZoom: CGFloat = 3
@@ -766,6 +770,13 @@ final class AnnotationEditorModel {
     }
 
     func selectTool(_ tool: AnnotationTool) {
+        rememberDrawingStyle()
+        if tool.supportsColorStyle {
+            isHighlighterStyle = tool == .highlighter
+            let style = isHighlighterStyle ? highlighterStyle : penStyle
+            selectedSwatch = style.swatch
+            strokeWidth = style.width
+        }
         if tool == .filledRectangle { geoFill = .solid; engine.currentGeoFill = .solid }
         selectedTool = tool.paletteTool
         engine.tool = selectedTool
@@ -893,6 +904,8 @@ final class AnnotationEditorModel {
             engine.currentGeoFill = props.fill
         }
         if let swatch = shape.swatch, shape.tool.supportsColorStyle {
+            rememberDrawingStyle()
+            isHighlighterStyle = shape.tool == .highlighter
             selectedSwatch = swatch
             engine.currentSwatch = swatch
         }
@@ -914,6 +927,8 @@ final class AnnotationEditorModel {
             textAlignment = props.align.nsTextAlignment
             textBoxStyle = props.boxStyle ?? .plain
         }
+        rememberDrawingStyle()
+        syncArmedDrawingStyle()
     }
 
     // MARK: - Editing commands
@@ -1070,6 +1085,10 @@ final class AnnotationEditorModel {
         selectedTool = .select
         selectedSwatch = preset.swatch
         strokeWidth = CGFloat(preset.strokeWidth)
+        penStyle = (selectedSwatch, strokeWidth)
+        highlighterStyle = (preset.highlighterSwatch?.annotationSwatch ?? AnnotationStylePreset.defaultHighlighterSwatch,
+                            CGFloat(preset.highlighterStrokeWidth ?? 16))
+        isHighlighterStyle = false
         geoFill = preset.geoFill
         handDrawn = preset.handDrawn ?? false
         redactionDensity = CGFloat(preset.redactionDensity)
@@ -1099,13 +1118,28 @@ final class AnnotationEditorModel {
         engine.currentTextBoxStyle = textBoxStyle
     }
 
+    private func rememberDrawingStyle() {
+        if isHighlighterStyle {
+            highlighterStyle = (selectedSwatch, strokeWidth)
+        } else {
+            penStyle = (selectedSwatch, strokeWidth)
+        }
+    }
+
+    private func syncArmedDrawingStyle() {
+        let style = selectedTool == .highlighter ? highlighterStyle : penStyle
+        engine.currentSwatch = style.swatch
+        engine.currentStrokeWidth = Double(style.width)
+    }
+
     func saveAnnotationPreset() {
-        let customSwatch = AnnotationSwatch.allCases.contains(selectedSwatch) ? nil : CodableSwatch(swatch: selectedSwatch)
+        rememberDrawingStyle()
+        let customSwatch = AnnotationSwatch.allCases.contains(penStyle.swatch) ? nil : CodableSwatch(swatch: penStyle.swatch)
         let preset = AnnotationStylePreset(
             selectedToolRawValue: selectedTool.rawValue,
-            swatchID: selectedSwatch.id,
+            swatchID: penStyle.swatch.id,
             customSwatch: customSwatch,
-            strokeWidth: Double(strokeWidth),
+            strokeWidth: Double(penStyle.width),
             redactionDensity: Double(redactionDensity),
             textFontName: textFontFamily.rawValue,
             textFontFace: textFontFace,
@@ -1116,9 +1150,12 @@ final class AnnotationEditorModel {
             textAlignmentRawValue: textAlignment.rawValue,
             textBoxStyleRawValue: textBoxStyle.rawValue,
             geoFillRawValue: geoFill.rawValue,
-            handDrawn: handDrawn
+            handDrawn: handDrawn,
+            highlighterSwatch: CodableSwatch(swatch: highlighterStyle.swatch),
+            highlighterStrokeWidth: Double(highlighterStyle.width)
         )
         AnnotationPresetStore.save(preset)
+        syncArmedDrawingStyle()
     }
 
     /// Applies the complete reusable background recipe to this editor.

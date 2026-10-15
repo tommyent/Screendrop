@@ -11,6 +11,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
     case line
     case arrow
     case freehand
+    case highlighter
     case numberedCircle
     case text
     case highlight
@@ -41,6 +42,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
             "Arrow"
         case .freehand:
             "Freehand"
+        case .highlighter:
+            "Highlighter"
         case .numberedCircle:
             "Numbered circle"
         case .pixelate:
@@ -50,7 +53,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         case .text:
             "Text"
         case .highlight:
-            "Highlight"
+            "Spotlight"
         case .magnifier:
             "Magnifier"
         }
@@ -72,6 +75,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
             "arrow.up.right"
         case .freehand:
             "scribble"
+        case .highlighter:
+            "highlighter"
         case .numberedCircle:
             "1.circle.fill"
         case .pixelate:
@@ -91,13 +96,14 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         let shortcut: String
         switch self {
         case .select, .filledRectangle, .freehand: return title
+        case .highlighter: return "Highlighter: hold Shift before drawing for a horizontal line"
         case .rectangle: shortcut = "R"
         case .ellipse: shortcut = "O"
         case .line: shortcut = "L"
         case .arrow: shortcut = "A"
         case .numberedCircle: shortcut = "N"
         case .text: shortcut = "T"
-        case .highlight: return "Highlight: keep this area visible and dim everything outside"
+        case .highlight: return "Spotlight: keep this area visible and dim everything outside"
         case .pixelate: shortcut = "P"
         case .blur: shortcut = "B"
         case .magnifier: shortcut = "M"
@@ -111,7 +117,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsColorStyle: Bool {
         switch self {
-        case .rectangle, .filledRectangle, .ellipse, .line, .arrow, .freehand, .numberedCircle, .text, .magnifier:
+        case .rectangle, .filledRectangle, .ellipse, .line, .arrow, .freehand, .highlighter, .numberedCircle, .text, .magnifier:
             true
         case .select, .pixelate, .blur, .highlight:
             false
@@ -120,7 +126,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
 
     var supportsStrokeStyle: Bool {
         switch self {
-        case .rectangle, .ellipse, .line, .arrow, .freehand, .magnifier:
+        case .rectangle, .ellipse, .line, .arrow, .freehand, .highlighter, .magnifier:
             true
         case .select, .filledRectangle, .numberedCircle, .pixelate, .blur, .text, .highlight:
             false

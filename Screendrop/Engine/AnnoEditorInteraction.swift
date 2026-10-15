@@ -26,7 +26,7 @@ extension AnnoEditor {
         switch tool {
         case .select:
             beginSelectInteraction(pointer)
-        case .freehand:
+        case .freehand, .highlighter:
             beginDrawing(pointer)
         case .text:
             createText(at: pointer.pagePoint)
@@ -122,11 +122,13 @@ extension AnnoEditor {
         var props = DrawProps()
         props.swatch = currentSwatch
         props.strokeWidth = pageStrokeWidth(currentStrokeWidth)
-        props.isPen = pointer.isPen
-        props.points = [Vec(0, 0, pointer.isPen ? pointer.pressure : 0.5)]
+        props.isHighlighter = tool == .highlighter ? true : nil
+        props.isPen = pointer.isPen && tool != .highlighter
+        props.points = [Vec(0, 0, props.isPen ? pointer.pressure : 0.5)]
         let shape = AnnoShape(x: pointer.pagePoint.x, y: pointer.pagePoint.y, kind: .draw(props))
         document.add(shape)
-        setInteraction(.drawing(id: shape.id, origin: pointer.pagePoint))
+        setInteraction(.drawing(id: shape.id, origin: pointer.pagePoint,
+                                horizontal: tool == .highlighter && pointer.shift))
     }
 
     /// Rectangles, ellipses, redactions and the spotlight highlight all create by dragging a box.
@@ -205,8 +207,8 @@ extension AnnoEditor {
         switch interaction {
         case .idle:
             return
-        case let .drawing(id, origin):
-            appendDrawPoint(id: id, origin: origin, pointer: pointer)
+        case let .drawing(id, origin, horizontal):
+            appendDrawPoint(id: id, origin: origin, horizontal: horizontal, pointer: pointer)
         case let .creatingGeo(id, origin):
             resizeBoxWhileCreating(id: id, origin: origin, pointer: pointer)
         case let .creatingArrow(id):
@@ -236,12 +238,12 @@ extension AnnoEditor {
         case let .creatingMagnifier(id, _):
             selectedIds = [id]
             tool = .select
-        case let .drawing(id, _):
+        case let .drawing(id, _, _):
             document.update(id) { shape in
                 if case var .draw(props) = shape.kind {
                     props.isComplete = true
                     // A stroke that returns near its own start closes, so it can be filled.
-                    if props.points.count > 3,
+                    if props.isHighlighter != true, props.points.count > 3,
                        Vec.distMin(props.points[0], props.points[props.points.count - 1], props.strokeWidth * 2) {
                         props.isClosed = true
                     }
@@ -296,19 +298,23 @@ extension AnnoEditor {
 
     // MARK: - Drawing
 
-    private func appendDrawPoint(id: AnnoShapeID, origin: Vec, pointer: PointerInfo) {
-        let point = snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
+    private func appendDrawPoint(id: AnnoShapeID, origin: Vec, horizontal: Bool, pointer: PointerInfo) {
+        let point = horizontal ? pointer.pagePoint : snapPoint(pointer.pagePoint, excluding: [id], pointer: pointer)
         document.update(id) { shape in
             guard case var .draw(props) = shape.kind else { return }
             let local = Vec(
                 point.x - origin.x,
-                point.y - origin.y,
-                pointer.isPen ? pointer.pressure : 0.5
+                horizontal ? 0 : point.y - origin.y,
+                props.isHighlighter != true && pointer.isPen ? pointer.pressure : 0.5
             )
             // Skip points that land on top of the previous one; they add nothing and cost a full
             // re-run of the stroke pipeline.
             if let last = props.points.last, Vec.distMin(last, local, 0.5) { return }
-            props.points.append(local)
+            if horizontal {
+                props.points = [Vec(0, 0, 0.5), local]
+            } else {
+                props.points.append(local)
+            }
             shape.kind = .draw(props)
         }
         if let shape = document.shape(id), let end = shape.drawProps?.points.last {

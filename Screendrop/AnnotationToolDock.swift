@@ -21,7 +21,7 @@ struct AnnotationToolDock: View {
     private static let groups: [[AnnotationTool]] = [
         [.select],
         [.rectangle, .ellipse, .highlight],
-        [.arrow, .line, .freehand],
+        [.arrow, .line, .freehand, .highlighter],
         [.text, .numberedCircle, .magnifier],
         [.pixelate, .blur],
     ]

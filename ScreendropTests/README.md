@@ -27,6 +27,8 @@ Fixtures should be generated in memory. Keep any required recorded regression fi
 
 The editor tests port `scripts/check-editor-{snapping,fill,interaction,snapping-interaction,viewport,resources}.swift` and the export-only part of `check-editor-snapping-render.swift`. Geometry, pointer state transitions, undo/redo, presets, viewport transforms, caches and export bitmaps run without a view or window. The old windowless canvas-drawing checks and Vision/movie cancellation integration script stay separate: they aren't pure model tests.
 
+Highlighter checks cover legacy draw/preset decoding, tool identity, Shift-at-down horizontal strokes, fixed pressure/width, selection, resize/rotation, Undo/Redo and normal-alpha drawing. After a Dev build, `python3 scripts/check-highlighter.py /path/to/DevDerivedData` compiles the actual app sources into an isolated-home, windowless harness for pen/marker style memory and PNG export over synthetic text. Live screenshot-backdrop compositing, text readability, accessibility activation and dock fit remain in the coordinator's approved live round.
+
 Idle saving also has a standalone race harness against the actual app sources, including `AnnotationEditorModel`, the renderer, file transaction and close guard. After a Dev build, pass its DerivedData folder:
 
 ```sh

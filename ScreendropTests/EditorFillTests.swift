@@ -14,6 +14,11 @@ struct EditorFillTests {
         """.utf8)
         let preset = try JSONDecoder().decode(AnnotationStylePreset.self, from: legacy)
         #expect(preset.selectedTool == .rectangle && preset.geoFill == .solid)
+        #expect(preset.highlighterSwatch == nil && preset.highlighterStrokeWidth == nil)
+        var markerPreset = preset
+        markerPreset.highlighterSwatch = CodableSwatch(swatch: AnnotationStylePreset.defaultHighlighterSwatch)
+        markerPreset.highlighterStrokeWidth = 16
+        #expect(try JSONDecoder().decode(AnnotationStylePreset.self, from: JSONEncoder().encode(markerPreset)) == markerPreset)
         #expect(!AnnotationTool.paletteTools.contains(.filledRectangle))
         for tool in [AnnotationTool.rectangle, .ellipse] {
             for fill in AnnoFillStyle.allCases {
