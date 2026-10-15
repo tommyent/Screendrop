@@ -144,6 +144,32 @@ struct RecordingExportRegressionChecks {
         print("PASS: an unedited recording keeps its Stop-time render through flush and close (control: baseline never matches it); drafts and saves with edits still drop it")
     }
 
+    static func quickLookInstant(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("quicklook.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        func shown(_ url: URL) -> URL? { QuickLookPreviewPresenter.immediateURL(for: url) }
+        let still = directory.appendingPathComponent("still.png")
+        try check(shown(still) == still, "A file outside a recording package was not shown as is")
+        try check(shown(session.screenURL) == session.screenURL, "An unrendered recording waited for a render")
+
+        try Data("render".utf8).write(to: session.finalURL)
+        session.writeRenderStamp(nil)
+        try check(shown(session.screenURL) == session.finalURL, "A fresh render was not shown")
+
+        let redactions = [RecordingRedaction(start: 0, end: 8, rect: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.3), mode: .pixelate)]
+        let document = RecordingEditDocument(style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [], redactions: redactions)
+        try session.writeDraftDocument(document)
+        try check(shown(session.finalURL) == nil, "A pending redaction previewed the master or a stale render")
+        session.writeRenderStamp(document)
+        try check(shown(session.screenURL) == session.finalURL, "A fresh redacted render was not shown")
+
+        session.removeDraftDocument()
+        try Data("not json".utf8).write(to: session.editDocumentURL)
+        try check(shown(session.screenURL) == nil, "Unreadable edits skipped the render")
+        print("PASS: Quick Look shows a fresh render or the master at once; pending redactions and unreadable edits still render first")
+    }
+
     static func chapterAtPlayhead(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("chapter-at-playhead.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -532,6 +558,7 @@ struct RecordingExportRegressionChecks {
         try await chapterAtPlayhead(in: directory)
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
+        try await quickLookInstant(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
         try await cancelShareRetry(in: directory)

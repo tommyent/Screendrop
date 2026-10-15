@@ -15,11 +15,7 @@ extension CaptureLibraryModel {
                     || (item.session != nil && current.deletingLastPathComponent().standardizedFileURL.path == item.ownedURL.standardizedFileURL.path)
                 if isSameCapture { QuickLookPreviewPresenter.dismiss(); return }
             }
-            run("Preparing preview…") {
-                StudioProjectRegistry.shared.flushDrafts()
-                let url = item.isVideo ? try await RecordingDeliverable.resolve(for: item.fileURL) : item.fileURL
-                QuickLookPreviewPresenter.show(url: url)
-            }
+            QuickLookPreviewPresenter.show(url: item.fileURL)
         case .edit:
             guard selected.count == 1, let item = selected.first else { return }
             QuickLookPreviewPresenter.dismiss()
