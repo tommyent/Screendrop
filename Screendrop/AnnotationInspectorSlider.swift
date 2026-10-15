@@ -150,6 +150,7 @@ struct InspectorSlider: View {
     let title: String
     @Binding var value: CGFloat
     let range: ClosedRange<CGFloat>
+    let onEditingChanged: ((Bool) -> Void)?
     let format: InspectorValueFormat
 
     /// Points of horizontal drag that sweep the full range.
@@ -179,12 +180,14 @@ struct InspectorSlider: View {
         _ title: String,
         value: Binding<CGFloat>,
         range: ClosedRange<CGFloat>,
-        format: InspectorValueFormat
+        format: InspectorValueFormat,
+        onEditingChanged: ((Bool) -> Void)? = nil
     ) {
         self.title = title
         self._value = value
         self.range = range
         self.format = format
+        self.onEditingChanged = onEditingChanged
     }
 
     var body: some View {
@@ -208,6 +211,7 @@ struct InspectorSlider: View {
             if dragStartValue != nil {
                 dragStartValue = nil
                 history?.setInspectorEditing(false)
+                onEditingChanged?(false)
             }
             if focusedPart == .value {
                 commitDraftText()
@@ -249,6 +253,7 @@ struct InspectorSlider: View {
                             focusedPart = .scrubber
                             dragStartValue = value
                             history?.setInspectorEditing(true)
+                            onEditingChanged?(true)
                         }
                         scrub(by: drag.translation.width)
                     }
@@ -256,6 +261,7 @@ struct InspectorSlider: View {
                         guard dragStartValue != nil else { return }
                         dragStartValue = nil
                         history?.setInspectorEditing(false)
+                        onEditingChanged?(false)
                     }
             )
             .allowsHitTesting(isEnabled)

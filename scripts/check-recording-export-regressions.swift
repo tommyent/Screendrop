@@ -512,6 +512,87 @@ struct RecordingExportRegressionChecks {
         print("PASS: Studio preview, shared video and audio-only exports retain voice/system audio, loop from offset, duck music on source mic and fade at edited end; independent volume; Replace/Isolate Voice remain compatible")
     }
 
+    static func backgroundMusicHistory(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-history.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let first = directory.appendingPathComponent("history-a.wav"), second = directory.appendingPathComponent("history-b.wav")
+        try audioTone(at: first, frequency: 440)
+        try audioTone(at: second, frequency: 660)
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        model.setBackgroundMusic(fileURL: first, displayName: "A", credit: "A credit", startOffset: 0)
+        try await until { !model.hasRunningWork }
+        let a = model.backgroundMusicSettings!
+        try check(model.canUndo, "Adding music did not register Undo")
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == nil && model.backgroundMusic == nil && model.canRedo, "Undo Add Music failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == a && model.backgroundMusic != nil, "Redo Add Music failed")
+        model.setBackgroundMusic(fileURL: second, displayName: "B", credit: "B credit", startOffset: 1)
+        try await until { !model.hasRunningWork }
+        let b = model.backgroundMusicSettings!
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == a, "Undo Replace Music lost the previous selection")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == b, "Redo Replace Music failed")
+        model.removeBackgroundMusic()
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == b && model.backgroundMusic != nil, "Undo Remove Music failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == nil, "Redo Remove Music failed")
+        model.undo()
+        try await until { !model.hasRunningWork }
+        model.setMusicSliderEditing(true)
+        model.musicVolume = 0.3; model.musicVolume = 0.4; model.musicVolume = 0.5
+        model.setMusicSliderEditing(false)
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicVolume == CGFloat(b.volume), "Volume drag was not one Undo step")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicVolume == 0.5, "Volume drag Redo did not restore the final value")
+        model.setMusicSliderEditing(true)
+        model.musicStartOffset = 2; model.musicStartOffset = 3
+        model.setMusicSliderEditing(false)
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicStartOffset == CGFloat(b.startOffset), "Start-offset drag was not one Undo step")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicStartOffset == 3, "Start-offset drag Redo failed")
+        let before = model.backgroundMusicSettings!
+        model.musicLoops = false
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == before, "Loop Undo failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(!model.musicLoops, "Loop Redo failed")
+        model.musicDucks = false
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicDucks, "Ducking Undo failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(!model.musicDucks, "Ducking Redo failed")
+        model.musicDuckAmount = .aLot
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicDuckAmount == .medium, "Duck amount Undo failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicDuckAmount == .aLot, "Duck amount Redo failed")
+        print("PASS: music Add/Replace/Remove/settings support Undo/Redo; volume and start-offset drags each use one history step")
+    }
+
     static func backgroundMusicStorage(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-storage.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -755,6 +836,7 @@ struct RecordingExportRegressionChecks {
         try await unchangedRenderReuse(in: directory)
         try await quickLookInstant(in: directory)
         try await backgroundMusicMixing(in: directory)
+        try await backgroundMusicHistory(in: directory)
         try await backgroundMusicStorage(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)

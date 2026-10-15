@@ -235,6 +235,7 @@ final class RecordingStudioModel {
     private(set) var backgroundMusicSettings: RecordingBackgroundMusic?
     private(set) var backgroundMusicError: String?
     private var backgroundMusicTask: Task<Void, Never>?
+    private var musicSliderBaseline: RecordingBackgroundMusic?
     private var playbackMusicTrackID: CMPersistentTrackID?
     private var microphoneMusicAnalysis: RecordingMusicAnalysis?
     private(set) var musicWaveform: [Float] = []
@@ -275,10 +276,41 @@ final class RecordingStudioModel {
         set { changeBackgroundMusic { $0.duckAmount = newValue } }
     }
 
+    func setMusicSliderEditing(_ editing: Bool) {
+        if editing {
+            guard !isRestoringDocument, musicSliderBaseline == nil else { return }
+            musicSliderBaseline = backgroundMusicSettings
+        } else if let previous = musicSliderBaseline {
+            musicSliderBaseline = nil
+            if previous != backgroundMusicSettings { registerBackgroundMusicUndo(previous) }
+        }
+    }
+
+    private func registerBackgroundMusicUndo(_ previous: RecordingBackgroundMusic?) {
+        registerUndo("Background Music") { $0.restoreBackgroundMusicSelection(previous) }
+    }
+
+    private func restoreBackgroundMusicSelection(_ settings: RecordingBackgroundMusic?) {
+        guard !isRestoringDocument, settings != backgroundMusicSettings else { return }
+        registerBackgroundMusicUndo(backgroundMusicSettings)
+        let restoreID = beginDocumentRestore()
+        backgroundMusicSettings = settings
+        documentRestoreTask = Task {
+            await resolveBackgroundMusic()
+            if !Task.isCancelled, !isTornDown {
+                do { try rebuildScreenPlayerItem(preserving: currentTime) }
+                catch { backgroundMusicError = "Could not restore music: \(error.localizedDescription)" }
+            }
+            finishDocumentRestore(restoreID)
+            scheduleProjectSave()
+        }
+    }
+
     private func changeBackgroundMusic(_ change: (inout RecordingBackgroundMusic) -> Void) {
         guard !isRestoringDocument, var settings = backgroundMusicSettings else { return }
         change(&settings)
         guard settings != backgroundMusicSettings else { return }
+        if musicSliderBaseline == nil { registerBackgroundMusicUndo(backgroundMusicSettings) }
         let rebuild = settings.startOffset != backgroundMusicSettings?.startOffset || settings.loop != backgroundMusicSettings?.loop
         backgroundMusicSettings = settings
         if rebuild {
@@ -295,6 +327,7 @@ final class RecordingStudioModel {
     /// The picker deletes its download on return; copy synchronously before resolving audio.
     func setBackgroundMusic(fileURL: URL, displayName: String, credit: String?, startOffset: TimeInterval) {
         guard isLoaded, !isRestoringDocument, let session else { return }
+        setMusicSliderEditing(false)
         pause()
         backgroundMusicTask?.cancel()
         backgroundMusicTask = nil
@@ -340,6 +373,7 @@ final class RecordingStudioModel {
             settings.displayName = displayName
             settings.credit = credit
             settings.startOffset = RecordingBackgroundMusic.startOffset(startOffset, duration: resolved.duration)
+            self.registerBackgroundMusicUndo(self.backgroundMusicSettings)
             self.backgroundMusic = resolved
             self.backgroundMusicSettings = settings
             adopted = true
@@ -349,6 +383,8 @@ final class RecordingStudioModel {
 
     func removeBackgroundMusic() {
         guard !isRestoringDocument else { return }
+        setMusicSliderEditing(false)
+        if backgroundMusicSettings != nil { registerBackgroundMusicUndo(backgroundMusicSettings) }
         backgroundMusicTask?.cancel()
         backgroundMusicTask = nil
         pause()
@@ -509,6 +545,7 @@ final class RecordingStudioModel {
     private func beginDocumentRestore() -> UUID {
         let id = UUID()
         documentRestoreID = id
+        musicSliderBaseline = nil
         pause()
         return id
     }
@@ -1054,12 +1091,12 @@ final class RecordingStudioModel {
 
     var canUndo: Bool {
         _ = undoRevision
-        return !isRestoringDocument && editUndoManager.canUndo
+        return !isRestoringDocument && backgroundMusicTask == nil && (editUndoManager.canUndo || (musicSliderBaseline != nil && musicSliderBaseline != backgroundMusicSettings))
     }
 
     var canRedo: Bool {
         _ = undoRevision
-        return !isRestoringDocument && editUndoManager.canRedo
+        return !isRestoringDocument && backgroundMusicTask == nil && editUndoManager.canRedo
     }
 
     var selectedClip: RecordingClipSegment? {
@@ -1088,14 +1125,16 @@ final class RecordingStudioModel {
     }
 
     func undo() {
-        guard !isRestoringDocument, editUndoManager.canUndo else { return }
+        guard !isRestoringDocument, backgroundMusicTask == nil else { return }
+        setMusicSliderEditing(false)
+        guard editUndoManager.canUndo else { return }
         pause()
         editUndoManager.undo()
         undoRevision &+= 1
     }
 
     func redo() {
-        guard !isRestoringDocument, editUndoManager.canRedo else { return }
+        guard !isRestoringDocument, backgroundMusicTask == nil, editUndoManager.canRedo else { return }
         pause()
         editUndoManager.redo()
         undoRevision &+= 1

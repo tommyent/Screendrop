@@ -19,7 +19,8 @@ struct StudioBackgroundMusicControls: View {
                     InspectorSlider("Starts at", value: $model.musicStartOffset,
                         range: 0...CGFloat(max(0.001, music.duration - 0.05)),
                         format: InspectorValueFormat(multiplier: 1, fractionDigits: 1, suffix: " s",
-                            showsPositiveSign: false, step: 0.1, acceptedSuffixes: ["s"]))
+                            showsPositiveSign: false, step: 0.1, acceptedSuffixes: ["s"]),
+                        onEditingChanged: model.setMusicSliderEditing)
                         .accessibilityHint("Where in the music track playback begins")
                 }
                 if let credit = settings.credit, !credit.isEmpty {
@@ -53,7 +54,8 @@ struct StudioBackgroundMusicControls: View {
             if !model.isProject { InspectorHint("Background music needs a recording project.") }
 
             VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-                InspectorSlider("Music volume", value: $model.musicVolume, range: 0...1, format: .percent())
+                InspectorSlider("Music volume", value: $model.musicVolume, range: 0...1, format: .percent(),
+                    onEditingChanged: model.setMusicSliderEditing)
                 Toggle("Loop to fit", isOn: $model.musicLoops)
                     .toggleStyle(.switch)
                     .help("Repeats from the chosen start point to the end of the track")
