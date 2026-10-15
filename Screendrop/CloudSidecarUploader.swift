@@ -260,7 +260,7 @@ nonisolated enum CloudSidecarUploader {
         } else {
             timeline = .legacyTrim(start: document?.trimStart, end: document?.trimEnd, sourceDuration: sourceDuration)
         }
-        return try? RecordingChapterPlanner.shareData(chapters, through: timeline)
+        return try? RecordingChapterPlanner.shareData(chapters, through: timeline, cues: document?.subtitleCues ?? [], words: document?.subtitleWords ?? [])
     }
 
     private static func transcriptPayload(

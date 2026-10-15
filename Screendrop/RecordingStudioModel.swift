@@ -1701,7 +1701,7 @@ final class RecordingStudioModel {
     // MARK: - Chapters
 
     var visibleChapters: [RecordingChapter] {
-        RecordingChapterPlanner.mapped(chapters, through: clipTimeline)
+        RecordingChapterPlanner.mapped(chapters, through: clipTimeline, cues: subtitleCues, words: transcriptWords)
     }
 
     func addChapterAtPlayhead() {
@@ -1723,6 +1723,8 @@ final class RecordingStudioModel {
         var next = chapters
         guard let index = next.firstIndex(where: { $0.id == id }) else { return }
         next[index].title = String(title.prefix(200))
+        next[index].autoTitle = false
+        next[index].autoTitleSource = nil
         applyChapters(next, actionName: "Rename Chapter")
     }
 
@@ -1756,10 +1758,7 @@ final class RecordingStudioModel {
         let mapped = visibleChapters
         let chapterText = mapped.enumerated().map { index, chapter in
             let end = index + 1 < mapped.count ? mapped[index + 1].start : duration
-            let text = cues.filter {
-                guard let time = clipTimeline.editorTime(forSourceTime: $0.start) else { return false }
-                return $0.end > clipTimeline.sourceTime(at: chapter.start) && time < end
-            }.map(\.text).joined(separator: " ")
+            let text = RecordingChapterPlanner.chapterText(cues, through: clipTimeline, start: chapter.start, end: end)
             return RecordingNarrativeInput.Chapter(id: chapter.id, text: text)
         }
         return RecordingNarrativeInput(text: cues.map(\.text).joined(separator: " "), chapters: chapterText)
@@ -1827,9 +1826,14 @@ final class RecordingStudioModel {
 
     func useNarrativeChapterNames() {
         guard narrativeSuggestionsAreCurrent else { return }
+        let input = narrativeInput
         let next = chapters.map { chapter in
             var chapter = chapter
-            if let title = narrativeChapterNames[chapter.id] { chapter.title = title }
+            if let title = narrativeChapterNames[chapter.id] {
+                chapter.title = title
+                chapter.autoTitle = true
+                chapter.autoTitleSource = RecordingChapterPlanner.titleSource(input.chapters.first(where: { $0.id == chapter.id })?.text ?? "")
+            }
             return chapter
         }
         applyChapters(next, actionName: "Use Chapter Names")
@@ -2658,7 +2662,7 @@ final class RecordingStudioModel {
         }
         let session = session
         let sharedDocument = currentDocument()
-        let sharedChapterData = try? RecordingChapterPlanner.shareData(chapters, through: clipTimeline)
+        let sharedChapterData = try? RecordingChapterPlanner.shareData(chapters, through: clipTimeline, cues: subtitleCues, words: transcriptWords)
         let renderedDocument = session == nil ? nil : sharedDocument
         shareItemID = nil
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading

@@ -3353,7 +3353,7 @@ private struct StudioInspector: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Jump to \(chapter.title)")
                     TextField("Chapter name", text: Binding(
-                        get: { model.chapters.first(where: { $0.id == chapter.id })?.title ?? "" },
+                        get: { chapter.title },
                         set: { model.renameChapter(id: chapter.id, title: $0) }
                     ))
                     .textFieldStyle(.plain)

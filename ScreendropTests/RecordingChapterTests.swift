@@ -72,6 +72,28 @@ struct RecordingChapterTests {
         #expect(payload[0]["title"] as? String == "Kept")
     }
 
+    @Test func automaticNamesFollowCutsInStudioAndSharesUnlessRenamed() throws {
+        let cues = [RecordingSubtitleCue(start: 1, end: 2, text: "Public opening"), RecordingSubtitleCue(start: 3, end: 4, text: "private words.")]
+        let original = RecordingClipTimeline.full(sourceDuration: 10)
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 3), .init(sourceStart: 4, sourceEnd: 10)])
+        let rule = RecordingChapter(title: "Public opening private words", start: 0, autoTitle: true)
+        let model = RecordingChapter(title: "Private words overview", start: 0, autoTitle: true, autoTitleSource: RecordingChapterPlanner.titleSource("Public opening private words."))
+        for chapter in [rule, model] {
+            #expect(RecordingChapterPlanner.mapped([chapter], through: cut, cues: cues).first?.title == "Public opening")
+            let payload = try #require(JSONSerialization.jsonObject(with: RecordingChapterPlanner.shareData([chapter], through: cut, cues: cues)) as? [[String: Any]])
+            #expect(payload[0]["title"] as? String == "Public opening")
+            #expect(payload[0]["autoTitle"] == nil && payload[0]["autoTitleSource"] == nil)
+        }
+        #expect(RecordingChapterPlanner.mapped([model], through: original, cues: cues).first?.title == "Private words overview")
+        var manual = model
+        manual.title = "My chosen name"
+        manual.autoTitle = false
+        #expect(RecordingChapterPlanner.mapped([manual], through: cut, cues: cues).first?.title == "My chosen name")
+        let legacy = try JSONDecoder().decode(RecordingChapter.self, from: Data(#"{"id":"00000000-0000-0000-0000-000000000001","title":"Legacy name","start":0}"#.utf8))
+        #expect(legacy.autoTitle == nil)
+        #expect(RecordingChapterPlanner.mapped([legacy], through: cut, cues: cues).first?.title == "Legacy name")
+    }
+
     @Test func oldMetadataAndNewChaptersRoundTrip() throws {
         var metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: Data(#"{"version":1,"displayName":"Existing"}"#.utf8))
         #expect(metadata.chapters == nil)

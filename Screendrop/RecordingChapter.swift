@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Chapter anchors stay on the original movie so cuts and speed changes are reversible.
@@ -5,6 +6,8 @@ nonisolated struct RecordingChapter: Identifiable, Codable, Equatable, Sendable 
     var id = UUID()
     var title: String
     var start: TimeInterval
+    var autoTitle: Bool? = nil
+    var autoTitleSource: String? = nil
 }
 
 nonisolated enum RecordingChapterPlanner {
@@ -14,7 +17,7 @@ nonisolated enum RecordingChapterPlanner {
         return String(sentence.prefix(80)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func mapped(_ chapters: [RecordingChapter], through timeline: RecordingClipTimeline) -> [RecordingChapter] {
+    static func mapped(_ chapters: [RecordingChapter], through timeline: RecordingClipTimeline, cues: [RecordingSubtitleCue] = [], words: [RecordingTranscriptWord] = []) -> [RecordingChapter] {
         var result: [RecordingChapter] = []
         for chapter in chapters.filter({ $0.start.isFinite }).sorted(by: { $0.start < $1.start }) {
             guard chapter.start >= 0,
@@ -27,15 +30,39 @@ nonisolated enum RecordingChapterPlanner {
             mapped.title = String(chapter.title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
             result.append(mapped)
         }
+        if result.contains(where: { $0.autoTitle == true }) {
+            let readable = survivingCues(cues, words: words, through: timeline)
+            for index in result.indices where result[index].autoTitle == true {
+                let end = index + 1 < result.count ? result[index + 1].start : timeline.duration
+                let text = chapterText(readable, through: timeline, start: result[index].start, end: end)
+                if result[index].autoTitleSource != titleSource(text) {
+                    let title = title(from: text)
+                    result[index].title = title.isEmpty ? "Chapter" : title
+                }
+            }
+        }
         return result
     }
 
-    static func shareData(_ chapters: [RecordingChapter], through timeline: RecordingClipTimeline) throws -> Data {
+    static func titleSource(_ text: String) -> String {
+        // Keep an accepted model name until its narration changes, without retaining a second copy of the prose.
+        Data(SHA256.hash(data: Data(text.utf8))).base64EncodedString()
+    }
+
+    static func chapterText(_ cues: [RecordingSubtitleCue], through timeline: RecordingClipTimeline, start: TimeInterval, end: TimeInterval) -> String {
+        let sourceStart = timeline.sourceTime(at: start)
+        return cues.filter {
+            guard let time = timeline.editorTime(forSourceTime: $0.start) else { return false }
+            return $0.end > sourceStart && time < end
+        }.map(\.text).joined(separator: " ")
+    }
+
+    static func shareData(_ chapters: [RecordingChapter], through timeline: RecordingClipTimeline, cues: [RecordingSubtitleCue] = [], words: [RecordingTranscriptWord] = []) throws -> Data {
         struct WireChapter: Encodable {
             var title: String
             var start: TimeInterval
         }
-        var mapped = mapped(chapters, through: timeline)
+        var mapped = mapped(chapters, through: timeline, cues: cues, words: words)
         if !mapped.isEmpty { mapped[0].start = 0 }
         return try JSONEncoder().encode(mapped.map {
             WireChapter(title: $0.title.isEmpty ? "Chapter" : $0.title, start: $0.start)
@@ -87,7 +114,7 @@ nonisolated enum RecordingChapterPlanner {
             let text = readableCues.filter { $0.end > interval.0 && $0.start < interval.0 + 20 }
                 .map(\.text).joined(separator: " ")
             let name = title(from: text)
-            result.append(RecordingChapter(title: name.isEmpty ? "Chapter \(result.count + 1)" : name, start: interval.0))
+            result.append(RecordingChapter(title: name.isEmpty ? "Chapter \(result.count + 1)" : name, start: interval.0, autoTitle: true))
             lastSuggestion = time
         }
         return result.sorted { $0.start < $1.start }
