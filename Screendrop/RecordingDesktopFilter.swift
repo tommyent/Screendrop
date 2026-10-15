@@ -3,13 +3,11 @@ import Foundation
 import ScreenCaptureKit
 
 nonisolated struct RecordingDesktopFilter {
-    let includesAppWindows: Bool
     let cleanDesktop: Bool
     let excludedApplications: [SCRunningApplication]
     let excludedWindows: [SCWindow]
 
     init(content: SCShareableContent, includesAppWindows: Bool, cleanDesktop: Bool) {
-        self.includesAppWindows = includesAppWindows
         self.cleanDesktop = cleanDesktop
         excludedApplications = content.applications.filter {
             Self.excludesApplication(
@@ -29,6 +27,7 @@ nonisolated struct RecordingDesktopFilter {
     }
 
     func makeFilter(for display: SCDisplay) -> SCContentFilter {
+        // shortcut: Dock, Notification Center or Finder restarts aren't re-excluded until the next recording; revisit if live updates are needed.
         let filter = SCContentFilter(
             display: display,
             excludingApplications: excludedApplications,
@@ -36,11 +35,6 @@ nonisolated struct RecordingDesktopFilter {
         )
         filter.includeMenuBar = !cleanDesktop
         return filter
-    }
-
-    func hasSameExclusions(as other: RecordingDesktopFilter) -> Bool {
-        Set(excludedApplications.map(\.processID)) == Set(other.excludedApplications.map(\.processID))
-            && Set(excludedWindows.map(\.windowID)) == Set(other.excludedWindows.map(\.windowID))
     }
 
     static func excludesApplication(

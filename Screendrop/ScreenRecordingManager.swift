@@ -90,7 +90,6 @@ final class ScreenRecordingManager {
     private var pausedAt: Date?
     private var accumulatedPauseDuration: TimeInterval = 0
     private var timer: Timer?
-    private var cleanDesktopRefreshTask: Task<Void, Never>?
     private var finishAction: ScreenRecordingFinishAction = .preview
     private var isStopping = false
     /// Set by a Stop that arrives while capture is still being wired up.
@@ -247,10 +246,6 @@ final class ScreenRecordingManager {
                 accumulatedPauseDuration = 0
                 elapsedTime = 0
                 state = .recording
-                if let desktopFilter = target.desktopFilter, desktopFilter.cleanDesktop,
-                   let displayID = target.displayID {
-                    startCleanDesktopRefresh(displayID: displayID, initialFilter: desktopFilter)
-                }
                 beginActivity()
                 startTimer()
             } catch {
@@ -328,8 +323,6 @@ final class ScreenRecordingManager {
     private func stopCaptureAndFinish() {
         guard !isStopping else { return }
 
-        cleanDesktopRefreshTask?.cancel()
-        cleanDesktopRefreshTask = nil
         writer.requestStop()
         isStopping = true
         state = .finishing
@@ -679,8 +672,6 @@ final class ScreenRecordingManager {
     private func cleanupAfterRecording() {
         timer?.invalidate()
         timer = nil
-        cleanDesktopRefreshTask?.cancel()
-        cleanDesktopRefreshTask = nil
         capture.onVideoFrame = nil
         capture.onAudioSample = nil
         capture.onError = nil
@@ -700,39 +691,6 @@ final class ScreenRecordingManager {
         state = .idle
     }
 
-    private func startCleanDesktopRefresh(displayID: CGDirectDisplayID, initialFilter: RecordingDesktopFilter) {
-        cleanDesktopRefreshTask = Task { [weak self] in
-            var previous = initialFilter
-            do {
-                while !Task.isCancelled {
-                    // shortcut: replacement hosts/windows can appear between polls; revisit after live recreation QA.
-                    try await Task.sleep(for: .seconds(1))
-                    let content = try await ScreenRecordingCapture.availableContent(onScreenWindowsOnly: false)
-                    try Task.checkCancellation()
-                    guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                        throw NSError(domain: "Screendrop.CleanDesktop", code: 1, userInfo: [
-                            NSLocalizedDescriptionKey: "The recorded display is no longer available."
-                        ])
-                    }
-                    let next = RecordingDesktopFilter(
-                        content: content,
-                        includesAppWindows: initialFilter.includesAppWindows,
-                        cleanDesktop: true
-                    )
-                    guard !next.hasSameExclusions(as: previous) else { continue }
-                    guard let self else { return }
-                    try await self.capture.updateContentFilter(next.makeFilter(for: display))
-                    previous = next
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                self?.handleCaptureError(NSError(domain: "Screendrop.CleanDesktop", code: 2, userInfo: [
-                    NSLocalizedDescriptionKey: "Clean desktop filtering could not be refreshed: \(error.localizedDescription)"
-                ]))
-            }
-        }
-    }
-
     private static func captureTarget(
         for source: ScreenRecordingSource,
         content: SCShareableContent,
@@ -744,7 +702,6 @@ final class ScreenRecordingManager {
         let captureRect: CGRect
         let displayID: CGDirectDisplayID?
         let tracksDynamicGeometry: Bool
-        var desktopFilter: RecordingDesktopFilter?
         let includesAppWindows = PreviewWindowCaptureExclusion.includesAppWindowsInCaptures
 
         switch source.kind {
@@ -755,7 +712,6 @@ final class ScreenRecordingManager {
                 includesAppWindows: includesAppWindows,
                 cleanDesktop: options.cleanDesktop
             )
-            desktopFilter = plan
             filter = plan.makeFilter(for: freshDisplay)
             sourceSize = CGSize(width: freshDisplay.width, height: freshDisplay.height)
             // Input mapping rects are always Quartz top-left, the space
@@ -783,7 +739,6 @@ final class ScreenRecordingManager {
                 includesAppWindows: includesAppWindows,
                 cleanDesktop: options.cleanDesktop
             )
-            desktopFilter = plan
             filter = plan.makeFilter(for: freshDisplay)
             let mappedSourceRect = Self.sourceRect(
                 forAppKitSelectionRect: rect,
@@ -818,7 +773,6 @@ final class ScreenRecordingManager {
             height: height,
             displayID: displayID,
             pointPixelScale: Double(scaleFactor),
-            desktopFilter: desktopFilter,
             tracksDynamicGeometry: tracksDynamicGeometry,
             inputMapping: inputMapping
         )
@@ -892,7 +846,6 @@ private struct ScreenRecordingCaptureTarget {
     let height: Int
     let displayID: CGDirectDisplayID?
     let pointPixelScale: Double
-    let desktopFilter: RecordingDesktopFilter?
     let tracksDynamicGeometry: Bool
     let inputMapping: RecordingInputMapping
 }
@@ -945,11 +898,6 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
             }
         }
         try await stream.stopCapture()
-    }
-
-    func updateContentFilter(_ filter: SCContentFilter) async throws {
-        guard let stream else { throw CancellationError() }
-        try await stream.updateContentFilter(filter)
     }
 
     static func displayFilter(
