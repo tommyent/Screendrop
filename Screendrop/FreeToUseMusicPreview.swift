@@ -20,11 +20,13 @@ final class FreeToUseMusicPreview {
         }
     }
 
-    @ObservationIgnored private let player = AVPlayer()
+    @ObservationIgnored private let player: AVPlayer
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var statusObserver: NSKeyValueObservation?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var seekID: UUID?
+
+    init(player: AVPlayer = AVPlayer()) { self.player = player }
 
     func toggle(_ track: FreeToUseMusicAPI.Track) {
         guard track.isUsable, let url = track.mp3URL else { return }

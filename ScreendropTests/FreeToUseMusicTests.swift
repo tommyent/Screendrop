@@ -4,30 +4,61 @@ import Testing
 
 private final class MusicFixtureBundle: NSObject {}
 
+// Exercise preview state without connecting an item to transport or sound output.
+nonisolated private final class SilentMusicPlayer: AVPlayer, @unchecked Sendable {
+    override func play() {}
+    override func replaceCurrentItem(with item: AVPlayerItem?) {}
+}
+
 nonisolated private final class MusicURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var replies: [String: (Int, Data)] = [:]
     nonisolated(unsafe) private static var recorded: [URLRequest] = []
+    nonisolated(unsafe) private static var delayed = Set<String>()
+    nonisolated(unsafe) private static var pending: [String: MusicURLProtocol] = [:]
+    nonisolated(unsafe) private static var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     static func configure(_ values: [String: (Int, Data)]) {
-        lock.withLock { replies = values; recorded = [] }
+        lock.withLock { replies = values; recorded = []; delayed = []; pending = [:] }
     }
     static var requests: [URLRequest] { lock.withLock { recorded } }
+    static func delay(_ url: String) { _ = lock.withLock { delayed.insert(url) } }
+    static func waitForRequest(_ url: String) async {
+        await withCheckedContinuation { continuation in
+            let started = lock.withLock {
+                if recorded.contains(where: { $0.url?.absoluteString == url }) { return true }
+                waiters[url, default: []].append(continuation)
+                return false
+            }
+            if started { continuation.resume() }
+        }
+    }
+    static func release(_ url: String) {
+        let response = lock.withLock { pending.removeValue(forKey: url) }
+        if let response { response.client?.urlProtocolDidFinishLoading(response) }
+    }
+    static func isPending(_ url: String) -> Bool { lock.withLock { pending[url] != nil } }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
-        let (status, data) = Self.lock.withLock {
+        let key = request.url!.absoluteString
+        let (reply, delayed, waiters) = Self.lock.withLock {
             Self.recorded.append(request)
-            return Self.replies[request.url!.absoluteString] ?? (500, Data())
+            let delayed = Self.delayed.contains(key)
+            if delayed { Self.pending[key] = self }
+            return (Self.replies[key] ?? (500, Data()), delayed, Self.waiters.removeValue(forKey: key) ?? [])
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+        let response = HTTPURLResponse(url: request.url!, statusCode: reply.0, httpVersion: nil,
                                        headerFields: ["Content-Type": request.url!.host == "eu.data.freetouse.com"
                                                       ? "application/octet-stream" : "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        client?.urlProtocol(self, didLoad: reply.1)
+        if !delayed { client?.urlProtocolDidFinishLoading(self) }
+        for waiter in waiters { waiter.resume() }
     }
-    override func stopLoading() {}
+    override func stopLoading() {
+        _ = Self.lock.withLock { Self.pending.removeValue(forKey: request.url!.absoluteString) }
+    }
 }
 
 @Suite(.serialized) @MainActor
@@ -74,6 +105,11 @@ struct FreeToUseMusicTests {
         try file.write(from: buffer)
         file.close()
         return try Data(contentsOf: url)
+    }
+
+    private func musicTemporaryFiles() throws -> Set<String> {
+        Set(try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path)
+            .filter { $0.hasPrefix("freetouse-") })
     }
 
     @Test("Real category fixtures paginate through all three groups")
@@ -279,5 +315,111 @@ struct FreeToUseMusicTests {
         #expect(dismissals == 1)
         #expect(model.downloadError == nil)
         #expect(!FileManager.default.fileExists(atPath: try #require(adopted).path))
+    }
+
+    @Test("A delayed old search cannot replace a newer search or category", .timeLimit(.minutes(1)), arguments: [false, true])
+    func newerSelectionWins(_ category: Bool) async throws {
+        let oldURL = url("music/tracks/search", query: "old")
+        let newBrowse: FreeToUseMusicAPI.Browse = category
+            ? .category(.init(id: "calm", name: "Calm", type: "Mood")) : .search("new")
+        let newURL = category ? url("music/categories/calm/tracks") : url("music/tracks/search", query: "new")
+        let oldData = try trackData { $0[0]["title"] = "Old result" }
+        let newData = try trackData { $0[0]["title"] = "New result" }
+        let model = FreeToUseMusicPickerModel(api: client([oldURL: (200, oldData), newURL: (200, newData)]))
+        defer { model.close(); MusicURLProtocol.release(oldURL) }
+        MusicURLProtocol.delay(oldURL)
+        model.browse = .search("old")
+        let old = Task { await model.loadTracks() }
+        await MusicURLProtocol.waitForRequest(oldURL)
+        model.browse = newBrowse
+        await model.loadTracks()
+        #expect(model.tracks.first?.title == "New result")
+        MusicURLProtocol.release(oldURL)
+        await old.value
+        #expect(model.tracks.first?.title == "New result")
+        #expect(model.nextOffset == 5)
+        #expect(model.tracksError == nil)
+        #expect(!model.isLoading)
+    }
+
+    @Test("An old search error stays hidden after a chip changes, before its new request starts", .timeLimit(.minutes(1)))
+    func staleErrorAfterChip() async {
+        let oldURL = url("music/tracks/search", query: "old")
+        let model = FreeToUseMusicPickerModel(api: client([oldURL: (503, Data())]))
+        defer { model.close(); MusicURLProtocol.release(oldURL) }
+        MusicURLProtocol.delay(oldURL)
+        model.browse = .search("old")
+        let old = Task { await model.loadTracks() }
+        await MusicURLProtocol.waitForRequest(oldURL)
+        model.select(.init(id: "calm", name: "Calm", type: "Mood"))
+        MusicURLProtocol.release(oldURL)
+        await old.value
+        #expect(model.tracksError == nil)
+        #expect(model.tracks.isEmpty)
+    }
+
+    @Test("Closing a suspended download cancels transport, skips callback and leaves no owned temp file", .timeLimit(.minutes(1)))
+    func closeSuspendedDownload() async throws {
+        let track = try firstTrack()
+        let mp3 = try #require(track.mp3URL).absoluteString
+        let before = try musicTemporaryFiles()
+        let model = FreeToUseMusicPickerModel(api: client([mp3: (200, try audioData())]))
+        defer { model.close(); MusicURLProtocol.release(mp3) }
+        MusicURLProtocol.delay(mp3)
+        var callbacks = 0
+        var dismissals = 0
+        model.use(track, setBackgroundMusic: { _, _, _, _ in callbacks += 1 }, dismiss: { dismissals += 1 })
+        let download = try #require(model.downloadTask)
+        await MusicURLProtocol.waitForRequest(mp3)
+        #expect(MusicURLProtocol.isPending(mp3))
+        model.close()
+        await download.value
+        MusicURLProtocol.release(mp3)
+        #expect(!MusicURLProtocol.isPending(mp3))
+        #expect(callbacks == 0)
+        #expect(dismissals == 0)
+        #expect(model.downloadError == nil)
+        #expect(model.downloadingID == nil)
+        #expect(try musicTemporaryFiles() == before)
+    }
+
+    @Test("Download Retry preserves the explicit seek, and a synchronous receiver copies before cleanup", .timeLimit(.minutes(1)), arguments: [false, true])
+    func retryAndSynchronousCopy(_ explicitSeek: Bool) async throws {
+        let track = try firstTrack()
+        let mp3 = try #require(track.mp3URL).absoluteString
+        let before = try musicTemporaryFiles()
+        let preview = FreeToUseMusicPreview(player: SilentMusicPlayer())
+        let model = FreeToUseMusicPickerModel(api: client([mp3: (503, Data())]), preview: preview)
+        defer { model.close() }
+        preview.toggle(track)
+        preview.updatePlaybackPosition(10, duration: track.duration)
+        if explicitSeek { preview.scrubPosition = 20 }
+        preview.updatePlaybackPosition(25, duration: track.duration)
+        model.use(track, setBackgroundMusic: { _, _, _, _ in Issue.record("Failed download called receiver") },
+                  dismiss: { Issue.record("Failed download dismissed") })
+        await model.downloadTask?.value
+        #expect(model.failedDownloadID == track.id)
+        #expect(preview.trackID == nil)
+
+        let data = try audioData()
+        MusicURLProtocol.configure([mp3: (200, data)])
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("music-copy-\(UUID()).mp3")
+        defer { try? FileManager.default.removeItem(at: copy) }
+        var adopted: URL?
+        var callbacks = 0
+        var dismissals = 0
+        model.use(track, setBackgroundMusic: { fileURL, _, _, offset in
+            adopted = fileURL
+            #expect(offset == (explicitSeek ? 20 : 0))
+            do { try FileManager.default.copyItem(at: fileURL, to: copy) }
+            catch { Issue.record(error) }
+            callbacks += 1
+        }, dismiss: { dismissals += 1 })
+        await model.downloadTask?.value
+        #expect(callbacks == 1)
+        #expect(dismissals == 1)
+        #expect((try? Data(contentsOf: copy)) == data)
+        #expect(!FileManager.default.fileExists(atPath: try #require(adopted).path))
+        #expect(try musicTemporaryFiles() == before)
     }
 }

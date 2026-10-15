@@ -14,7 +14,7 @@ final class FreeToUseMusicPickerModel {
     private(set) var downloadingID: String?
     private(set) var downloadError: String?
     private(set) var failedDownloadID: String?
-    let preview = FreeToUseMusicPreview()
+    let preview: FreeToUseMusicPreview
 
     @ObservationIgnored private let api: FreeToUseMusicAPI
     @ObservationIgnored private var tracksRequestID: UUID?
@@ -23,7 +23,10 @@ final class FreeToUseMusicPickerModel {
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var failedOffset: TimeInterval = 0
 
-    init(api: FreeToUseMusicAPI = FreeToUseMusicAPI()) { self.api = api }
+    init(api: FreeToUseMusicAPI = FreeToUseMusicAPI(), preview: FreeToUseMusicPreview? = nil) {
+        self.api = api
+        self.preview = preview ?? FreeToUseMusicPreview()
+    }
 
     func loadCategories() async {
         guard !isClosed, !Task.isCancelled else { return }
@@ -72,7 +75,7 @@ final class FreeToUseMusicPickerModel {
             tracks += page.data.filter { $0.isUsable && seen.insert($0.id).inserted }
             nextOffset = page.nextOffset
         } catch {
-            guard !Task.isCancelled, tracksRequestID == requestID, !isClosed else { return }
+            guard !Task.isCancelled, tracksRequestID == requestID, browse == requestedBrowse, !isClosed else { return }
             tracksError = FreeToUseMusicAPI.message(for: error)
         }
     }

@@ -66,7 +66,11 @@ Add-at-playhead checks in that harness cover corrected surviving narration after
 `FreeToUseMusicTests` compiles the production API client, picker model and preview
 controller. Saved category/search JSON checks all category pages, ordered artist
 and tag pairs, premium filtering, media URL validation, credit text, search query
-encoding, start offsets and inline error/retry handling. URLProtocol supplies the
-responses; tests never request live music, start a preview or open the picker.
-Streaming, scrubbing, download/cancel/temp cleanup and accessibility activation
-remain in the coordinator's approved live round after the Studio hookup merges.
+encoding, start offsets and inline error/retry handling. Controlled URLProtocol
+responses exercise late search results/errors, actual download tasks, closing
+during a suspended download and synchronous callback copying before cleanup.
+Generated audio checks content validation and invalid-body Retry. A silent
+AVPlayer stand-in exercises preview state and explicit scrub offsets through
+download Retry without starting transport or sound output. Tests never request
+live music or open the picker. Audible streaming, native scrubbing/accessibility
+activation and the merged Studio receiver remain in the approved live round.
