@@ -75,6 +75,12 @@ final class ScreenRecordingManager {
     var elapsedTime: TimeInterval = 0
     var errorMessage: String?
     var onFinishRecording: ((RecordingSession, CGDirectDisplayID?) -> Void)?
+    /// The bar's microphone meter, 0...1 (see MicrophoneLevelMeter); nil
+    /// when the take has no microphone.
+    private(set) var microphoneLevel: Double?
+    /// True for a moment after the microphone clips, so the meter turns red.
+    private(set) var isMicrophoneClipping = false
+    private var microphoneClippedAt: Date?
 
     private let capture = ScreenRecordingCapture()
     private let writer = ScreenRecordingWriter()
@@ -174,11 +180,17 @@ final class ScreenRecordingManager {
                     writer.writeVideoSample(sampleBuffer, clock: clock)
                 }
                 let teleprompterEngine = TeleprompterController.shared.activeEngine
+                let microphoneLevelTap = MicrophoneLevelTap { [weak self] peak in
+                    Task { @MainActor in self?.receiveMicrophonePeak(peak) }
+                }
                 capture.onAudioSample = { [writer] sampleBuffer, kind in
                     if kind == .microphone {
                         teleprompterEngine?.ingest(sampleBuffer)
                     }
                     writer.writeAudioSample(sampleBuffer, kind: kind)
+                    if kind == .microphone {
+                        microphoneLevelTap.ingest(sampleBuffer)
+                    }
                 }
                 capture.onError = { [weak self] error in
                     Task { @MainActor in
@@ -241,6 +253,7 @@ final class ScreenRecordingManager {
                 pausedAt = nil
                 accumulatedPauseDuration = 0
                 elapsedTime = 0
+                microphoneLevel = options.microphoneDeviceID == nil ? nil : 0
                 state = .recording
                 beginActivity()
                 startTimer()
@@ -665,6 +678,20 @@ final class ScreenRecordingManager {
         elapsedTime = max(0, Date().timeIntervalSince(startedAt) - pauseDuration)
     }
 
+    /// The mic keeps feeding the meter while paused, so the level can be
+    /// checked before resuming. Late peaks after the take ended are dropped.
+    private func receiveMicrophonePeak(_ peak: Float) {
+        guard let level = microphoneLevel, state == .recording || state == .paused else { return }
+        let now = Date()
+        if MicrophoneLevelMeter.isClipping(peak: peak) {
+            microphoneClippedAt = now
+        }
+        isMicrophoneClipping = microphoneClippedAt.map {
+            now.timeIntervalSince($0) < MicrophoneLevelMeter.clipHold
+        } ?? false
+        microphoneLevel = MicrophoneLevelMeter.nextLevel(previous: level, peak: peak)
+    }
+
     private func cleanupAfterRecording() {
         timer?.invalidate()
         timer = nil
@@ -682,6 +709,9 @@ final class ScreenRecordingManager {
         startedAt = nil
         pausedAt = nil
         accumulatedPauseDuration = 0
+        microphoneLevel = nil
+        isMicrophoneClipping = false
+        microphoneClippedAt = nil
         finishAction = .preview
         isStopping = false
         state = .idle
