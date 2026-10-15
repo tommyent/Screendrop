@@ -31,4 +31,4 @@ with (build / "compile.log").open("w") as log:
     if subprocess.run(command, cwd=repo, stdout=log, stderr=subprocess.STDOUT).returncode:
         sys.exit(f"Harness compile failed: {build / 'compile.log'}")
 with tempfile.TemporaryDirectory(prefix="screendrop-recording-checks-", dir="/private/tmp") as root:
-    subprocess.run([str(binary)], env=dict(os.environ, CFFIXED_USER_HOME=root), check=True)
+    subprocess.run([str(binary)], env=dict(os.environ, CFFIXED_USER_HOME=root), check=True, timeout=120)

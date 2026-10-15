@@ -109,10 +109,12 @@ enum RecordingSessionRenderer {
         }
 
         var isolatedMicrophoneURL: URL?
-        var microphoneTrackID: CMPersistentTrackID?
+        let tracks = try await asset.load(.tracks)
+        let microphoneTrackID = RecordingVoiceIsolation.microphoneTrack(in: tracks,
+            includesMicrophone: manifest?.includesMicrophone == true,
+            includesSystemAudio: manifest?.includesSystemAudio == true)?.trackID
         if editDocument?.isolateVoice == true, audioReplacementURL == nil,
            !exportSettings.removeAudio, audioVolume > 0 {
-            let tracks = try await asset.load(.tracks)
             guard let microphone = RecordingVoiceIsolation.microphoneTrack(in: tracks,
                 includesMicrophone: manifest?.includesMicrophone == true,
                 includesSystemAudio: manifest?.includesSystemAudio == true) else {
@@ -122,7 +124,6 @@ enum RecordingSessionRenderer {
             try await RecordingVoiceIsolation.render(sourceURL: session.screenURL,
                 microphoneTrackID: microphone.trackID, destinationURL: url, progress: { _ in })
             isolatedMicrophoneURL = url
-            microphoneTrackID = microphone.trackID
         }
 
         let canvasSize = try await outputSize(for: asset, manifest: manifest)
@@ -233,6 +234,9 @@ enum RecordingSessionRenderer {
             audioVolume: audioVolume,
             isolatedMicrophoneURL: isolatedMicrophoneURL,
             microphoneTrackID: microphoneTrackID,
+            backgroundMusic: !exportSettings.removeAudio && !exportSettings.effectiveExportsGIF ? document?.backgroundMusic.map {
+                .init(url: session.directoryURL.appendingPathComponent($0.fileName), settings: $0)
+            } : nil,
             reframe: reframe,
             fitContentAspect: fitContentAspect,
             usesUniformPadding: aspect == .original,

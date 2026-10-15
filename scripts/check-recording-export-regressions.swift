@@ -3,6 +3,7 @@ import AVFoundation
 import CoreGraphics
 import CoreVideo
 import Foundation
+import Darwin
 
 // Compiles actual app sources, without windows, speech recognition, or real recordings.
 @main
@@ -13,7 +14,7 @@ struct RecordingExportRegressionChecks {
         if try !value() { throw Failure(description: message) }
     }
 
-    static func movie(at url: URL) async throws {
+    static func movie(at url: URL, colorAt: (Double) -> CGColor = { _ in CGColor(gray: 0.4, alpha: 1) }) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180,
@@ -31,7 +32,7 @@ struct RecordingExportRegressionChecks {
                         bitsPerComponent: 8, bytesPerRow: plane.properties.bytesPerRow,
                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue)
                 else { throw Failure(description: "Cannot create fixture pixels") }
-                context.setFillColor(CGColor(gray: 0.4, alpha: 1))
+                context.setFillColor(colorAt(Double(frame) / 10))
                 context.fill(CGRect(x: 0, y: 0, width: 320, height: 180))
             }
             try await receiver.append(CVReadOnlyPixelBuffer(pixels), with: CMTime(value: Int64(frame), timescale: 10))
@@ -339,12 +340,12 @@ struct RecordingExportRegressionChecks {
         print("PASS: canceled model task stays busy, blocks retry until exit, and releases the task for a successful retry")
     }
 
-    static func audioTone(at url: URL, frequency: Float) throws {
+    static func audioTone(at url: URL, frequency: Float, active: (Double) -> Bool = { _ in true }) throws {
         let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 384000)!
         buffer.frameLength = buffer.frameCapacity
         for index in 0..<Int(buffer.frameLength) {
-            buffer.floatChannelData![0][index] = 0.15 * sin(2 * .pi * frequency * Float(index) / 48000)
+            buffer.floatChannelData![0][index] = active(Double(index) / 48000) ? 0.15 * sin(2 * .pi * frequency * Float(index) / 48000) : 0
         }
         let settings = url.pathExtension == "m4a"
             ? [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1] as [String: Any]
@@ -354,12 +355,13 @@ struct RecordingExportRegressionChecks {
         file.close()
     }
 
-    static func audioLevels(at url: URL) async throws -> [Float] {
+    static func audioLevels(at url: URL, time: Double = 0.2, length: Double = 0.5,
+                            frequencies: [Float] = [220, 440, 900]) async throws -> [Float] {
         let asset = AVURLAsset(url: url)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         let reader = try AVAssetReader(asset: asset)
-        reader.timeRange = CMTimeRange(start: CMTime(seconds: 0.2, preferredTimescale: 48000),
-                                      duration: CMTime(seconds: 0.5, preferredTimescale: 48000))
+        reader.timeRange = CMTimeRange(start: CMTime(seconds: time, preferredTimescale: 48000),
+                                      duration: CMTime(seconds: length, preferredTimescale: 48000))
         let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1,
             AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
@@ -380,7 +382,7 @@ struct RecordingExportRegressionChecks {
             }
         }
         try check(!samples.isEmpty, "Export has no audible samples")
-        return [220, 440, 900].map { frequency in
+        return frequencies.map { frequency in
             var real: Float = 0, imaginary: Float = 0
             for (index, sample) in samples.enumerated() {
                 let phase = 2 * Float.pi * Float(frequency) * Float(index) / 48000
@@ -388,6 +390,441 @@ struct RecordingExportRegressionChecks {
             }
             return 2 * sqrt(real * real + imaginary * imaginary) / Float(samples.count)
         }
+    }
+
+    static func backgroundMusicMixing(in directory: URL) async throws {
+        func tone(_ url: URL, frequency: Float, duration: Double = 8, active: (Double) -> Bool = { _ in true }) throws {
+            let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: UInt32(duration * 48000))!
+            buffer.frameLength = buffer.frameCapacity
+            for frame in 0..<Int(buffer.frameLength) {
+                let time = Double(frame) / 48000
+                buffer.floatChannelData![0][frame] = active(time) ? 0.15 * sin(2 * .pi * frequency * Float(time)) : 0
+            }
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+            file.close()
+        }
+        func level(_ url: URL, at time: Double, frequency: Float) async throws -> Float {
+            try await audioLevels(at: url, time: time, length: 0.12, frequencies: [frequency])[0]
+        }
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-mix.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        let videoURL = directory.appendingPathComponent("music-video.mov")
+        let micURL = directory.appendingPathComponent("music-mic.wav")
+        let systemURL = directory.appendingPathComponent("music-system.wav")
+        let musicURL = directory.appendingPathComponent("music.wav")
+        let isolatedURL = directory.appendingPathComponent("music-isolated.wav")
+        try await movie(at: videoURL)
+        try tone(micURL, frequency: 220, active: { (1...2).contains($0) || (4...5).contains($0) })
+        try tone(systemURL, frequency: 900)
+        try tone(isolatedURL, frequency: 440)
+        try tone(musicURL, frequency: 660, duration: 3, active: { $0 >= 1 })
+        let composition = AVMutableComposition()
+        for url in [videoURL, systemURL, micURL] {
+            let asset = AVURLAsset(url: url)
+            for track in try await asset.load(.tracks) {
+                let destination = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                try destination.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 8, timescale: 1)), of: track, at: .zero)
+            }
+        }
+        let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough)!
+        try await exporter.export(to: session.screenURL, as: .mov)
+        let original = try Data(contentsOf: session.screenURL)
+        var manifest = CaptureManifest()
+        manifest.duration = 8; manifest.pixelWidth = 320; manifest.pixelHeight = 180
+        manifest.includesMicrophone = true; manifest.includesSystemAudio = true
+        try session.writeCaptureManifest(manifest)
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0.5, sourceEnd: 3), .init(sourceStart: 4, sourceEnd: 8, speed: 2)])
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        model.setBackgroundMusic(fileURL: musicURL, displayName: "Tone music", credit: "Test credit", startOffset: 1)
+        for _ in 0..<500 where model.backgroundMusic == nil && model.backgroundMusicError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Music mixing fixture import failed")
+        var document = model.currentDocument()
+        document.clips = cut.segments
+        document.zoomEnabled = false; document.zoomCues = []
+        document.exportSettings?.resolution = .original
+        try session.writeEditDocument(document)
+        await model.discardChanges() // Restore through the model below by reopening the edited package.
+        model.teardown()
+        try session.writeEditDocument(document)
+        session.removeDraftDocument()
+        let preview = RecordingStudioModel(url: session.directoryURL)
+        defer { preview.teardown() }
+        await preview.load()
+        try check(preview.isLoaded && preview.musicWaveform.count > 0, "Studio music preview or waveform did not load")
+        let item = preview.screenPlayer.currentItem!
+        let previewDuration = try await item.asset.load(.duration).seconds
+        try check(abs(previewDuration - cut.duration) < 0.01, "Studio composition missed cut duration: \(previewDuration)")
+        let previewURL = directory.appendingPathComponent("music-preview.m4a")
+        let previewExport = AVAssetExportSession(asset: item.asset, presetName: AVAssetExportPresetAppleM4A)!
+        previewExport.audioMix = item.audioMix
+        try await previewExport.export(to: previewURL, as: .m4a)
+        let shared = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+        let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        let micID = configuration.microphoneTrackID
+        try check(micID != nil && configuration.backgroundMusic != nil, "Shared renderer lost mic/music configuration")
+        let audio = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, microphoneTrackID: micID, backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: audio) }
+        for url in [previewURL, shared, audio] {
+            let quiet = try await level(url, at: 0.15, frequency: 660)
+            let ducked = try await level(url, at: 0.85, frequency: 660)
+            let voice = try await level(url, at: 0.85, frequency: 220)
+            let system = try await level(url, at: 0.85, frequency: 900)
+            let repeated = try await level(url, at: 2.1, frequency: 660)
+            let faded = try await level(url, at: 4.3, frequency: 660)
+            try check(quiet > 0.025 && ducked > 0.004 && ducked < quiet * 0.4 && voice > 0.1 && system > 0.1,
+                "Music/voice/system mix or ducking failed: \(quiet), \(ducked), \(voice), \(system)")
+            try check(repeated > 0.025 && faded < quiet * 0.3, "Music loop/start offset/fade failed: \(repeated), \(faded)")
+            let duration = try await AVURLAsset(url: url).load(.duration).seconds
+            // Playback duration is checked on the composition, separately from this harness-only encoded proxy.
+            if url != previewURL {
+                try check(abs(duration - cut.duration) < 0.06, "Music export missed cut duration: \(url.lastPathComponent) = \(duration), expected \(cut.duration)")
+            }
+        }
+        let unducked = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, microphoneTrackID: 9999,
+            backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: unducked) }
+        let fallbackLevel = try await level(unducked, at: 0.85, frequency: 660)
+        try check(fallbackLevel > 0.025, "Failed mic analysis did not export unducked music")
+        let muted = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, volume: 0, microphoneTrackID: micID,
+            backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: muted) }
+        let mutedMusic = try await level(muted, at: 0.85, frequency: 660)
+        try check(mutedMusic > 0.004, "Recorded volume muted independent music")
+        for replacement in [false, true] {
+            let url = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+                replacementURL: replacement ? isolatedURL : nil, format: .wav,
+                isolatedMicrophoneURL: replacement ? nil : isolatedURL, microphoneTrackID: micID,
+                backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+            defer { try? FileManager.default.removeItem(at: url) }
+            let levels = try await audioLevels(at: url, time: 0.85, length: 0.12, frequencies: [220, 440, 660, 900])
+            try check(levels[0] < 0.005 && levels[1] > 0.1 && levels[2] > 0.004 && levels[2] < 0.02,
+                "Replace/isolation lost music or source-mic ducking: \(levels)")
+            try check(replacement ? levels[3] < 0.005 : levels[3] > 0.1, "Replace/isolation changed system track selection")
+        }
+        var gifDocument = document
+        var gifSettings = configuration.exportSettings
+        gifSettings.exportsGIF = true
+        gifDocument.exportSettings = gifSettings
+        gifDocument.backgroundMusic?.fileName = "background-music.absent.wav"
+        try session.writeEditDocument(gifDocument)
+        let sharedGIF = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        try check(sharedGIF.backgroundMusic == nil, "Shared GIF configuration retained music")
+        let defensiveGIF = RecordingStudioExporter.Configuration(screenURL: session.screenURL, cameraURL: nil,
+            cameraOffset: 0, style: configuration.style, viewportTimeline: .identity,
+            pointerTimeline: nil, showsPressEffects: false, keystrokeTimeline: nil,
+            keystrokePlacement: configuration.keystrokePlacement, subtitleTimeline: nil,
+            subtitleStyle: configuration.subtitleStyle,
+            canvasSize: configuration.canvasSize, clipTimeline: cut, exportSettings: gifSettings,
+            microphoneTrackID: micID,
+            backgroundMusic: .init(url: session.directoryURL.appendingPathComponent("background-music.absent.wav"), settings: gifDocument.backgroundMusic!))
+        let intermediate = try await RecordingStudioExporter().export(defensiveGIF, progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: intermediate) }
+        let excludedMusic = try await level(intermediate, at: 0.85, frequency: 660)
+        try check(excludedMusic < 0.005, "GIF intermediate mixed music")
+        print("PASS: GIF configuration omits music; its intermediate exports without loading an absent song or applying music ducking")
+        try check(try Data(contentsOf: session.screenURL) == original, "Mixing changed the source recording")
+        print("PASS: Studio preview, shared video and audio-only exports retain voice/system audio, loop from offset, duck music on source mic and fade at edited end; independent volume; Replace/Isolate Voice remain compatible")
+    }
+
+    static func replacementVideoTiming(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("replacement-video.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        let videoURL = directory.appendingPathComponent("replacement-colors.mov")
+        try await movie(at: videoURL, colorAt: { time in
+            CGColor(red: time < 4 ? 1 : 0, green: 0, blue: time < 4 ? 0 : 1, alpha: 1)
+        })
+        let originalAudio = directory.appendingPathComponent("replacement-original.wav")
+        try audioTone(at: originalAudio, frequency: 220)
+        let composition = AVMutableComposition()
+        for url in [videoURL, originalAudio] {
+            let asset = AVURLAsset(url: url)
+            for track in try await asset.load(.tracks) {
+                let destination = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                try destination.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 8, timescale: 1)), of: track, at: .zero)
+            }
+        }
+        let sourceExport = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough)!
+        try await sourceExport.export(to: session.screenURL, as: .mov)
+        let replacementURL = session.directoryURL.appendingPathComponent("\(RecordingSession.replacementAudioBaseName).\(UUID().uuidString).wav")
+        try audioTone(at: replacementURL, frequency: 660, active: { $0 >= 2.5 })
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0.5, sourceEnd: 3), .init(sourceStart: 4, sourceEnd: 8, speed: 2)])
+        var style = RecordingStudioStyle()
+        style.padding = 0; style.shadow = 0; style.cornerRadius = 0
+        var settings = VideoCompressionSettings()
+        settings.resolution = .original
+        var document = RecordingEditDocument(style: style, zoomEnabled: false, zoomCues: [], clipTimeline: cut,
+            exportSettings: settings, replacementAudioFileName: replacementURL.lastPathComponent)
+        try session.writeEditDocument(document)
+        let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        try check(configuration.backgroundMusic == nil, "Replacement-only video fixture unexpectedly selected music")
+        let movie = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+        let duration = try await AVURLAsset(url: movie).load(.duration).seconds
+        try check(abs(duration - cut.duration) < 0.03, "Replacement video duration missed the cut")
+        let before = try await audioLevels(at: movie, time: 2.3, length: 0.12, frequencies: [220, 660])
+        let after = try await audioLevels(at: movie, time: 2.65, length: 0.12, frequencies: [660])
+        let end = try await audioLevels(at: movie, time: 4.25, length: 0.12, frequencies: [660])
+        let red = try await pixels(in: movie, at: 2.35), blue = try await pixels(in: movie, at: 2.65)
+        try check(before.allSatisfy { $0 < 0.005 } && after[0] > 0.1 && end[0] > 0.1,
+                  "Replacement was re-cut, sped up, ended early or leaked original audio")
+        try check(red[0] > 200 && red[2] < 50 && blue[2] > 200 && blue[0] < 50,
+                  "Replacement tone onset did not align with the video's cut boundary")
+        let invalid = session.directoryURL.appendingPathComponent("video-only.mov")
+        try FileManager.default.copyItem(at: videoURL, to: invalid)
+        document.replacementAudioFileName = invalid.lastPathComponent
+        try session.writeEditDocument(document)
+        do {
+            _ = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+            throw Failure(description: "Video export accepted a replacement without audio")
+        } catch let error as RecordingReplacementAudio.LoadError {
+            try check(error.localizedDescription.contains("no readable audio track"), "Video replacement error was unclear")
+        }
+        do {
+            _ = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+                replacementURL: invalid, format: .wav), progress: { _ in })
+            throw Failure(description: "Audio export accepted a replacement without audio")
+        } catch let error as RecordingReplacementAudio.LoadError {
+            try check(error.localizedDescription.contains("no readable audio track"), "Audio replacement error was unclear")
+        }
+        print("PASS: replacement VIDEO export without music preserves a cut/2x timeline, tone onset at the color boundary and audio to the end; invalid replacements give a clear video/audio error")
+    }
+
+    static func backgroundMusicHistory(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-history.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let first = directory.appendingPathComponent("history-a.wav"), second = directory.appendingPathComponent("history-b.wav")
+        try audioTone(at: first, frequency: 440)
+        try audioTone(at: second, frequency: 660)
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        model.setBackgroundMusic(fileURL: first, displayName: "A", credit: "A credit", startOffset: 0)
+        try await until { !model.hasRunningWork }
+        let a = model.backgroundMusicSettings!
+        try check(model.canUndo, "Adding music did not register Undo")
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == nil && model.backgroundMusic == nil && model.canRedo, "Undo Add Music failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == a && model.backgroundMusic != nil, "Redo Add Music failed")
+        model.setBackgroundMusic(fileURL: second, displayName: "B", credit: "B credit", startOffset: 1)
+        try await until { !model.hasRunningWork }
+        let b = model.backgroundMusicSettings!
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == a, "Undo Replace Music lost the previous selection")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == b, "Redo Replace Music failed")
+        model.removeBackgroundMusic()
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == b && model.backgroundMusic != nil, "Undo Remove Music failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == nil, "Redo Remove Music failed")
+        model.undo()
+        try await until { !model.hasRunningWork }
+        model.setMusicSliderEditing(true)
+        model.musicVolume = 0.3; model.musicVolume = 0.4; model.musicVolume = 0.5
+        model.setMusicSliderEditing(false)
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicVolume == CGFloat(b.volume), "Volume drag was not one Undo step")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicVolume == 0.5, "Volume drag Redo did not restore the final value")
+        model.setMusicSliderEditing(true)
+        model.musicStartOffset = 2; model.musicStartOffset = 3
+        model.setMusicSliderEditing(false)
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicStartOffset == CGFloat(b.startOffset), "Start-offset drag was not one Undo step")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicStartOffset == 3, "Start-offset drag Redo failed")
+        let before = model.backgroundMusicSettings!
+        model.musicLoops = false
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.backgroundMusicSettings == before, "Loop Undo failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(!model.musicLoops, "Loop Redo failed")
+        model.musicDucks = false
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicDucks, "Ducking Undo failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(!model.musicDucks, "Ducking Redo failed")
+        model.musicDuckAmount = .aLot
+        model.undo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicDuckAmount == .medium, "Duck amount Undo failed")
+        model.redo()
+        try await until { !model.hasRunningWork }
+        try check(model.musicDuckAmount == .aLot, "Duck amount Redo failed")
+        print("PASS: music Add/Replace/Remove/settings support Undo/Redo; volume and start-offset drags each use one history step")
+    }
+
+    static func backgroundMusicRetention(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-retention.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let sourceBytes = try Data(contentsOf: session.screenURL)
+        func song(_ label: String) throws -> RecordingBackgroundMusic {
+            let name = "\(RecordingBackgroundMusic.baseName).\(UUID().uuidString).wav"
+            try audioTone(at: session.directoryURL.appendingPathComponent(name), frequency: 660)
+            return RecordingBackgroundMusic(fileName: name, displayName: label, credit: label)
+        }
+        let saved = try song("Saved"), draft = try song("Draft only"), snapshotOnly = try song("Snapshot only"), orphan = try song("Orphan")
+        let replacement = "\(RecordingSession.replacementAudioBaseName).\(UUID().uuidString).wav"
+        try audioTone(at: session.directoryURL.appendingPathComponent(replacement), frequency: 440)
+        var savedDoc = RecordingEditDocument(style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [],
+            clipTimeline: .full(sourceDuration: 8), backgroundMusic: saved)
+        savedDoc.replacementAudioFileName = replacement
+        var draftDoc = savedDoc
+        draftDoc.backgroundMusic = draft
+        var snapshotDoc = savedDoc
+        snapshotDoc.backgroundMusic = snapshotOnly
+        snapshotDoc.clips = [.init(sourceStart: 4, sourceEnd: 8, speed: 2)]
+        try session.writeEditDocument(savedDoc)
+        try session.writeDraftDocument(draftDoc)
+        let store = CaptureSessionSnapshots(directory: session.sessionSnapshotsURL)
+        let snapshot = try store.keep(document: CaptureSessionSnapshots.encode(snapshotDoc), openedAt: Date()).first!
+        let retained = try [saved.fileName, draft.fileName, snapshotOnly.fileName, replacement].map { name in
+            (name, try Data(contentsOf: session.directoryURL.appendingPathComponent(name)))
+        }
+        let model = RecordingStudioModel(url: session.directoryURL)
+        await model.load()
+        try check(model.isLoaded && model.backgroundMusicSettings == draft, "Draft-only song did not reopen")
+        model.teardown()
+        for (name, bytes) in retained {
+            try check(try Data(contentsOf: session.directoryURL.appendingPathComponent(name)) == bytes, "Cleanup removed or changed referenced music: \(name)")
+        }
+        try check(!FileManager.default.fileExists(atPath: session.directoryURL.appendingPathComponent(orphan.fileName).path), "Cleanup did not collect orphan music")
+        try check(try Data(contentsOf: session.screenURL) == sourceBytes, "Music cleanup changed the source video")
+        let reopened = RecordingStudioModel(url: session.directoryURL)
+        await reopened.load()
+        try check(reopened.backgroundMusicSettings == draft, "Draft-only music did not survive close/reopen")
+        let previous = reopened.currentDocument()
+        reopened.revertToSession(snapshot)
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == snapshotOnly && reopened.backgroundMusic != nil && reopened.clipTimeline.segments == snapshotDoc.clips,
+                  "Revert to Session did not restore snapshot-only music and cuts")
+        reopened.undo()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == draft && reopened.clipTimeline.segments == previous.clips, "Undo snapshot restore did not restore draft music/cuts")
+        reopened.redo()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == snapshotOnly && reopened.clipTimeline.segments == snapshotDoc.clips, "Redo snapshot restore lost music/cuts")
+        reopened.revertToOriginal()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == nil, "Revert to Original retained music")
+        reopened.undo()
+        try await until { !reopened.hasRunningWork }
+        try check(reopened.backgroundMusicSettings == snapshotOnly && reopened.backgroundMusic != nil, "Undo Revert to Original did not restore music")
+        reopened.teardown()
+
+        let broken = RecordingSession(directoryURL: directory.appendingPathComponent("music-unreadable-snapshot.screendroprec"))
+        try FileManager.default.createDirectory(at: broken.directoryURL, withIntermediateDirectories: false)
+        try FileManager.default.copyItem(at: session.screenURL, to: broken.screenURL)
+        let protectedURL = broken.directoryURL.appendingPathComponent("\(RecordingBackgroundMusic.baseName).\(UUID().uuidString).wav")
+        try audioTone(at: protectedURL, frequency: 440)
+        let protectedBytes = try Data(contentsOf: protectedURL)
+        let plain = RecordingEditDocument(style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [])
+        try broken.writeEditDocument(plain)
+        let brokenStore = CaptureSessionSnapshots(directory: broken.sessionSnapshotsURL)
+        let corruptEntry = try brokenStore.keep(document: CaptureSessionSnapshots.encode(plain), openedAt: Date()).first!
+        let corruptURL = broken.sessionSnapshotsURL.appendingPathComponent(corruptEntry.id.uuidString).appendingPathComponent("document.json")
+        try Data("unreadable snapshot".utf8).write(to: corruptURL)
+        let cautious = RecordingStudioModel(url: broken.directoryURL)
+        await cautious.load()
+        try check(cautious.isLoaded, "Unreadable snapshot fixture could not load the saved project")
+        cautious.teardown()
+        try check(try Data(contentsOf: protectedURL) == protectedBytes, "Unreadable snapshot did not protect potentially referenced music")
+        print("PASS: saved, draft-only and snapshot-only music retain bytes; orphan music is collected; replacement/source stay; snapshot Revert/Undo/Redo restores music and cuts; unreadable snapshots stop collection")
+    }
+
+    static func backgroundMusicStorage(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-storage.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let input = directory.appendingPathComponent("download.wav")
+        try audioTone(at: input, frequency: 660)
+        let original = try Data(contentsOf: session.screenURL)
+        let model = RecordingStudioModel(url: session.directoryURL)
+        await model.load()
+        try check(model.isLoaded, "Music storage fixture did not load")
+        model.setBackgroundMusic(fileURL: input, displayName: "Test music", credit: "Test credit", startOffset: 2)
+        try FileManager.default.removeItem(at: input) // Picker removes its temp on callback return.
+        for _ in 0..<500 where model.backgroundMusic == nil && model.backgroundMusicError == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let stored = model.currentDocument()
+        try check(stored.backgroundMusic?.startOffset == 2 && stored.backgroundMusic?.credit == "Test credit", "Music import lost metadata")
+        try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Synchronous copy did not survive deleted download")
+        try check(model.saveProject(), "Music project did not save")
+        let storedURL = session.directoryURL.appendingPathComponent(stored.backgroundMusic!.fileName)
+        let musicBytes = try Data(contentsOf: storedURL)
+        model.musicVolume = 0.4
+        model.removeBackgroundMusic()
+        try check(model.currentDocument().backgroundMusic == nil, "Music removal did not clear selection")
+        let restoreGate = Gate()
+        model.musicAnalysisOverride = { _, _ in await restoreGate.wait(); return nil }
+        model.screenPlayer.isMuted = true
+        model.cameraPlayer.isMuted = true
+        model.play()
+        try check(model.isPlaying, "Muted restore fixture did not start its synthetic playback clock")
+        let restoring = Task { await model.discardChanges() }
+        try await until { restoreGate.continuation != nil }
+        let heldSettings = model.backgroundMusicSettings
+        let heldFiles = try FileManager.default.contentsOfDirectory(atPath: session.directoryURL.path)
+        try check(model.isRestoringDocument && model.hasRunningWork && !model.canUndo && !model.canRedo, "Restore did not own its busy state")
+        model.play()
+        model.musicVolume = 0.9
+        model.musicStartOffset = 1
+        model.musicLoops = false
+        model.musicDucks = false
+        model.musicDuckAmount = .aLot
+        model.removeBackgroundMusic()
+        model.setBackgroundMusic(fileURL: storedURL, displayName: "Interleaved", credit: nil, startOffset: 0)
+        await model.discardChanges()
+        try check(!model.isPlaying && model.backgroundMusicSettings == heldSettings && model.isRestoringDocument,
+                  "Play or music edits interleaved with held restoration")
+        try check(try FileManager.default.contentsOfDirectory(atPath: session.directoryURL.path) == heldFiles,
+                  "A blocked import still copied a file")
+        restoreGate.resume()
+        await restoring.value
+        try check(!model.isRestoringDocument && !model.hasRunningWork, "Completed restore kept its owned busy state")
+        model.musicAnalysisOverride = { _, _ in nil }
+        try check(!model.isPlaying, "Restoring music left the previous player running during audio reload")
+        try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Unavailable analysis prevented Studio music restoration")
+        try check(model.backgroundMusic != nil && model.currentDocument().backgroundMusic == stored.backgroundMusic, "Discard did not restore saved music")
+        let bad = directory.appendingPathComponent("invalid-audio.wav")
+        try Data("not audio".utf8).write(to: bad)
+        model.setBackgroundMusic(fileURL: bad, displayName: "Invalid", credit: nil, startOffset: 0)
+        for _ in 0..<500 where model.backgroundMusicError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        try check(model.backgroundMusicError != nil && model.currentDocument().backgroundMusic == stored.backgroundMusic, "Invalid import replaced valid music")
+        model.teardown()
+        try check(try Data(contentsOf: storedURL) == musicBytes && Data(contentsOf: session.screenURL) == original, "Music cleanup touched a referenced file or the source")
+        let data = try CaptureManifest.encoder.encode(stored)
+        try check(try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: data) == stored, "Music document did not round trip")
+        var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacy.removeValue(forKey: "backgroundMusic")
+        let old = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: JSONSerialization.data(withJSONObject: legacy))
+        try check(old.backgroundMusic == nil && old.formatVersion == 6, "Legacy document selected music or changed version")
+        print("PASS: held music restore blocks Play/import/removal/settings until resolution and player rebuild finish")
+        print("PASS: music copies before picker callback returns; metadata/save/discard/legacy round trip; invalid import preserves selection; cleanup preserves source and saved music")
     }
 
     static func voiceIsolation(in directory: URL) async throws {
@@ -548,6 +985,7 @@ struct RecordingExportRegressionChecks {
     }
 
     static func main() async throws {
+        setbuf(stdout, nil)
         guard let root = ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] else {
             throw Failure(description: "Run through check-recording-export-regressions.py")
         }
@@ -559,6 +997,11 @@ struct RecordingExportRegressionChecks {
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
         try await quickLookInstant(in: directory)
+        try await replacementVideoTiming(in: directory)
+        try await backgroundMusicMixing(in: directory)
+        try await backgroundMusicHistory(in: directory)
+        try await backgroundMusicRetention(in: directory)
+        try await backgroundMusicStorage(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
         try await cancelShareRetry(in: directory)

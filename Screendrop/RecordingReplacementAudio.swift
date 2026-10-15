@@ -5,6 +5,12 @@ import Foundation
 /// its track resolved once so Studio can rebuild the player item
 /// synchronously while the user drags a trim handle.
 nonisolated struct RecordingReplacementAudio {
+    enum LoadError: LocalizedError {
+        case unreadable
+        var errorDescription: String? {
+            "The replacement audio file is missing or has no readable audio track. Choose another audio file or reset to recorded audio."
+        }
+    }
     // AVAssetTrack holds its asset weakly; keep the source alive for rebuilds.
     private let asset: AVURLAsset
     let url: URL

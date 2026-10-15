@@ -195,7 +195,7 @@ final class RecordingStudioModel {
     private(set) var sharedVideoError: String?
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportTask != nil || shareTask != nil || isIsolatingVoice || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
+        isRestoringDocument || exportTask != nil || shareTask != nil || backgroundMusicTask != nil || isIsolatingVoice || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -211,9 +211,9 @@ final class RecordingStudioModel {
 
     private func updatePlaybackVolume() {
         guard let item = screenPlayer.currentItem else { return }
-        item.audioMix = RecordingAudioGain.makeMix(
-            tracks: item.asset.tracks(withMediaType: .audio), volume: Double(audioVolume)
-        )
+        item.audioMix = RecordingBackgroundMusicMixer.mix(asset: item.asset, volume: Double(audioVolume),
+            musicTrackID: playbackMusicTrackID, settings: backgroundMusicSettings,
+            speech: microphoneMusicAnalysis?.speech ?? [], timeline: clipTimeline)
     }
 
     /// Format the audio-only export writes.
@@ -230,6 +230,197 @@ final class RecordingStudioModel {
     }
     /// Why the last import was rejected, shown next to the Replace control.
     private(set) var replacementAudioError: String?
+
+    private(set) var backgroundMusic: RecordingReplacementAudio?
+    private(set) var backgroundMusicSettings: RecordingBackgroundMusic?
+    private(set) var backgroundMusicError: String?
+    private var backgroundMusicTask: Task<Void, Never>?
+    private var musicSliderBaseline: RecordingBackgroundMusic?
+    private var playbackMusicTrackID: CMPersistentTrackID?
+    private var microphoneMusicAnalysis: RecordingMusicAnalysis?
+    private(set) var musicWaveform: [Float] = []
+#if DEBUG
+    @ObservationIgnored var musicAnalysisOverride: ((URL, CMPersistentTrackID) async -> RecordingMusicAnalysis?)?
+#endif
+
+    private func availableMusicAnalysis(url: URL, trackID: CMPersistentTrackID) async throws -> RecordingMusicAnalysis? {
+#if DEBUG
+        if let musicAnalysisOverride {
+            let result = await musicAnalysisOverride(url, trackID)
+            try Task.checkCancellation()
+            return result
+        }
+#endif
+        return try await RecordingMusicAnalysisCache.shared.availableAnalysis(url: url, trackID: trackID)
+    }
+    var hasBackgroundMusic: Bool { backgroundMusicSettings != nil }
+
+    var musicStartOffset: CGFloat {
+        get { CGFloat(backgroundMusicSettings?.startOffset ?? 0) }
+        set { changeBackgroundMusic { $0.startOffset = RecordingBackgroundMusic.startOffset(Double(newValue), duration: backgroundMusic?.duration ?? 0) } }
+    }
+    var musicVolume: CGFloat {
+        get { CGFloat(backgroundMusicSettings?.volume ?? 0.25) }
+        set { changeBackgroundMusic { $0.volume = Double(newValue.isFinite ? min(1, max(0, newValue)) : 0.25) } }
+    }
+    var musicLoops: Bool {
+        get { backgroundMusicSettings?.loop ?? true }
+        set { changeBackgroundMusic { $0.loop = newValue } }
+    }
+    var musicDucks: Bool {
+        get { backgroundMusicSettings?.duck ?? true }
+        set { changeBackgroundMusic { $0.duck = newValue } }
+    }
+    var musicDuckAmount: RecordingBackgroundMusic.DuckAmount {
+        get { backgroundMusicSettings?.duckAmount ?? .medium }
+        set { changeBackgroundMusic { $0.duckAmount = newValue } }
+    }
+
+    func setMusicSliderEditing(_ editing: Bool) {
+        if editing {
+            guard !isRestoringDocument, musicSliderBaseline == nil else { return }
+            musicSliderBaseline = backgroundMusicSettings
+        } else if let previous = musicSliderBaseline {
+            musicSliderBaseline = nil
+            if previous != backgroundMusicSettings { registerBackgroundMusicUndo(previous) }
+        }
+    }
+
+    private func registerBackgroundMusicUndo(_ previous: RecordingBackgroundMusic?) {
+        registerUndo("Background Music") { $0.restoreBackgroundMusicSelection(previous) }
+    }
+
+    private func restoreBackgroundMusicSelection(_ settings: RecordingBackgroundMusic?) {
+        guard !isRestoringDocument, settings != backgroundMusicSettings else { return }
+        registerBackgroundMusicUndo(backgroundMusicSettings)
+        let restoreID = beginDocumentRestore()
+        backgroundMusicSettings = settings
+        documentRestoreTask = Task {
+            await resolveBackgroundMusic()
+            if !Task.isCancelled, !isTornDown {
+                do { try rebuildScreenPlayerItem(preserving: currentTime) }
+                catch { backgroundMusicError = "Could not restore music: \(error.localizedDescription)" }
+            }
+            finishDocumentRestore(restoreID)
+            scheduleProjectSave()
+        }
+    }
+
+    private func changeBackgroundMusic(_ change: (inout RecordingBackgroundMusic) -> Void) {
+        guard !isRestoringDocument, var settings = backgroundMusicSettings else { return }
+        change(&settings)
+        guard settings != backgroundMusicSettings else { return }
+        if musicSliderBaseline == nil { registerBackgroundMusicUndo(backgroundMusicSettings) }
+        let rebuild = settings.startOffset != backgroundMusicSettings?.startOffset || settings.loop != backgroundMusicSettings?.loop
+        backgroundMusicSettings = settings
+        if rebuild {
+            let resume = isPlaying
+            pause()
+            applyReplacementAudioToPlayback()
+            if resume { play() }
+        } else {
+            updatePlaybackVolume()
+            scheduleProjectSave()
+        }
+    }
+
+    /// The picker deletes its download on return; copy synchronously before resolving audio.
+    func setBackgroundMusic(fileURL: URL, displayName: String, credit: String?, startOffset: TimeInterval) {
+        guard isLoaded, !isRestoringDocument, let session else { return }
+        setMusicSliderEditing(false)
+        pause()
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
+        backgroundMusicError = nil
+        let destination = session.directoryURL
+            .appendingPathComponent("\(RecordingBackgroundMusic.baseName).\(UUID().uuidString)")
+            .appendingPathExtension(fileURL.pathExtension.isEmpty ? "m4a" : fileURL.pathExtension)
+        do { try FileManager.default.copyItem(at: fileURL, to: destination) }
+        catch {
+            try? FileManager.default.removeItem(at: destination)
+            backgroundMusicError = "Could not import music: \(error.localizedDescription)"
+            return
+        }
+        backgroundMusicTask = Task { [weak self] in
+            var adopted = false
+            defer { if !adopted { try? FileManager.default.removeItem(at: destination) } }
+            let resolved = await RecordingReplacementAudio.load(url: destination, displayName: displayName)
+            guard let self, !self.isTornDown, !Task.isCancelled else { return }
+            guard let resolved else {
+                self.backgroundMusicTask = nil
+                self.backgroundMusicError = "That file has no readable audio track."
+                return
+            }
+            do {
+                let waveform = try await self.availableMusicAnalysis(url: destination, trackID: resolved.track.trackID)?.waveform ?? []
+                let micAnalysis: RecordingMusicAnalysis?
+                if let id = self.microphoneTrackID, self.microphoneMusicAnalysis == nil {
+                    micAnalysis = try await self.availableMusicAnalysis(url: self.screenURL, trackID: id) ?? RecordingMusicAnalysis(levels: [])
+                } else { micAnalysis = self.microphoneMusicAnalysis }
+                try Task.checkCancellation()
+                guard !self.isTornDown else { return }
+                self.musicWaveform = waveform
+                self.microphoneMusicAnalysis = micAnalysis
+            } catch {
+                guard !Task.isCancelled, !self.isTornDown else { return }
+                self.backgroundMusicTask = nil
+                self.backgroundMusicError = "Could not prepare music: \(error.localizedDescription)"
+                return
+            }
+            self.backgroundMusicTask = nil
+            var settings = self.backgroundMusicSettings ?? RecordingBackgroundMusic(fileName: destination.lastPathComponent, displayName: displayName)
+            settings.fileName = destination.lastPathComponent
+            settings.displayName = displayName
+            settings.credit = credit
+            settings.startOffset = RecordingBackgroundMusic.startOffset(startOffset, duration: resolved.duration)
+            self.registerBackgroundMusicUndo(self.backgroundMusicSettings)
+            self.backgroundMusic = resolved
+            self.backgroundMusicSettings = settings
+            adopted = true
+            self.applyReplacementAudioToPlayback()
+        }
+    }
+
+    func removeBackgroundMusic() {
+        guard !isRestoringDocument else { return }
+        setMusicSliderEditing(false)
+        if backgroundMusicSettings != nil { registerBackgroundMusicUndo(backgroundMusicSettings) }
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
+        pause()
+        backgroundMusic = nil
+        backgroundMusicSettings = nil
+        musicWaveform = []
+        backgroundMusicError = nil
+        applyReplacementAudioToPlayback()
+    }
+
+    private func resolveBackgroundMusic() async {
+        backgroundMusic = nil
+        backgroundMusicError = nil
+        guard let settings = backgroundMusicSettings, let session else { return }
+        let resolved = await RecordingReplacementAudio.load(url: session.directoryURL.appendingPathComponent(settings.fileName), displayName: settings.displayName)
+        guard !Task.isCancelled, !isTornDown, backgroundMusicSettings == settings else { return }
+        guard let resolved else {
+            backgroundMusicError = "The background music file is missing or unreadable. Add it again or remove it."
+            return
+        }
+        do {
+            let analysis = try await availableMusicAnalysis(url: resolved.url, trackID: resolved.track.trackID)
+            if let id = microphoneTrackID, microphoneMusicAnalysis == nil {
+                microphoneMusicAnalysis = try await availableMusicAnalysis(url: screenURL, trackID: id) ?? RecordingMusicAnalysis(levels: [])
+            }
+            guard !Task.isCancelled, !isTornDown, backgroundMusicSettings == settings else { return }
+            var normalized = settings
+            normalized.startOffset = RecordingBackgroundMusic.startOffset(settings.startOffset, duration: resolved.duration)
+            backgroundMusicSettings = normalized
+            musicWaveform = analysis?.waveform ?? []
+            backgroundMusic = resolved
+        } catch {
+            guard !Task.isCancelled, !isTornDown else { return }
+            backgroundMusicError = "Could not prepare music: \(error.localizedDescription)"
+        }
+    }
 
     private var voiceIsolationEnabled = false
     private var isolatedMicrophone: RecordingReplacementAudio?
@@ -350,6 +541,23 @@ final class RecordingStudioModel {
     /// Set while a stored document is being applied to the model, so the
     /// resulting property writes don't register as user edits.
     private var isApplyingDocument = false
+    private var documentRestoreID: UUID?
+    private var documentRestoreTask: Task<Void, Never>?
+    var isRestoringDocument: Bool { documentRestoreID != nil }
+
+    private func beginDocumentRestore() -> UUID {
+        let id = UUID()
+        documentRestoreID = id
+        musicSliderBaseline = nil
+        pause()
+        return id
+    }
+
+    private func finishDocumentRestore(_ id: UUID) {
+        guard documentRestoreID == id else { return }
+        documentRestoreID = nil
+        documentRestoreTask = nil
+    }
     /// Whether the editor holds edits that have not been committed to
     /// `edit.json`. Stored rather than derived: the title bar reads it on
     /// every body evaluation, and rebuilding the whole document to compare
@@ -564,6 +772,7 @@ final class RecordingStudioModel {
             }
         }
 
+        await resolveBackgroundMusic()
         await resolveVoiceIsolation()
         guard !isTornDown, !Task.isCancelled else { return }
         do {
@@ -623,8 +832,12 @@ final class RecordingStudioModel {
         isApplyingDocument = true
         defer { isApplyingDocument = false }
 
+        pause()
         cancelVoiceIsolation()
         voiceIsolationEnabled = document.isolateVoice
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
+        backgroundMusicSettings = document.backgroundMusic
         voiceIsolationError = nil
         replacementAudioReference = document.replacementAudioFileName.map {
             ($0, document.replacementAudioDisplayName)
@@ -669,6 +882,9 @@ final class RecordingStudioModel {
     func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
+        documentRestoreTask?.cancel()
+        documentRestoreTask = nil
+        documentRestoreID = nil
         // Persist only a fully loaded document, before releasing its data.
         if isLoaded { writeDraftNow() }
         isLoaded = false
@@ -679,6 +895,8 @@ final class RecordingStudioModel {
         redactionFailureObserver = nil
         redactionStatusObserver = nil
         audioExportTask?.cancel()
+        backgroundMusicTask?.cancel()
+        backgroundMusicTask = nil
         replacementAudioTask?.cancel()
         cancelVoiceIsolation()
         cancelShare()
@@ -708,7 +926,12 @@ final class RecordingStudioModel {
         screenAsset = nil
         screenVideoTrack = nil
         isolatedMicrophone = nil
+        backgroundMusic = nil
+        backgroundMusicSettings = nil
         microphoneTrackID = nil
+        microphoneMusicAnalysis = nil
+        musicWaveform = []
+        playbackMusicTrackID = nil
         replacementAudio = nil
         replacementAudioReference = nil
         editUndoManager.removeAllActions()
@@ -762,7 +985,7 @@ final class RecordingStudioModel {
     }
 
     func play() {
-        guard !isPlaying, !isEditingSourceRegion, !isPreparingRedactionPreview, redactionPreviewError == nil else { return }
+        guard !isRestoringDocument, !isPlaying, !isEditingSourceRegion, !isPreparingRedactionPreview, redactionPreviewError == nil else { return }
         if hoverPreviewTime != nil {
             hoverPreviewTime = nil
         }
@@ -871,12 +1094,12 @@ final class RecordingStudioModel {
 
     var canUndo: Bool {
         _ = undoRevision
-        return editUndoManager.canUndo
+        return !isRestoringDocument && backgroundMusicTask == nil && (editUndoManager.canUndo || (musicSliderBaseline != nil && musicSliderBaseline != backgroundMusicSettings))
     }
 
     var canRedo: Bool {
         _ = undoRevision
-        return editUndoManager.canRedo
+        return !isRestoringDocument && backgroundMusicTask == nil && editUndoManager.canRedo
     }
 
     var selectedClip: RecordingClipSegment? {
@@ -905,6 +1128,8 @@ final class RecordingStudioModel {
     }
 
     func undo() {
+        guard !isRestoringDocument, backgroundMusicTask == nil else { return }
+        setMusicSliderEditing(false)
         guard editUndoManager.canUndo else { return }
         pause()
         editUndoManager.undo()
@@ -912,7 +1137,7 @@ final class RecordingStudioModel {
     }
 
     func redo() {
-        guard editUndoManager.canRedo else { return }
+        guard !isRestoringDocument, backgroundMusicTask == nil, editUndoManager.canRedo else { return }
         pause()
         editUndoManager.redo()
         undoRevision &+= 1
@@ -1033,7 +1258,7 @@ final class RecordingStudioModel {
 
     private func rebuildScreenPlayerItem(preserving editorTime: TimeInterval) throws {
         guard let screenAsset else { return }
-        let playbackAsset: AVAsset
+        var playbackAsset: AVAsset
         if let replacementAudio, let screenVideoTrack {
             playbackAsset = try RecordingCompositionBuilder.makeAsset(
                 videoTrack: screenVideoTrack,
@@ -1049,6 +1274,14 @@ final class RecordingStudioModel {
                 microphoneTrackID: microphoneTrackID,
                 isolatedMicrophone: voiceIsolationEnabled ? isolatedMicrophone?.track : nil
             )
+        }
+
+        playbackMusicTrackID = nil
+        if let backgroundMusic, let settings = backgroundMusicSettings {
+            let combined = try RecordingBackgroundMusicMixer.adding(to: playbackAsset, music: backgroundMusic,
+                settings: settings, timeline: clipTimeline)
+            playbackAsset = combined.asset
+            playbackMusicTrackID = combined.trackID
         }
 
         redactionPreviewTask?.cancel()
@@ -1455,7 +1688,7 @@ final class RecordingStudioModel {
     }
 
     private func scheduleProjectSave() {
-        guard isLoaded, !isApplyingDocument else { return }
+        guard isLoaded, !isApplyingDocument, !isRestoringDocument else { return }
         hasUnsavedChanges = true
         hasEditsSinceOpening = true
         // The uploaded link no longer matches; bring Upload back.
@@ -1516,6 +1749,7 @@ final class RecordingStudioModel {
             audioExportFormat: audioExportFormat,
             audioVolume: Double(audioVolume),
             isolateVoice: voiceIsolationEnabled && isolatedMicrophone != nil,
+            backgroundMusic: backgroundMusicSettings,
             redactions: redactions
         )
     }
@@ -1524,7 +1758,7 @@ final class RecordingStudioModel {
     /// committed `edit.json`, so a crash or a failed save costs nothing.
     @discardableResult
     private func writeDraftNow() -> Bool {
-        guard isLoaded else { return false }
+        guard isLoaded, !isRestoringDocument else { return false }
         let document = currentDocument()
         guard let session else {
             hasUnsavedChanges = document != lastSavedDocument
@@ -1581,7 +1815,7 @@ final class RecordingStudioModel {
     /// working copy to `edit.json` and clears the draft.
     @discardableResult
     func saveProject(reportingFailure: Bool = true) -> Bool {
-        guard isLoaded, let session else { return false }
+        guard isLoaded, !isRestoringDocument, let session else { return false }
         projectSaveTask?.cancel()
         autosaveTask?.cancel()
         let document = currentDocument()
@@ -1611,14 +1845,16 @@ final class RecordingStudioModel {
     /// Throws away everything since the last save and returns the editor to
     /// that state. Only offered for projects that have actually been saved.
     func discardChanges() async {
-        guard isLoaded, let session else { return }
+        guard isLoaded, !isRestoringDocument, let session else { return }
         projectSaveTask?.cancel()
         replacementAudioTask?.cancel()
         replacementAudioTask = nil
         session.removeDraftDocument()
         guard let document = lastSavedDocument else { return }
+        let restoreID = beginDocumentRestore()
         applyDocumentSettings(document)
         await applyDocumentTimeline(document)
+        finishDocumentRestore(restoreID)
         // Rebuilding the timeline touches published state; let the normal
         // draft path settle the dirty flag rather than assuming it landed.
         flushDraft()
@@ -1660,10 +1896,9 @@ final class RecordingStudioModel {
             replacementAudio = nil
         }
 
+        await resolveBackgroundMusic()
         await resolveVoiceIsolation()
         guard !isTornDown, !Task.isCancelled else { return }
-        isApplyingDocument = false
-
         try? rebuildScreenPlayerItem(preserving: currentTime)
         loadTimelineThumbnails()
         loadStylePoster()
@@ -1746,13 +1981,13 @@ final class RecordingStudioModel {
         registerUndo(actionName) { target in
             target.revert(to: previous, stylePresetID: previousStylePresetID, actionName: actionName)
         }
-        pause()
+        let restoreID = beginDocumentRestore()
         selectedCueID = nil
         applyDocumentSettings(document)
         appliedStylePresetID = stylePresetID
-        scheduleProjectSave()
-        Task {
+        documentRestoreTask = Task {
             await applyDocumentTimeline(document, keepingUndo: true)
+            finishDocumentRestore(restoreID)
             scheduleProjectSave()
         }
     }
@@ -2326,6 +2561,11 @@ final class RecordingStudioModel {
         return url
     }
 
+    private func backgroundMusicConfiguration(includeAudio: Bool) -> RecordingBackgroundMusicMixer.Configuration? {
+        guard includeAudio, let settings = backgroundMusicSettings, let session else { return nil }
+        return .init(url: session.directoryURL.appendingPathComponent(settings.fileName), settings: settings)
+    }
+
     private func makeExportConfiguration() throws -> RecordingStudioExporter.Configuration {
         let audioReplacementURL = try replacementAudioURLForExport(includeAudio: !exportSettings.removeAudio)
         let reframe = makeReframeTrack()
@@ -2357,6 +2597,7 @@ final class RecordingStudioModel {
             audioVolume: Double(audioVolume),
             isolatedMicrophoneURL: voiceIsolationEnabled && !hasReplacementAudio ? isolatedMicrophone?.url : nil,
             microphoneTrackID: microphoneTrackID,
+            backgroundMusic: backgroundMusicConfiguration(includeAudio: !exportSettings.removeAudio && !exportSettings.effectiveExportsGIF),
             reframe: reframe,
             fitContentAspect: fitContentAspect,
             usesUniformPadding: exportAspect == .original,
@@ -2644,7 +2885,7 @@ final class RecordingStudioModel {
     /// True once there is a soundtrack to export or swap - the recording's
     /// own audio, or one already imported over it.
     var hasAudio: Bool {
-        hasRecordedAudio || hasReplacementAudio
+        hasRecordedAudio || hasReplacementAudio || hasBackgroundMusic
     }
 
     /// How far the imported soundtrack falls short of (or overruns) the
@@ -2685,7 +2926,8 @@ final class RecordingStudioModel {
             format: audioExportFormat,
             volume: Double(audioVolume),
             isolatedMicrophoneURL: voiceIsolationEnabled && !hasReplacementAudio ? isolatedMicrophone?.url : nil,
-            microphoneTrackID: microphoneTrackID
+            microphoneTrackID: microphoneTrackID,
+            backgroundMusic: backgroundMusicConfiguration(includeAudio: true)
         )
         let suggestedFileName = audioExportSuggestedFileName
         let dockProgressID = DockExportProgressCoordinator.shared.start()
@@ -2826,6 +3068,7 @@ final class RecordingStudioModel {
                 try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: store.read($0).document)
             }
         } catch { return } // An unreadable snapshot may still need an imported soundtrack.
+        let referencedMusic = Set([savedDocument?.backgroundMusic?.fileName, draftDocument?.backgroundMusic?.fileName, lastSavedDocument?.backgroundMusic?.fileName, backgroundMusicSettings?.fileName].compactMap { $0 } + keptDocuments.compactMap { $0.backgroundMusic?.fileName })
         let referencedNames = Set([
             savedDocument?.replacementAudioFileName,
             draftDocument?.replacementAudioFileName,
@@ -2836,8 +3079,8 @@ final class RecordingStudioModel {
             atPath: session.directoryURL.path
         )) ?? []
         for name in names
-        where name.hasPrefix("\(RecordingSession.replacementAudioBaseName).")
-            && !referencedNames.contains(name) {
+        where (name.hasPrefix("\(RecordingSession.replacementAudioBaseName).") && !referencedNames.contains(name))
+            || (name.hasPrefix("\(RecordingBackgroundMusic.baseName).") && !referencedMusic.contains(name)) {
             try? FileManager.default.removeItem(
                 at: session.directoryURL.appendingPathComponent(name)
             )

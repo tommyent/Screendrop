@@ -2100,7 +2100,7 @@ private struct StudioTimelineEditor: View {
                 .keyboardShortcut(.space, modifiers: [])
                 .help(model.isPlaying ? "Pause (Space)" : "Play (Space)")
                 .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
-                .disabled(!model.isLoaded)
+                .disabled(!model.isLoaded || model.isRestoringDocument)
 
                 timelineButton("Skip to End", systemImage: "forward.end.fill") {
                     model.pause()
@@ -3704,7 +3704,7 @@ private struct StudioInspector: View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
             // A silent recording has nothing to send out, but it can still
             // be given a soundtrack - so only the export half is withheld.
-            if model.hasAudio {
+            if model.hasRecordedAudio || model.hasReplacementAudio {
                 InspectorSlider("Volume", value: $model.audioVolume, range: 0...2, format: .percent())
             }
 
@@ -3749,7 +3749,10 @@ private struct StudioInspector: View {
             if let message = model.replacementAudioError {
                 InspectorHint(message, tint: .orange)
             }
+
+            StudioBackgroundMusicControls(model: model)
         }
+        .disabled(model.isRestoringDocument)
     }
 
     /// One button carrying the whole export state, so progress and results
@@ -3835,9 +3838,9 @@ private struct StudioInspector: View {
             Spacer(minLength: 4)
 
             if let drift = model.replacementAudioDrift {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: "info.circle")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.secondary)
                     .help(
                         drift > 0
                             ? "Runs \(Self.spanText(drift)) longer than the cut - the tail is dropped"

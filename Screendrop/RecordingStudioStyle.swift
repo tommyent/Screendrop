@@ -64,6 +64,7 @@ struct RecordingEditDocument: Codable, Equatable {
     var audioExportFormat: String?
     var audioVolume: Double?
     var isolateVoice = false
+    var backgroundMusic: RecordingBackgroundMusic?
     var redactions: [RecordingRedaction] = []
 
     private enum CodingKeys: String, CodingKey {
@@ -92,6 +93,7 @@ struct RecordingEditDocument: Codable, Equatable {
         case audioExportFormat
         case audioVolume
         case isolateVoice
+        case backgroundMusic
         case redactions
     }
 
@@ -116,6 +118,7 @@ struct RecordingEditDocument: Codable, Equatable {
         audioExportFormat: RecordingAudioFormat? = nil,
         audioVolume: Double? = nil,
         isolateVoice: Bool = false,
+        backgroundMusic: RecordingBackgroundMusic? = nil,
         redactions: [RecordingRedaction] = []
     ) {
         self.style = StoredRecordingStudioStyle(style)
@@ -145,6 +148,7 @@ struct RecordingEditDocument: Codable, Equatable {
         self.audioExportFormat = audioExportFormat.map(\.rawValue)
         self.audioVolume = audioVolume
         self.isolateVoice = isolateVoice
+        self.backgroundMusic = backgroundMusic
         self.redactions = redactions
     }
 
@@ -238,6 +242,8 @@ struct RecordingEditDocument: Codable, Equatable {
         audioExportFormat = try container.decodeIfPresent(String.self, forKey: .audioExportFormat)
         audioVolume = try container.decodeIfPresent(Double.self, forKey: .audioVolume)
         isolateVoice = try container.decodeIfPresent(Bool.self, forKey: .isolateVoice) ?? false
+        backgroundMusic = try container.decodeIfPresent(RecordingBackgroundMusic.self, forKey: .backgroundMusic)
+        try backgroundMusic?.validate()
         redactions = try container.decodeIfPresent([RecordingRedaction].self, forKey: .redactions) ?? []
         for region in redactions { try region.validate() }
     }

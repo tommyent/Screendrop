@@ -84,6 +84,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         var volume: Double = 1
         var isolatedMicrophoneURL: URL? = nil
         var microphoneTrackID: CMPersistentTrackID? = nil
+        var backgroundMusic: RecordingBackgroundMusicMixer.Configuration? = nil
     }
 
     enum ExportError: LocalizedError {
@@ -118,6 +119,11 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         if configuration.isolatedMicrophoneURL != nil, isolatedMicrophone == nil {
             throw RecordingVoiceIsolation.IsolationError.invalidAudio
         }
+        if let replacementURL = configuration.replacementURL {
+            guard await RecordingReplacementAudio.load(url: replacementURL, displayName: replacementURL.lastPathComponent) != nil else {
+                throw RecordingReplacementAudio.LoadError.unreadable
+            }
+        }
         let audioAsset: AVAsset = if let replacementURL = configuration.replacementURL {
             AVURLAsset(url: replacementURL)
         } else {
@@ -130,12 +136,15 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
             )
         }
 
-        let tracks = try await audioAsset.loadTracks(withMediaType: .audio)
+        let prepared = try await RecordingBackgroundMusicMixer.prepare(asset: audioAsset, music: configuration.backgroundMusic,
+            sourceURL: configuration.screenURL, microphoneTrackID: configuration.microphoneTrackID,
+            timeline: timeline, volume: configuration.volume)
+        let tracks = try await prepared.asset.loadTracks(withMediaType: .audio)
         guard !tracks.isEmpty else {
             throw ExportError.noAudioTrack
         }
 
-        let reader = try AVAssetReader(asset: audioAsset)
+        let reader = try AVAssetReader(asset: prepared.asset)
         // Clamps a replacement that overruns the cut; a shorter one simply
         // ends early rather than being stretched.
         reader.timeRange = CMTimeRange(
@@ -143,7 +152,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
             duration: CMTime(seconds: duration, preferredTimescale: 600)
         )
         let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: nil)
-        output.audioMix = RecordingAudioGain.makeMix(tracks: tracks, volume: configuration.volume)
+        output.audioMix = prepared.mix
         output.alwaysCopiesSampleData = false
         reader.add(output)
 
@@ -167,6 +176,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         do {
             while let sampleBuffer = output.copyNextSampleBuffer() {
                 try Task.checkCancellation()
+                guard let sampleBuffer = try Self.clipped(sampleBuffer, endingAt: reader.timeRange.end) else { continue }
                 while !input.isReadyForMoreMediaData {
                     try Task.checkCancellation()
                     if writer.status == .failed { throw ExportError.writerFailed(writer.error) }
@@ -191,6 +201,7 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         }
 
         input.markAsFinished()
+        writer.endSession(atSourceTime: reader.timeRange.end)
         await withCheckedContinuation { continuation in
             writer.finishWriting {
                 continuation.resume()
@@ -202,6 +213,25 @@ nonisolated final class RecordingAudioExporter: @unchecked Sendable {
         }
         progress(1)
         return outputURL
+    }
+
+    /// Retimed mix readers can return their processing tail beyond the requested time range.
+    static func clipped(_ buffer: CMSampleBuffer, endingAt end: CMTime) throws -> CMSampleBuffer? {
+        let remaining = (end - CMSampleBufferGetPresentationTimeStamp(buffer)).seconds
+        guard remaining.isFinite else { throw CocoaError(.fileReadCorruptFile) }
+        guard remaining > 0 else { return nil }
+        guard let description = CMSampleBufferGetFormatDescription(buffer),
+              let format = CMAudioFormatDescriptionGetStreamBasicDescription(description),
+              format.pointee.mSampleRate > 0 else { throw CocoaError(.fileReadCorruptFile) }
+        let count = CMSampleBufferGetNumSamples(buffer)
+        let keep = min(count, Int((remaining * format.pointee.mSampleRate).rounded(.down)))
+        guard keep > 0 else { return nil }
+        if keep == count { return buffer }
+        var result: CMSampleBuffer?
+        guard CMSampleBufferCopySampleBufferForRange(allocator: kCFAllocatorDefault, sampleBuffer: buffer,
+            sampleRange: CFRange(location: 0, length: keep), sampleBufferOut: &result) == noErr,
+              let result else { throw CocoaError(.fileReadCorruptFile) }
+        return result
     }
 
     private static func temporaryOutputURL(pathExtension: String) -> URL {
