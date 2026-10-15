@@ -18,6 +18,33 @@ nonisolated struct RecordingNarrativeInput: Equatable, Sendable {
     var chapters: [Chapter]
 }
 
+nonisolated struct RecordingNarrativeInputCache {
+    struct Source: Equatable {
+        var cues: [RecordingSubtitleCue]
+        var words: [RecordingTranscriptWord]
+        var timeline: RecordingClipTimeline
+        var chapters: [RecordingChapter]
+    }
+
+    private var cachedSource: Source?
+    private var cachedInput = RecordingNarrativeInput(text: "", chapters: [])
+    private(set) var visibleChapters: [RecordingChapter] = []
+
+    mutating func input(for source: Source) -> RecordingNarrativeInput {
+        guard cachedSource != source else { return cachedInput }
+        let cues = RecordingChapterPlanner.survivingCues(source.cues, words: source.words, through: source.timeline)
+        visibleChapters = RecordingChapterPlanner.mapped(source.chapters, through: source.timeline, cues: source.cues, words: source.words)
+        let chapters = visibleChapters.enumerated().map { index, chapter in
+            let end = index + 1 < visibleChapters.count ? visibleChapters[index + 1].start : source.timeline.duration
+            return RecordingNarrativeInput.Chapter(id: chapter.id,
+                text: RecordingChapterPlanner.chapterText(cues, through: source.timeline, start: chapter.start, end: end))
+        }
+        cachedInput = RecordingNarrativeInput(text: cues.map(\.text).joined(separator: " "), chapters: chapters)
+        cachedSource = source
+        return cachedInput
+    }
+}
+
 nonisolated struct RecordingNarrativeSuggestion: Sendable {
     var title: String
     var summary: String

@@ -52,3 +52,5 @@ python3 scripts/recording-narrative-stub.py
 # In the other terminal, use the printed loopback URL:
 /private/tmp/screendrop-team/f4-narrative-check http://localhost:<printed-port>/v1
 ```
+
+F4 review regressions cover model clamping and field-specific replies, preserved HTTP/timeout/JSON fallback reasons, the half-second chapter end margin, automatic names after cuts in both Studio mapping and share data, manual/legacy names, and cache invalidation for cue/word/clip/chapter edits. Native chapter-field Return/focus-loss and single-step Undo remain in the coordinator's approved live round. The standalone client also accepts an optional model name after its URL for one real local-server check; it uses synthetic narration only.

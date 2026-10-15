@@ -1150,10 +1150,6 @@ private struct StudioSubtitleBarView: View {
     }
 }
 
-/// One editable subtitle line: a timestamp plus the cue text as a free-form
-/// field. Hovering a row skims the preview to that cue, clicking or editing
-/// commits the playhead there (paused), and the row under the playhead is
-/// highlighted so the list follows the video.
 private struct StudioChapterNameField: View {
     let model: RecordingStudioModel
     let chapter: RecordingChapter
@@ -1180,6 +1176,10 @@ private struct StudioChapterNameField: View {
     }
 }
 
+/// One editable subtitle line: a timestamp plus the cue text as a free-form
+/// field. Hovering a row skims the preview to that cue, clicking or editing
+/// commits the playhead there (paused), and the row under the playhead is
+/// highlighted so the list follows the video.
 private struct StudioSubtitleRow: View {
     @Bindable var model: RecordingStudioModel
     let cue: RecordingSubtitleCue
@@ -3394,11 +3394,6 @@ private struct StudioInspector: View {
 
     private var narrativeControls: some View {
         VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            if !model.openingSentenceTitle.isEmpty {
-                InspectorActionButton("Use Opening Sentence as Title", systemImage: "textformat") {
-                    model.rename(to: model.openingSentenceTitle)
-                }
-            }
             if model.isGeneratingNarrative {
                 ProgressView().controlSize(.small)
                 InspectorActionButton("Cancel Generation", systemImage: "xmark") {
@@ -3408,7 +3403,7 @@ private struct StudioInspector: View {
                 InspectorActionButton("Generate Names & Summary", systemImage: "sparkles") {
                     model.generateNarrativeSuggestions()
                 }
-                .disabled(model.openingSentenceTitle.isEmpty)
+                .disabled(!model.canGenerateNarrativeSuggestions)
             }
             if let status = model.narrativeStatus { InspectorHint(status) }
             if !model.narrativeSuggestionsAreCurrent {

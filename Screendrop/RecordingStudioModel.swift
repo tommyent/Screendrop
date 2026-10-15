@@ -153,6 +153,7 @@ final class RecordingStudioModel {
     private var narrativeDocument: RecordingEditDocument?
     private var narrativeChapters: [RecordingChapter] = []
     private var narrativeTask: Task<Void, Never>?
+    @ObservationIgnored private var narrativeInputCache = RecordingNarrativeInputCache()
 
     private(set) var subtitleCues: [RecordingSubtitleCue] = []
     private(set) var subtitleTimeline = SubtitleTimeline.empty
@@ -1701,7 +1702,8 @@ final class RecordingStudioModel {
     // MARK: - Chapters
 
     var visibleChapters: [RecordingChapter] {
-        RecordingChapterPlanner.mapped(chapters, through: clipTimeline, cues: subtitleCues, words: transcriptWords)
+        _ = narrativeInput
+        return narrativeInputCache.visibleChapters
     }
 
     func addChapterAtPlayhead() {
@@ -1753,25 +1755,19 @@ final class RecordingStudioModel {
     // MARK: - Narration suggestions
 
     private var narrativeInput: RecordingNarrativeInput {
-        let cues = RecordingChapterPlanner.survivingCues(subtitleCues, words: transcriptWords, through: clipTimeline)
-        let mapped = visibleChapters
-        let chapterText = mapped.enumerated().map { index, chapter in
-            let end = index + 1 < mapped.count ? mapped[index + 1].start : duration
-            let text = RecordingChapterPlanner.chapterText(cues, through: clipTimeline, start: chapter.start, end: end)
-            return RecordingNarrativeInput.Chapter(id: chapter.id, text: text)
-        }
-        return RecordingNarrativeInput(text: cues.map(\.text).joined(separator: " "), chapters: chapterText)
+        narrativeInputCache.input(for: .init(cues: subtitleCues, words: transcriptWords, timeline: clipTimeline, chapters: chapters))
     }
 
-    var openingSentenceTitle: String { RecordingChapterPlanner.title(from: narrativeInput.text) }
+    var canGenerateNarrativeSuggestions: Bool { !narrativeInput.text.isEmpty }
 
     var narrativeSuggestionsAreCurrent: Bool {
         narrativeDocument == nil || (narrativeDocument == currentDocument() && narrativeChapters == chapters)
     }
 
     func generateNarrativeSuggestions() {
-        guard !isGeneratingNarrative, isLoaded, !narrativeInput.text.isEmpty else { return }
+        guard !isGeneratingNarrative, isLoaded else { return }
         let input = narrativeInput
+        guard !input.text.isEmpty else { return }
         let document = currentDocument()
         let chapterSnapshot = chapters
         let url = UserDefaults.standard.string(forKey: RecordingNarrativeGenerator.serverURLKey) ?? ""

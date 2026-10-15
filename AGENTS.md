@@ -79,3 +79,7 @@ Make atomic commits. Each commit should represent exactly one logical change (e.
 - Screen recording permission (`NSScreenCaptureUsageDescription` in Info.plist) is required.
 - Hardened runtime is enabled.
 - No App Sandbox - do not add sandbox entitlements.
+
+## Lessons
+
+- Cache Studio's narration-derived input by cues, word timings, clips and chapters. Keep the cache out of observation, read its source values for invalidation, and test that transcript, cut and chapter edits refresh it.

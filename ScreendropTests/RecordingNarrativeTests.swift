@@ -89,6 +89,28 @@ struct RecordingNarrativeTests {
         }
     }
 
+    @Test func cachedInputFollowsCueWordClipAndChapterEdits() {
+        var cache = RecordingNarrativeInputCache()
+        var source = RecordingNarrativeInputCache.Source(cues: [.init(start: 1, end: 2, text: "Original narration")], words: [], timeline: .full(sourceDuration: 10), chapters: [RecordingChapter(title: "Original", start: 0, autoTitle: true)])
+        let original = cache.input(for: source)
+        #expect(cache.input(for: source) == original)
+        source.cues[0].text = "Corrected narration"
+        #expect(cache.input(for: source).text == "Corrected narration")
+        #expect(cache.visibleChapters.first?.title == "Corrected narration")
+        source.timeline = .init(segments: [.init(sourceStart: 0, sourceEnd: 1), .init(sourceStart: 2, sourceEnd: 10)])
+        #expect(cache.input(for: source).text.isEmpty)
+        let manual = RecordingChapter(title: "Manual", start: 4)
+        source.chapters = [manual]
+        #expect(cache.input(for: source).chapters.map(\.id) == [manual.id])
+        #expect(cache.visibleChapters.first?.title == "Manual")
+
+        source.cues = [.init(start: 0, end: 3, text: "public")]
+        source.timeline = .init(segments: [.init(sourceStart: 1.5, sourceEnd: 5)])
+        #expect(cache.input(for: source).text.isEmpty)
+        source.words = [.init(text: "Private ", start: 0, end: 1), .init(text: "public", start: 2, end: 3)]
+        #expect(cache.input(for: source).text == "public")
+    }
+
     @Test func longNarrationUsesEveryChunkBeforeSummaryReduction() async throws {
         let text = String(repeating: "A narration sentence. ", count: 1000)
         let requests = NarrativeRequests()
