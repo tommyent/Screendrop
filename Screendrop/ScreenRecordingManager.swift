@@ -48,9 +48,10 @@ private enum ScreenRecordingFinishAction: Equatable {
     case terminate
 }
 
-/// What gets captured besides screen pixels, resolved from preferences at start.
+/// Capture choices resolved from preferences at start.
 nonisolated struct ScreenRecordingCaptureOptions: Sendable {
     var capturesSystemAudio = false
+    var cleanDesktop = true
     var microphoneDeviceID: String?
     var cameraDeviceID: String?
 
@@ -58,6 +59,7 @@ nonisolated struct ScreenRecordingCaptureOptions: Sendable {
     static func fromPreferences() -> ScreenRecordingCaptureOptions {
         var options = ScreenRecordingCaptureOptions()
         options.capturesSystemAudio = ScreendropPreferences.recordingSystemAudio
+        options.cleanDesktop = ScreendropPreferences.recordingCleanDesktop
         let micID = ScreendropPreferences.recordingMicrophoneDeviceID
         options.microphoneDeviceID = micID.isEmpty ? nil : micID
         let cameraID = ScreendropPreferences.recordingCameraDeviceID
@@ -163,7 +165,9 @@ final class ScreenRecordingManager {
                 // Own the session as soon as it exists. Any failure after this
                 // point must be able to remove or recover the directory.
                 self.session = session
-                let content = try await ScreenRecordingCapture.availableContent()
+                let content = try await ScreenRecordingCapture.availableContent(
+                    onScreenWindowsOnly: !options.cleanDesktop
+                )
                 guard try isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)
 
@@ -733,11 +737,12 @@ final class ScreenRecordingManager {
         switch source.kind {
         case .fullscreen(let display):
             let freshDisplay = content.displays.first(where: { $0.displayID == display.displayID }) ?? display
-            filter = ScreenRecordingCapture.displayFilter(
-                display: freshDisplay,
+            let plan = RecordingDesktopFilter(
                 content: content,
-                includesAppWindows: includesAppWindows
+                includesAppWindows: includesAppWindows,
+                cleanDesktop: options.cleanDesktop
             )
+            filter = plan.makeFilter(for: freshDisplay)
             sourceSize = CGSize(width: freshDisplay.width, height: freshDisplay.height)
             // Input mapping rects are always Quartz top-left, the space
             // SCDisplay.frame, SCWindow.frame, and CGEvent locations already
@@ -759,11 +764,12 @@ final class ScreenRecordingManager {
             tracksDynamicGeometry = true
         case .area(let display, let rect):
             let freshDisplay = content.displays.first(where: { $0.displayID == display.displayID }) ?? display
-            filter = ScreenRecordingCapture.displayFilter(
-                display: freshDisplay,
+            let plan = RecordingDesktopFilter(
                 content: content,
-                includesAppWindows: includesAppWindows
+                includesAppWindows: includesAppWindows,
+                cleanDesktop: options.cleanDesktop
             )
+            filter = plan.makeFilter(for: freshDisplay)
             let mappedSourceRect = Self.sourceRect(
                 forAppKitSelectionRect: rect,
                 screenFrame: ActiveDisplayResolver.screen(for: freshDisplay.displayID)?.frame,
@@ -890,8 +896,8 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
     var onAudioSample: ((CMSampleBuffer, ScreenRecordingAudioKind) -> Void)?
     var onError: ((Error) -> Void)?
 
-    static func availableContent() async throws -> SCShareableContent {
-        try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    static func availableContent(onScreenWindowsOnly: Bool = true) async throws -> SCShareableContent {
+        try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: onScreenWindowsOnly)
     }
 
     func startCapture(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws {
@@ -929,17 +935,8 @@ nonisolated final class ScreenRecordingCapture: NSObject, SCStreamOutput, SCStre
         content: SCShareableContent,
         includesAppWindows: Bool
     ) -> SCContentFilter {
-        let excludedApps = includesAppWindows
-            ? []
-            : content.applications.filter { application in
-                application.bundleIdentifier == Bundle.main.bundleIdentifier
-            }
-
-        return SCContentFilter(
-            display: display,
-            excludingApplications: excludedApps,
-            exceptingWindows: []
-        )
+        RecordingDesktopFilter(content: content, includesAppWindows: includesAppWindows, cleanDesktop: false)
+            .makeFilter(for: display)
     }
 
     static func buildConfiguration(

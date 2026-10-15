@@ -106,6 +106,7 @@ enum BarTooltipID: String {
     case systemAudio
     case teleprompter
     case timer
+    case cleanDesktop
     case close
 
     case pauseResume
