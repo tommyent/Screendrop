@@ -188,9 +188,11 @@ final class RecordingStudioModel {
     var exportState: RecordingStudioExportState = .idle
     var audioExportState: RecordingStudioExportState = .idle
     var shareState: RecordingStudioShareState = .idle
+    private(set) var isDeletingSharedLink = false
+    private(set) var sharedVideoError: String?
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
+        exportTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -2672,19 +2674,60 @@ final class RecordingStudioModel {
         CloudUploader.shared.isConfigured
     }
 
+    private var sharedHistoryItem: ScreenshotHistoryItem? {
+        guard let id = historyItemID(for: session) else { return nil }
+        return ScreenshotHistoryStore.shared.items.first { $0.id == id }
+    }
+
+    var needsSharedVideoReplacement: Bool {
+        sharedHistoryItem?.cloudURL != nil
+            && RecordingRedaction.needsSharedReplacement(redactions, shared: sharedHistoryItem?.cloudRedactions)
+    }
+
+    private var sharedUploadID: String? {
+        CloudUploadList.replacementID(of: sharedHistoryItem?.cloudURL, workerBase: CloudUploader.shared.workerBase)
+    }
+
+    var canManageSharedVideo: Bool { canShareToCloud && sharedUploadID != nil && !hasRunningWork }
+
+    func replaceSharedVideo() {
+        guard canManageSharedVideo, let id = sharedUploadID else { return }
+        shareToCloud(options: CloudUploadOptions(title: "", socialEnabled: true), replacingUploadID: id)
+    }
+
+    func deleteSharedLink() {
+        guard canManageSharedVideo, let item = sharedHistoryItem, let id = sharedUploadID else { return }
+        isDeletingSharedLink = true
+        sharedVideoError = nil
+        shareTask = Task { [weak self] in
+            defer { self?.isDeletingSharedLink = false }
+            do {
+                try await CloudUploader.shared.deleteFromCloud(uploadID: id)
+                ScreenshotHistoryStore.shared.setLibraryCloudURL(id: item.id, cloudURL: nil)
+                CloudUploader.shared.clearUploadState(for: item.id)
+                CloudLibraryModel.shared.refreshUsage()
+                self?.shareState = .idle
+            } catch { self?.sharedVideoError = error.localizedDescription }
+        }
+    }
+
     /// The Loom loop: render the current edits, cache the result as the
     /// session's flattened deliverable, upload it, and copy the share
     /// link - without leaving the Studio or touching a save panel.
-    func shareToCloud(options: CloudUploadOptions) {
-        guard !shareState.isBusy, !exportState.isExporting, isLoaded,
+    func shareToCloud(options: CloudUploadOptions, replacingUploadID: String? = nil) {
+        guard !hasRunningWork, isLoaded,
               canShareToCloud else {
             return
         }
+        sharedVideoError = nil
         pause()
         // Flush the draft first so the deliverable-invalidation in the
         // debounced autosave can't race the file this render produces.
         projectSaveTask?.cancel()
-        writeDraftNow()
+        guard writeDraftNow() else {
+            shareState = .failed("The recording edits could not be saved. Try again after resolving the storage problem.")
+            return
+        }
 
         // A fresh deliverable (e.g. sharing again without edits) skips
         // the render and goes straight to upload.
@@ -2766,7 +2809,8 @@ final class RecordingStudioModel {
                     socialEnabled: options.socialEnabled,
                     expiresAt: options.expiry.date(),
                     allowAnonymousComments: options.allowAnonymousComments,
-                    password: options.password
+                    password: options.password,
+                    replacingUploadID: replacingUploadID
                 )
 
                 NSPasteboard.general.clearContents()
@@ -2785,6 +2829,7 @@ final class RecordingStudioModel {
                 self?.shareState = .idle
             } catch {
                 self?.shareState = .failed(error.localizedDescription)
+                if replacingUploadID != nil { self?.sharedVideoError = error.localizedDescription }
             }
         }
     }

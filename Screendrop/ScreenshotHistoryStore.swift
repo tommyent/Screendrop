@@ -20,6 +20,7 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
     var kind: PreviewMediaKind
     var duration: Double?
     var cloudURL: String?
+    var cloudRedactions: [RecordingRedaction]?
     /// Whether this screenshot has an editable annotation sidecar document.
     var hasEdits: Bool
     /// Absolute path to the non-destructive recording package, when this video
@@ -62,6 +63,7 @@ struct ScreenshotHistoryItem: Identifiable, Codable, Equatable {
         kind = try container.decodeIfPresent(PreviewMediaKind.self, forKey: .kind) ?? .image
         duration = try container.decodeIfPresent(Double.self, forKey: .duration)
         cloudURL = try container.decodeIfPresent(String.self, forKey: .cloudURL)
+        cloudRedactions = try container.decodeIfPresent([RecordingRedaction].self, forKey: .cloudRedactions)
         hasEdits = try container.decodeIfPresent(Bool.self, forKey: .hasEdits) ?? false
         // Rows imported from Screendrop point at its folder; use this app's copy.
         recordingSessionPath = try container.decodeIfPresent(String.self, forKey: .recordingSessionPath)
@@ -472,7 +474,16 @@ final class ScreenshotHistoryStore {
 
     func setLibraryCloudURL(id: UUID, cloudURL: String?) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        if items[index].cloudURL != cloudURL { items[index].cloudRedactions = nil }
         items[index].cloudURL = cloudURL
+        items[index].updatedAt = Date()
+        saveMetadata()
+    }
+
+    func recordCloudUpload(id: UUID, cloudURL: String, redactions: [RecordingRedaction]?) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items[index].cloudURL = cloudURL
+        items[index].cloudRedactions = redactions
         items[index].updatedAt = Date()
         saveMetadata()
     }

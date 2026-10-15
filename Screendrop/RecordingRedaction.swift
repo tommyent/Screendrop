@@ -20,6 +20,11 @@ nonisolated struct RecordingRedaction: Codable, Equatable, Identifiable, Sendabl
     var mode: Mode = .blur
     var strength: Double = 0.8
 
+    /// Legacy links have no snapshot and must be treated as unredacted.
+    static func needsSharedReplacement(_ current: [Self], shared: [Self]?) -> Bool {
+        !current.isEmpty && current != (shared ?? [])
+    }
+
     func validate(sourceDuration: TimeInterval? = nil) throws {
         guard start.isFinite, end.isFinite, start >= 0, end > start,
               sourceDuration.map({ end <= $0 + 0.000_001 }) ?? true,

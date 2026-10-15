@@ -54,6 +54,7 @@ private struct RecordingStudioContent: View {
     @Bindable var model: RecordingStudioModel
     @State private var isInspectorPresented = true
     @State private var closeGuard = EditorCloseGuard()
+    @State private var confirmsSharedLinkDeletion = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,6 +66,21 @@ private struct RecordingStudioContent: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                if model.needsSharedVideoReplacement {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("This recording is shared; the link still shows the unredacted version")
+                        HStack {
+                            Button("Delete link", role: .destructive) { confirmsSharedLinkDeletion = true }
+                            Button("Replace shared video") { model.replaceSharedVideo() }
+                        }
+                        .disabled(!model.canManageSharedVideo)
+                        if let error = model.sharedVideoError { Text(error).foregroundStyle(.orange) }
+                    }
+                    .font(.callout)
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.12))
+                }
                 StudioCanvas(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(AnnotationEditorWorkspaceBackground())
@@ -73,6 +89,11 @@ private struct RecordingStudioContent: View {
             }
         }
         .frame(minWidth: 980, minHeight: 720)
+        .confirmationDialog("Delete this shared link?", isPresented: $confirmsSharedLinkDeletion) {
+            Button("Delete link", role: .destructive) { model.deleteSharedLink() }
+        } message: {
+            Text("The link and its cloud files will be deleted. The local recording stays in your Library.")
+        }
         .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
         .inspector(isPresented: $isInspectorPresented) {
             StudioInspector(model: model)
@@ -254,11 +275,11 @@ private struct RecordingStudioContent: View {
     private var shareStatus: some View {
         switch model.shareState {
         case .idle:
-            CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: model.shareToCloud) {
+            CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: { model.shareToCloud(options: $0) }) {
                 Label("Upload", systemImage: "icloud.and.arrow.up")
                     .labelStyle(.titleAndIcon)
             }
-            .disabled(!model.isLoaded || model.exportState.isExporting)
+            .disabled(!model.isLoaded || model.hasRunningWork || model.needsSharedVideoReplacement)
             .help("Upload this recording and copy the share link")
         case .rendering(let progress):
             SharePill(stage: "Rendering", progress: progress) {
@@ -291,9 +312,10 @@ private struct RecordingStudioContent: View {
                     .foregroundStyle(.orange)
                     .help(message)
 
-                CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: model.shareToCloud) {
+                CloudUploadButton(suggestedTitle: shareSuggestedTitle, onUpload: { model.shareToCloud(options: $0) }) {
                     Text("Retry")
                 }
+                .disabled(model.hasRunningWork || model.needsSharedVideoReplacement)
             }
         }
     }

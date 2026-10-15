@@ -163,13 +163,19 @@ struct VideoRedactionChecks {
         let decoded = try JSONDecoder().decode(RecordingEditDocument.self, from: JSONSerialization.data(withJSONObject: legacy))
         try check(decoded.redactions.isEmpty, "Legacy document decode")
         try session.writeEditDocument(document)
+        _ = await ScreenshotHistoryStore.shared.importRecordingSession(session)
+        let historyItem = ScreenshotHistoryStore.shared.items.first { $0.recordingSessionPath == root.standardizedFileURL.path }!
+        let sharedLink = "https://share.example.invalid/abcd1234"
+        ScreenshotHistoryStore.shared.setLibraryCloudURL(id: historyItem.id, cloudURL: sharedLink)
         let editor = RecordingStudioModel(url: root)
         await editor.load()
         try check(editor.isLoaded, "Editor load: \(editor.loadError ?? "")")
         editor.seek(to: 0.5)
         editor.beginRedaction(); editor.workingVideoCropRect = bounds; editor.addRedaction()
         try check(editor.redactions.count == 1 && session.loadDraftDocument()?.redactions.count == 1, "Add/draft")
+        try check(editor.needsSharedVideoReplacement, "Legacy shared link must warn after Add")
         editor.undo(); try check(editor.redactions.isEmpty, "Undo redaction")
+        try check(!editor.needsSharedVideoReplacement, "Undo Add clears the notice")
         editor.redo(); try check(editor.redactions.count == 1, "Redo redaction")
         var region = editor.redactions[0]
         region.end = 1.5; region.strength = 1
@@ -188,6 +194,28 @@ struct VideoRedactionChecks {
         let reopened = RecordingStudioModel(url: root)
         await reopened.load()
         try check(reopened.isLoaded && reopened.redactions == [region], "Reopen masks")
+        try check(reopened.needsSharedVideoReplacement, "Reopening must keep the stale-share notice")
+        ScreenshotHistoryStore.shared.recordCloudUpload(id: historyItem.id, cloudURL: sharedLink, redactions: [region])
+        try check(!reopened.needsSharedVideoReplacement, "Successful replacement clears the notice")
+        let storedItem = ScreenshotHistoryStore.shared.items.first { $0.id == historyItem.id }!
+        let diskItems = try JSONDecoder().decode([ScreenshotHistoryItem].self, from: Data(contentsOf:
+            ScreendropStorage.applicationSupportDirectory.appendingPathComponent("history.json")))
+        try check(diskItems.first { $0.id == historyItem.id } == storedItem, "Uploaded masks were not saved to History")
+        let encodedItem = try JSONEncoder().encode(storedItem)
+        let restoredItem = try JSONDecoder().decode(ScreenshotHistoryItem.self, from: encodedItem)
+        try check(restoredItem.cloudURL == sharedLink && restoredItem.cloudRedactions == [region], "Uploaded masks persist with the same link")
+        var legacyItem = try JSONSerialization.jsonObject(with: encodedItem) as! [String: Any]
+        legacyItem.removeValue(forKey: "cloudRedactions")
+        let legacyHistory = try JSONDecoder().decode(ScreenshotHistoryItem.self, from: JSONSerialization.data(withJSONObject: legacyItem))
+        try check(legacyHistory.cloudRedactions == nil && legacyHistory.cloudURL == sharedLink, "Legacy History still loads conservatively")
+        var changedRegion = region; changedRegion.strength = 0.7
+        reopened.updateRedaction(changedRegion)
+        try check(reopened.needsSharedVideoReplacement, "Editing a shared mask warns again")
+        reopened.undo()
+        try check(!reopened.needsSharedVideoReplacement, "Undo to the uploaded masks clears the notice")
+        ScreenshotHistoryStore.shared.setLibraryCloudURL(id: historyItem.id, cloudURL: nil)
+        try check(!reopened.needsSharedVideoReplacement, "Deleting the link clears the notice")
+        print("PASS shared-video notice add/undo/reopen/replace/edit/delete and History legacy/snapshot persistence")
         for _ in 0..<200 where reopened.isPreparingRedactionPreview { try await Task.sleep(for: .milliseconds(10)) }
         try check(reopened.screenPlayer.currentItem?.videoComposition != nil, "Studio preview filter missing")
         NotificationCenter.default.post(name: AVPlayerItem.failedToPlayToEndTimeNotification, object: reopened.screenPlayer.currentItem)

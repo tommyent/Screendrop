@@ -31,7 +31,7 @@ nonisolated struct CloudPreviewCache: Sendable {
               components.scheme == "https" || components.scheme == "http",
               components.host?.isEmpty == false else { return nil }
         components.path = (upload.isVideo ? "/api/media/" : "/api/image/") + upload.id
-        components.query = nil
+        components.queryItems = upload.mediaKey.map { [URLQueryItem(name: "v", value: $0)] }
         components.fragment = nil
         return components.url
     }
@@ -50,15 +50,15 @@ nonisolated struct CloudPreviewCache: Sendable {
         return safe.isEmpty ? upload.id : safe
     }
 
-    /// The cached file, downloaded first if it isn't here. `progress` gets
-    /// the fraction downloaded about ten times a second. Trimming afterwards
-    /// spares `kept`, the uploads being previewed together.
-    func file(for upload: CloudUpload, keeping kept: Set<String> = [],
-              owner: (workerBase: String, token: String)? = nil,
-              progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
-        guard let source = Self.mediaURL(for: upload) else { throw CloudPreviewError.badLink }
+    func cachedFile(for upload: CloudUpload) throws -> URL? {
+        guard Self.isSafeID(upload.id) else { throw CloudPreviewError.badLink }
         let manager = FileManager.default
         let directory = folder.appending(path: upload.id, directoryHint: .isDirectory)
+        let revisionURL = directory.appending(path: ".media-key")
+        if let mediaKey = upload.mediaKey, manager.fileExists(atPath: directory.path),
+           (try? String(contentsOf: revisionURL, encoding: .utf8)) != mediaKey {
+            try manager.removeItem(at: directory)
+        }
         if let cached = try? manager.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
         ).first {
@@ -66,6 +66,19 @@ nonisolated struct CloudPreviewCache: Sendable {
             try? manager.setAttributes([.modificationDate: Date.now], ofItemAtPath: cached.path)
             return cached
         }
+        return nil
+    }
+
+    /// The cached file, downloaded first if it isn't here. `progress` gets
+    /// the fraction downloaded about ten times a second. Trimming afterwards
+    /// spares `kept`, the uploads being previewed together.
+    func file(for upload: CloudUpload, keeping kept: Set<String> = [],
+              owner: (workerBase: String, token: String)? = nil,
+              progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
+        guard let source = Self.mediaURL(for: upload) else { throw CloudPreviewError.badLink }
+        if let cached = try cachedFile(for: upload) { return cached }
+        let manager = FileManager.default
+        let directory = folder.appending(path: upload.id, directoryHint: .isDirectory)
         let relay = DownloadRelay()
         let poll = Task {
             while !Task.isCancelled {
@@ -90,6 +103,9 @@ nonisolated struct CloudPreviewCache: Sendable {
         let file = directory.appending(path: Self.fileName(for: upload) + "." + ext)
         do {
             try manager.moveItem(at: download, to: file)
+            if let mediaKey = upload.mediaKey {
+                try mediaKey.write(to: directory.appending(path: ".media-key"), atomically: true, encoding: .utf8)
+            }
         } catch {
             try? manager.removeItem(at: directory)
             throw error

@@ -23,6 +23,7 @@ struct CloudUploadResult: Sendable {
     let url: String
     let filename: String
     let size: Int
+    var mediaKey: String? = nil
     /// An expiry was asked for, but the Worker predates expiry.
     var expiryIgnored = false
 }
@@ -46,7 +47,7 @@ final class CloudUploader: NSObject {
 
     /// One cancellable operation covers preparation and transport. Its ID
     /// keeps a cancelled completion from clearing a newer retry's state.
-    private var activeTasks: [UUID: (id: UUID, task: Task<(CloudUploadResult, URL, Data?), any Error>)] = [:]
+    private var activeTasks: [UUID: (id: UUID, task: Task<(CloudUploadResult, URL, Data?, [RecordingRedaction]?), any Error>)] = [:]
 
     private override init() {
         super.init()
@@ -63,7 +64,8 @@ final class CloudUploader: NSObject {
         socialEnabled: Bool = true,
         expiresAt: Date? = nil,
         allowAnonymousComments: Bool? = nil,
-        password: String? = nil
+        password: String? = nil,
+        replacingUploadID: String? = nil
     ) async throws -> CloudUploadResult {
         let allowAnonymousComments = allowAnonymousComments ?? CloudUploadPreferences.lastAnonymousComments
         try Task.checkCancellation()
@@ -71,6 +73,11 @@ final class CloudUploader: NSObject {
             throw CloudUploadError.notConfigured
         }
         let creds = CloudCredentialStore.shared.snapshot()
+        if let replacingUploadID, !CloudPreviewCache.isSafeID(replacingUploadID) { throw CloudUploadError.invalidURL }
+        var replacementSnapshot: URL?
+        defer {
+            if let replacementSnapshot { try? FileManager.default.removeItem(at: replacementSnapshot) }
+        }
 
         // The Dock mirrors the whole span - the deliverable render (when
         // one is needed) plus the upload itself.
@@ -81,7 +88,7 @@ final class CloudUploader: NSObject {
         uploadProgress[itemID] = 0
         failedItemIDs.remove(itemID)
 
-        let uploadTask = Task { [weak self] () throws -> (CloudUploadResult, URL, Data?) in
+        let uploadTask = Task { [weak self] () throws -> (CloudUploadResult, URL, Data?, [RecordingRedaction]?) in
             guard let self else { throw CancellationError() }
             try Task.checkCancellation()
 
@@ -96,12 +103,22 @@ final class CloudUploader: NSObject {
             try Task.checkCancellation()
 
             let fileName = fileURL.lastPathComponent
-            let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
             let mimeType = self.mimeTypeForFile(fileURL)
             let isVideo = mimeType.hasPrefix("video/")
             let transcriptData = isVideo && RecordingSession.isSessionDirectory(sessionDirectory)
                 ? CloudSidecarUploader.transcriptData(sessionDirectory: sessionDirectory, uploadedFileURL: fileURL)
                 : nil
+            let redactions = RecordingSession.isSessionDirectory(sessionDirectory)
+                ? RecordingSession(directoryURL: sessionDirectory).loadRenderStamp()?.redactions : nil
+            if replacingUploadID != nil {
+                // Studio may invalidate final.mov while transport or sidecars suspend.
+                let snapshot = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("shared-\(UUID().uuidString).\(fileURL.pathExtension)")
+                try FileManager.default.copyItem(at: fileURL, to: snapshot)
+                replacementSnapshot = snapshot
+                fileURL = snapshot
+            }
+            let fileData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
             let dimensions: (width: Int, height: Int)?
             let duration: Double?
 
@@ -127,6 +144,7 @@ final class CloudUploader: NSObject {
                 expiresAt: expiresAt,
                 allowAnonymousComments: allowAnonymousComments,
                 password: password,
+                replacingUploadID: replacingUploadID,
                 creds: creds,
                 progress: { [weak self] fraction in
                     Task { @MainActor [weak self] in
@@ -140,7 +158,7 @@ final class CloudUploader: NSObject {
                 }
             )
 
-            return (result, fileURL, transcriptData)
+            return (result, fileURL, transcriptData, redactions)
         }
 
         activeTasks[itemID] = (operationID, uploadTask)
@@ -154,7 +172,7 @@ final class CloudUploader: NSObject {
         }
 
         do {
-            let (result, uploadedFileURL, transcriptData) = try await withTaskCancellationHandler {
+            let (result, uploadedFileURL, transcriptData, redactions) = try await withTaskCancellationHandler {
                 try await uploadTask.value
             } onCancel: {
                 uploadTask.cancel()
@@ -163,18 +181,30 @@ final class CloudUploader: NSObject {
                   activeTasks[itemID]?.id == operationID else {
                 // A response in hand means the server accepted the upload.
                 // Cleanup must outlive this cancelled task and use its worker.
-                Task.detached(priority: .utility) {
-                    try? await Self.performDelete(uploadID: result.id, creds: creds)
+                if replacingUploadID == nil {
+                    Task.detached(priority: .utility) {
+                        try? await Self.performDelete(uploadID: result.id, creds: creds)
+                    }
                 }
                 throw CancellationError()
             }
+            if replacingUploadID != nil {
+                guard let mediaKey = result.mediaKey, result.id == replacingUploadID else { throw CloudUploadError.invalidResponse }
+                CloudPreviewCache.shared.remove(result.id)
+                try await CloudSidecarUploader.uploadVideoSidecars(uploadID: result.id, uploadedFileURL: uploadedFileURL,
+                    transcriptData: transcriptData, createdAt: Date(), mediaKey: mediaKey, replacingVideo: true, creds: creds)
+                try Task.checkCancellation()
+                guard activeTasks[itemID]?.id == operationID else { throw CancellationError() }
+            }
             uploadedURLs[itemID] = result.url
             if result.expiryIgnored { showExpiryIgnoredNotice() }
-            if mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
-                scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, creds: creds)
+            if replacingUploadID == nil, mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
+                scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, mediaKey: result.mediaKey, creds: creds)
             }
+            ScreenshotHistoryStore.shared.recordCloudUpload(id: itemID, cloudURL: result.url, redactions: redactions)
             // The Library's storage bar; a video's sidecars land in the next reading.
-            CloudLibraryModel.shared.refreshUsage()
+            if replacingUploadID != nil { CloudLibraryModel.shared.refresh() }
+            else { CloudLibraryModel.shared.refreshUsage() }
             return result
         } catch {
             if uploadTask.isCancelled || Task.isCancelled || error is CancellationError
@@ -191,20 +221,23 @@ final class CloudUploader: NSObject {
     /// Ships the share-page extras (poster, title, transcript) after the
     /// video itself is up. Best-effort and detached: the share link is
     /// already usable, sidecars enrich the page when they land.
-    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, transcriptData: Data?, title: String?, creds: CloudCredentials) {
+    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, transcriptData: Data?, title: String?, mediaKey: String?, creds: CloudCredentials) {
         let item = ScreenshotHistoryStore.shared.items.first {
             $0.url.standardizedFileURL == fileURL.standardizedFileURL
         }
         let createdAt = item?.createdAt ?? Date()
         Task.detached(priority: .utility) {
-            await CloudSidecarUploader.uploadVideoSidecars(
-                uploadID: uploadID,
-                uploadedFileURL: fileURL,
-                transcriptData: transcriptData,
-                createdAt: createdAt,
-                customTitle: title,
-                creds: creds
-            )
+            do {
+                try await CloudSidecarUploader.uploadVideoSidecars(
+                    uploadID: uploadID,
+                    uploadedFileURL: fileURL,
+                    transcriptData: transcriptData,
+                    createdAt: createdAt,
+                    customTitle: title,
+                    mediaKey: mediaKey,
+                    creds: creds
+                )
+            } catch { print("Sidecar upload failed for \(uploadID): \(error)") }
         }
     }
 
@@ -484,13 +517,15 @@ final class CloudUploader: NSObject {
         expiresAt: Date?,
         allowAnonymousComments: Bool,
         password: String?,
+        replacingUploadID: String?,
         creds: CloudCredentials,
         progress: (@Sendable (Double) -> Void)?
     ) async throws -> CloudUploadResult {
         let workerBase = normalizeWorkerURL(creds.workerURL)
         let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let url = URL(string: "\(workerBase)/api/upload") else {
+        let path = replacingUploadID.map { "/api/upload/" + $0 } ?? "/api/upload"
+        guard let url = URL(string: workerBase + path) else {
             throw CloudUploadError.invalidURL
         }
 
@@ -530,7 +565,7 @@ final class CloudUploader: NSObject {
             throw CloudUploadError.invalidResponse
         }
 
-        guard http.statusCode == 201 else {
+        guard http.statusCode == (replacingUploadID == nil ? 201 : 200) else {
             let body = String(data: responseData, encoding: .utf8) ?? ""
             throw CloudUploadError.serverError(http.statusCode, body)
         }
@@ -551,7 +586,7 @@ final class CloudUploader: NSObject {
         }
 
         progress?(1)
-        return CloudUploadResult(id: id, url: shareURL, filename: name, size: fileSize,
+        return CloudUploadResult(id: id, url: shareURL, filename: name, size: fileSize, mediaKey: json?["mediaKey"] as? String,
                                  expiryIgnored: CloudUploadList.expiryIgnored(requested: expiresAt, response: json))
     }
 
