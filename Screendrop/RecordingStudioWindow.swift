@@ -255,7 +255,7 @@ private struct RecordingStudioContent: View {
                 Label("Upload", systemImage: "icloud.and.arrow.up")
                     .labelStyle(.titleAndIcon)
             }
-            .disabled(!model.isLoaded || model.exportState.isExporting || model.voiceIsolationProgress != nil)
+            .disabled(!model.isLoaded || model.exportState.isExporting || model.isIsolatingVoice)
             .help("Upload this recording and copy the share link")
         case .rendering(let progress):
             SharePill(stage: "Rendering", progress: progress) {
@@ -306,7 +306,7 @@ private struct RecordingStudioContent: View {
                 Label("Export", systemImage: "arrow.down.circle")
                     .labelStyle(.titleAndIcon)
             }
-            .disabled(!model.isLoaded || model.shareState.isBusy || model.voiceIsolationProgress != nil)
+            .disabled(!model.isLoaded || model.shareState.isBusy || model.isIsolatingVoice)
         case .exporting(let progress):
             SharePill(stage: "Exporting", progress: progress, cancelLabel: "Cancel Export") {
                 model.cancelExport()
@@ -3599,7 +3599,7 @@ private struct StudioInspector: View {
                 isAudioExportOptionsPresented = true
             }
             .help("Export just the soundtrack of the current cut")
-            .disabled(model.voiceIsolationProgress != nil)
+            .disabled(model.isIsolatingVoice)
             .popover(isPresented: $isAudioExportOptionsPresented, arrowEdge: .bottom) {
                 StudioAudioExportOptions(format: $model.audioExportFormat) {
                     isAudioExportOptionsPresented = false
@@ -3740,7 +3740,7 @@ private struct StudioInspector: View {
         if let replacement = model.replacementAudio {
             return replacement.displayName
         }
-        if model.voiceIsolationProgress != nil { return "Isolating…" }
+        if model.isIsolatingVoice { return "Isolating…" }
         if model.isolateVoice { return "Voice isolated" }
         guard model.hasAudio, abs(model.audioVolume - 1) > 0.001 else { return nil }
         return "Volume \(InspectorValueFormat.percent().displayString(for: model.audioVolume))"

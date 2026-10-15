@@ -303,6 +303,16 @@ struct RecordingExportRegressionChecks {
         try session.writeEditDocument(document)
         let restored = try await RecordingSessionRenderer.makeConfiguration(for: session)
         try check(restored.isolatedMicrophoneURL == nil, "Off did not restore source microphone")
+        let firstUse = RecordingStudioModel(url: session.directoryURL)
+        await firstUse.load()
+        firstUse.isolateVoice = true
+        try check(firstUse.isIsolatingVoice && !firstUse.currentDocument().isolateVoice,
+                  "An unfinished isolation request reached the edit document")
+        firstUse.flushDraft()
+        try check(session.effectiveEditDocument()?.isolateVoice == false, "Draft flush persisted unfinished isolation")
+        try await until { !firstUse.hasRunningWork }
+        try check(firstUse.currentDocument().isolateVoice, "Completed isolation was not persistable")
+        firstUse.teardown()
         try check(try Data(contentsOf: session.screenURL) == sourceBytes, "Isolation modified the original recording")
         let broken = RecordingSession(directoryURL: directory.appendingPathComponent("missing-mic.screendroprec"))
         try FileManager.default.createDirectory(at: broken.directoryURL, withIntermediateDirectories: false)

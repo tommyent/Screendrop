@@ -180,7 +180,7 @@ final class RecordingStudioModel {
     var shareState: RecordingStudioShareState = .idle
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportTask != nil || voiceIsolationProgress != nil || voiceIsolationTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
+        exportTask != nil || isIsolatingVoice || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -224,6 +224,7 @@ final class RecordingStudioModel {
     private(set) var voiceIsolationProgress: Double?
     private(set) var voiceIsolationError: String?
     var canIsolateVoice: Bool { session != nil && microphoneTrackID != nil }
+    var isIsolatingVoice: Bool { voiceIsolationProgress != nil || voiceIsolationTask != nil }
     var isolateVoice: Bool {
         get { voiceIsolationEnabled }
         set {
@@ -1421,7 +1422,7 @@ final class RecordingStudioModel {
             replacementAudioDisplayName: replacementAudio?.displayName ?? replacementAudioReference?.displayName,
             audioExportFormat: audioExportFormat,
             audioVolume: Double(audioVolume),
-            isolateVoice: voiceIsolationEnabled
+            isolateVoice: voiceIsolationEnabled && isolatedMicrophone != nil
         )
     }
 
@@ -2314,7 +2315,7 @@ final class RecordingStudioModel {
     func export() {
         // One render at a time: the share pipeline uses the same exporter,
         // so a second encode would just fight it for the media engine.
-        guard voiceIsolationProgress == nil, voiceIsolationTask == nil, exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
+        guard !isIsolatingVoice, exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
         pause()
         let previewURL = sessionURL
 
@@ -2433,7 +2434,7 @@ final class RecordingStudioModel {
     /// Writes the edited soundtrack on its own, for cleanup in a tool that
     /// has no API - the outbound half of the replace-audio round trip.
     func exportAudio() {
-        guard voiceIsolationProgress == nil, voiceIsolationTask == nil, !audioExportState.isExporting, isLoaded, hasAudio else { return }
+        guard !isIsolatingVoice, !audioExportState.isExporting, isLoaded, hasAudio else { return }
         pause()
 
         audioExportState = .exporting(progress: 0)
@@ -2621,7 +2622,7 @@ final class RecordingStudioModel {
     /// session's flattened deliverable, upload it, and copy the share
     /// link - without leaving the Studio or touching a save panel.
     func shareToCloud(options: CloudUploadOptions) {
-        guard voiceIsolationProgress == nil, voiceIsolationTask == nil, !shareState.isBusy, !exportState.isExporting, isLoaded,
+        guard !isIsolatingVoice, !shareState.isBusy, !exportState.isExporting, isLoaded,
               canShareToCloud else {
             return
         }
