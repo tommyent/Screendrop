@@ -45,7 +45,15 @@ extension CaptureLibraryModel {
         case .export:
             export(selected)
         case .share:
-            LibrarySharing.show(selected.map(\.fileURL))
+            run("Preparing share…") {
+                StudioProjectRegistry.shared.flushDrafts()
+                var urls: [URL] = []
+                for item in selected {
+                    let url = item.isVideo ? try await RecordingDeliverable.resolve(for: item.fileURL) : item.fileURL
+                    urls.append(url)
+                }
+                LibrarySharing.show(urls)
+            }
         case .reveal:
             NSWorkspace.shared.activateFileViewerSelecting(selected.map(\.ownedURL))
         case .trash:

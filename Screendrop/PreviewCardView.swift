@@ -98,7 +98,7 @@ struct PreviewCardView: View {
                     }
                 }
             }
-            .draggable(item.url) {
+            .draggable(CaptureDragExport(url: item.url, isVideo: item.kind == .video)) {
                 Image(nsImage: item.previewImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
