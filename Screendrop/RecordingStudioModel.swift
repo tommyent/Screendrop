@@ -180,7 +180,7 @@ final class RecordingStudioModel {
     var shareState: RecordingStudioShareState = .idle
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportState.isExporting || audioExportState.isExporting || shareState.isBusy
+        exportTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -1302,7 +1302,7 @@ final class RecordingStudioModel {
     }
 
     /// Every edit in the editor, as a storable document.
-    private func currentDocument() -> RecordingEditDocument {
+    func currentDocument() -> RecordingEditDocument {
         RecordingEditDocument(
             style: style,
             zoomEnabled: zoomEnabled,
@@ -1996,6 +1996,7 @@ final class RecordingStudioModel {
     private func makeExportConfiguration() throws -> RecordingStudioExporter.Configuration {
         let audioReplacementURL = try replacementAudioURLForExport(includeAudio: !exportSettings.removeAudio)
         let reframe = makeReframeTrack()
+        let captions = RecordingTranscript(words: transcriptWords, cues: subtitleCues).renderCaptions(in: clipTimeline)
         let fitContentAspect: CGFloat? =
             (exportAspect == .original || exportAspectMode == .fit) && videoSize.height > 0
                 ? videoSize.width / videoSize.height
@@ -2010,10 +2011,10 @@ final class RecordingStudioModel {
             showsPressEffects: showsPressEffects,
             keystrokeTimeline: showsKeystrokes && hasKeystrokes ? keystrokeTimeline : nil,
             keystrokePlacement: keystrokePlacement,
-            subtitleTimeline: showsSubtitles && hasSubtitles ? subtitleTimeline : nil,
+            subtitleTimeline: showsSubtitles && !captions.cues.isEmpty ? SubtitleTimeline(cues: captions.cues) : nil,
             subtitleStyle: subtitleStyle,
-            karaokeTimeline: showsSubtitles && hasSubtitles && !karaokeTimeline.isEmpty
-                ? karaokeTimeline
+            karaokeTimeline: showsSubtitles && !captions.cues.isEmpty && !captions.words.isEmpty
+                ? KaraokeTimeline(cues: captions.cues, words: captions.words)
                 : nil,
             canvasSize: basePreviewCanvasSize,
             videoCropRect: videoCropRect,
@@ -2164,10 +2165,53 @@ final class RecordingStudioModel {
         export()
     }
 
+    func exportAgentPrompt() {
+        guard isLoaded, !hasRunningWork, !transcriptionState.isTranscribing else { return }
+        RecordingAgentPromptExport.chooseDirectory { [weak self] directory in
+            guard let self, self.isLoaded, !self.hasRunningWork, !self.transcriptionState.isTranscribing else { return }
+            self.pause()
+            self.flushDraft()
+            let document = self.currentDocument()
+            let session = self.session
+            let title = self.projectDisplayName
+            let timeline = self.clipTimeline
+            let configuration: RecordingStudioExporter.Configuration?
+            do { configuration = session == nil ? try self.makeExportConfiguration() : nil }
+            catch { self.exportState = .failed(error.localizedDescription); return }
+            let report: @Sendable (Double) -> Void = { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    if self?.exportState.isExporting == true { self?.exportState = .exporting(progress: progress) }
+                }
+            }
+            self.startExportTask { [weak self] in
+                do {
+                    let folder: URL
+                    if let session {
+                        folder = try await RecordingAgentPromptExport.write(session: session, document: document, to: directory, progress: report)
+                    } else if let configuration {
+                        let plan = RecordingAgentPromptPlan(title: title, timeline: timeline,
+                                                           cues: document.subtitleCues ?? [], words: document.subtitleWords ?? [], capture: nil)
+                        let movie = try await RecordingStudioExporter().export(configuration) { report($0 * 0.8) }
+                        defer { try? FileManager.default.removeItem(at: movie) }
+                        folder = try await RecordingAgentPromptWriter.write(movie: movie, plan: plan, to: directory) { report(0.8 + $0 * 0.2) }
+                    } else { return }
+                    RecordingAgentPromptExport.reveal(folder)
+                    self?.exportState = .finished(folder)
+                } catch is CancellationError {
+                    self?.exportState = .idle
+                } catch RecordingStudioExporter.ExportError.cancelled {
+                    self?.exportState = .idle
+                } catch {
+                    self?.exportState = .failed(error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func export() {
         // One render at a time: the share pipeline uses the same exporter,
         // so a second encode would just fight it for the media engine.
-        guard !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
+        guard exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
         pause()
         let previewURL = sessionURL
 
@@ -2177,9 +2221,7 @@ final class RecordingStudioModel {
         if let cached = freshDeliverableURL {
             let suggestedFileName = exportSuggestedFileName
             let settings = exportSettings
-            // A copy is instant; a GIF takes a while, so it shows progress.
-            if settings.effectiveExportsGIF { exportState = .exporting(progress: 0) }
-            exportTask = Task { [weak self] in
+            startExportTask { [weak self] in
                 do {
                     let savedURL = try await Self.save(movie: cached, as: settings, suggestedFileName: suggestedFileName) { progress in
                         Task { @MainActor [weak self] in
@@ -2199,8 +2241,6 @@ final class RecordingStudioModel {
             return
         }
 
-        exportState = .exporting(progress: 0)
-
         let configuration: RecordingStudioExporter.Configuration
         do {
             configuration = try makeExportConfiguration()
@@ -2215,7 +2255,7 @@ final class RecordingStudioModel {
 
         let dockProgressID = DockExportProgressCoordinator.shared.start()
 
-        exportTask = Task { [weak self] in
+        startExportTask { [weak self] in
             do {
                 let exporter = RecordingStudioExporter()
                 let report: @Sendable (Double) -> Void = { progress in
@@ -2249,12 +2289,18 @@ final class RecordingStudioModel {
         }
     }
 
-    func cancelExport() {
-        exportTask?.cancel()
-        exportTask = nil
-        if exportState.isExporting {
-            exportState = .idle
+    func startExportTask(_ operation: @escaping @MainActor () async -> Void) {
+        guard exportTask == nil else { return }
+        exportState = .exporting(progress: 0)
+        exportTask = Task { [weak self] in
+            defer { self?.exportTask = nil }
+            await operation()
         }
+    }
+
+    func cancelExport() {
+        // Cancellation is cooperative; keep retry and close guarded until the task exits.
+        exportTask?.cancel()
     }
 
     // MARK: - Audio only

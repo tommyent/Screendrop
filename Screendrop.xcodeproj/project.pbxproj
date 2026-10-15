@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AF0500000000000000000005 /* Screendrop/RecordingAgentPromptWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000105 /* Screendrop/RecordingAgentPromptWriter.swift */; };
+		AF0500000000000000000004 /* Screendrop/RecordingAgentPromptPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000104 /* Screendrop/RecordingAgentPromptPlan.swift */; };
+		AF0500000000000000000003 /* Screendrop/RecordingClipTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */; };
+		AF0500000000000000000002 /* Screendrop/RecordingInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000102 /* Screendrop/RecordingInput.swift */; };
+		AF0500000000000000000001 /* Screendrop/RecordingTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000101 /* Screendrop/RecordingTranscript.swift */; };
 		AF0200000000000000000001 /* Screendrop/UnsplashAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002 /* Screendrop/UnsplashAPI.swift */; };
 		AF0100000000000000000001 /* Screendrop/ImageTextWarmUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */; };
 		AF0F00000000000000000001 /* Screendrop/RecordingMicrophoneLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0F00000000000000000002 /* Screendrop/RecordingMicrophoneLevel.swift */; };
@@ -77,6 +82,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AF0500000000000000000105 /* Screendrop/RecordingAgentPromptWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingAgentPromptWriter.swift; sourceTree = SOURCE_ROOT; };
+		AF0500000000000000000104 /* Screendrop/RecordingAgentPromptPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingAgentPromptPlan.swift; sourceTree = SOURCE_ROOT; };
+		AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingClipTimeline.swift; sourceTree = SOURCE_ROOT; };
+		AF0500000000000000000102 /* Screendrop/RecordingInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingInput.swift; sourceTree = SOURCE_ROOT; };
+		AF0500000000000000000101 /* Screendrop/RecordingTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingTranscript.swift; sourceTree = SOURCE_ROOT; };
 		AF0200000000000000000002 /* Screendrop/UnsplashAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/UnsplashAPI.swift; sourceTree = SOURCE_ROOT; };
 		AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ImageTextWarmUp.swift; sourceTree = SOURCE_ROOT; };
 		AF0F00000000000000000002 /* Screendrop/RecordingMicrophoneLevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingMicrophoneLevel.swift; sourceTree = SOURCE_ROOT; };
@@ -200,6 +210,11 @@
 		AA6100000000000000000003 /* Tested logic */ = {
 			isa = PBXGroup;
 			children = (
+				AF0500000000000000000105 /* Screendrop/RecordingAgentPromptWriter.swift */,
+				AF0500000000000000000104 /* Screendrop/RecordingAgentPromptPlan.swift */,
+				AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */,
+				AF0500000000000000000102 /* Screendrop/RecordingInput.swift */,
+				AF0500000000000000000101 /* Screendrop/RecordingTranscript.swift */,
 				AF0200000000000000000002 /* Screendrop/UnsplashAPI.swift */,
 				AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */,
 				AF0F00000000000000000002 /* Screendrop/RecordingMicrophoneLevel.swift */,
@@ -374,6 +389,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF0500000000000000000005 /* Screendrop/RecordingAgentPromptWriter.swift in Sources */,
+				AF0500000000000000000004 /* Screendrop/RecordingAgentPromptPlan.swift in Sources */,
+				AF0500000000000000000003 /* Screendrop/RecordingClipTimeline.swift in Sources */,
+				AF0500000000000000000002 /* Screendrop/RecordingInput.swift in Sources */,
+				AF0500000000000000000001 /* Screendrop/RecordingTranscript.swift in Sources */,
 				AF0200000000000000000001 /* Screendrop/UnsplashAPI.swift in Sources */,
 				AF0100000000000000000001 /* Screendrop/ImageTextWarmUp.swift in Sources */,
 				AF0F00000000000000000001 /* Screendrop/RecordingMicrophoneLevel.swift in Sources */,

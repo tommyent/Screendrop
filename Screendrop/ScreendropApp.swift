@@ -61,6 +61,7 @@ struct ScreendropApp: App {
         .commands {
             CommandGroup(after: .newItem) {
                 RecordingStudioSaveCommand()
+                RecordingStudioAgentPromptCommand()
                 RecordingStudioRevertCommand()
             }
         }

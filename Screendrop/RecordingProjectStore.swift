@@ -166,6 +166,12 @@ final class StudioProjectRegistry {
         }
     }
 
+    func document(for url: URL) -> RecordingEditDocument? {
+        models.values.compactMap(\.model).first {
+            $0.isLoaded && $0.sessionURL.standardizedFileURL == url.standardizedFileURL
+        }?.currentDocument()
+    }
+
     /// Edits to a bare movie have no draft, so a quit loses them.
     var hasUnsavedMovieEdits: Bool {
         models.values.compactMap(\.model).contains { !$0.isProject && $0.hasUnsavedChanges }

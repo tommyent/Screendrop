@@ -167,6 +167,9 @@ extension CaptureLibraryModel {
         if count == 1, let item = selectedItems.first, item.isVideo,
            let export = items.firstIndex(where: { $0.title == CaptureLibraryAction.export.rawValue }) {
             items.insert(LibraryMenuItem(title: "Export as GIF…", isEnabled: !isBusy) { self.exportGIF(item) }, at: export + 1)
+            if item.session != nil {
+                items.insert(LibraryMenuItem(title: "Export Agent Prompt…", isEnabled: !isBusy) { self.exportAgentPrompt(item) }, at: export + 2)
+            }
         }
         if count == 1, let item = selectedItems.first, item.hasEdits || item.hasDraft,
            let rename = items.firstIndex(where: { $0.title == CaptureLibraryAction.rename.rawValue }) {
@@ -320,6 +323,18 @@ extension CaptureLibraryModel {
                 try ScreenshotFileActions.installExport(from: staging, at: destination)
                 ScreenshotPreviewStack.shared.dismissVideo(for: item.ownedURL)
                 NSWorkspace.shared.activateFileViewerSelecting([destination])
+            }
+        }
+    }
+
+    private func exportAgentPrompt(_ item: CaptureLibraryItem) {
+        guard !isBusy, let session = item.session else { return }
+        RecordingAgentPromptExport.chooseDirectory { directory in
+            self.run("Exporting agent prompt…") {
+                StudioProjectRegistry.shared.flushDrafts()
+                let document = StudioProjectRegistry.shared.document(for: session.directoryURL) ?? session.effectiveEditDocument()
+                let folder = try await RecordingAgentPromptExport.write(session: session, document: document, to: directory)
+                RecordingAgentPromptExport.reveal(folder)
             }
         }
     }
