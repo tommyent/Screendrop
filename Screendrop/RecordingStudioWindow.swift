@@ -1193,6 +1193,32 @@ private struct StudioSubtitleBarView: View {
     }
 }
 
+private struct StudioChapterNameField: View {
+    let model: RecordingStudioModel
+    let chapter: RecordingChapter
+    @State private var draft: String?
+    @FocusState private var isEditing: Bool
+
+    var body: some View {
+        TextField("Chapter name", text: Binding(
+            get: { draft ?? chapter.title },
+            set: { draft = $0 }
+        ))
+        .textFieldStyle(.plain)
+        .focused($isEditing)
+        .onSubmit { commit() }
+        .onChange(of: isEditing) { _, editing in
+            if !editing { commit() }
+        }
+    }
+
+    private func commit() {
+        guard let draft else { return }
+        if draft != chapter.title { model.renameChapter(id: chapter.id, title: draft) }
+        if model.chapterError == nil { self.draft = nil }
+    }
+}
+
 /// One editable subtitle line: a timestamp plus the cue text as a free-form
 /// field. Hovering a row skims the preview to that cue, clicking or editing
 /// commits the playhead there (paused), and the row under the playhead is
@@ -2801,6 +2827,7 @@ private enum StudioInspectorSection: String, Hashable, CaseIterable {
     case cursor
     case keystrokes
     case transcription
+    case chapters
     case camera
     case audio
     case redactions
@@ -2993,6 +3020,16 @@ private struct StudioInspector: View {
                         }
                     ) {
                         transcriptionControls
+                    }
+                }
+
+                if model.isProject {
+                    InspectorDisclosureSection(
+                        "Chapters",
+                        summary: "\(model.visibleChapters.count)",
+                        isExpanded: expansionBinding(for: .chapters)
+                    ) {
+                        chapterControls
                     }
                 }
 
@@ -3366,6 +3403,86 @@ private struct StudioInspector: View {
             onTap: { model.keystrokePlacement = $0 },
             label: { Text($0.title).font(.inspectorSegment) }
         )
+    }
+
+    private var chapterControls: some View {
+        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            InspectorActionButton("Add at Playhead", systemImage: "plus") {
+                model.addChapterAtPlayhead()
+            }
+            InspectorActionButton("Suggest Chapters", systemImage: "list.bullet") {
+                model.suggestChapters()
+            }
+            .disabled(!model.hasSubtitles)
+            .help("Suggest breaks at narration pauses after Transcribe Narration")
+
+            InspectorHint("Chapters save immediately. Undo restores changes.")
+            if let error = model.chapterError {
+                InspectorHint(error, tint: .orange)
+            }
+            ForEach(model.visibleChapters) { chapter in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button {
+                        model.jumpToChapter(chapter)
+                    } label: {
+                        Text(String(format: "%d:%02d", Int(chapter.start) / 60, Int(chapter.start) % 60))
+                            .monospacedDigit()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Jump to \(chapter.title)")
+                    StudioChapterNameField(model: model, chapter: chapter)
+                    Button("Remove chapter", systemImage: "trash", role: .destructive) {
+                        model.removeChapter(id: chapter.id)
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(chapter.title)")
+                }
+                .font(.inspectorValue)
+            }
+            narrativeControls
+        }
+    }
+
+    private var narrativeControls: some View {
+        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
+            if model.isGeneratingNarrative {
+                ProgressView().controlSize(.small)
+                InspectorActionButton("Cancel Generation", systemImage: "xmark") {
+                    model.cancelNarrativeSuggestions()
+                }
+            } else {
+                InspectorActionButton("Generate Names & Summary", systemImage: "sparkles") {
+                    model.generateNarrativeSuggestions()
+                }
+                .disabled(!model.canGenerateNarrativeSuggestions)
+            }
+            if let status = model.narrativeStatus { InspectorHint(status) }
+            if !model.narrativeSuggestionsAreCurrent {
+                InspectorHint("The recording changed. Generate again before accepting suggestions.")
+            }
+            if model.narrativeStatus != nil || !model.narrativeTitle.isEmpty {
+                TextField("Suggested title", text: $model.narrativeTitle, axis: .vertical)
+                    .font(.inspectorValue)
+                    .disabled(model.isGeneratingNarrative)
+                InspectorActionButton("Use as Title", systemImage: "checkmark") { model.useNarrativeTitle() }
+                    .disabled(model.isGeneratingNarrative || !model.narrativeSuggestionsAreCurrent || model.narrativeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if model.hasNarrativeChapterNames {
+                ForEach(model.suggestedChapterNames) { chapter in
+                    Text(chapter.title).font(.inspectorValue)
+                }
+                InspectorActionButton("Use Chapter Names", systemImage: "list.bullet") { model.useNarrativeChapterNames() }
+                    .disabled(model.isGeneratingNarrative || !model.narrativeSuggestionsAreCurrent)
+            }
+            if model.narrativeStatus != nil || !model.narrativeSummary.isEmpty {
+                TextField("Summary draft", text: $model.narrativeSummary, axis: .vertical)
+                    .font(.inspectorValue)
+                    .disabled(model.isGeneratingNarrative)
+                InspectorActionButton("Save Summary", systemImage: "checkmark") { model.saveNarrationSummary() }
+                    .disabled(model.isGeneratingNarrative || !model.narrativeSuggestionsAreCurrent)
+            }
+        }
     }
 
     // MARK: Transcription

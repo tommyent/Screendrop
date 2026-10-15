@@ -45,3 +45,25 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 Session snapshot checks cover unedited opens, five-session retention, deduplication, cropped pixels and pasted pictures after restore, Undo/Redo and auto-save in both editors, and Studio soundtrack retention and write failures. Recovery cases include unreadable metadata, failed pruning, error suppression and both saved-open and crash-draft-open sessions during storage failures. Library Trash uses a disposable destination to check that the snapshot folder moves with its capture; no files go to the user's Trash.
 
+
+`RecordingChapterTests` checks pause proposals, preservation of manual names, cut/speed mapping, source-anchor restoration, opening-sentence bounds, invalid anchors and backward-compatible project metadata. Chapter edits are navigation metadata; they do not change the render document.
+
+`RecordingNarrativeTests` uses an in-memory URLProtocol stub to check OpenAI-style server decoding, model fallback order, malformed responses, long narration reduction, Unicode and cancellation. It does not contact a server or use an actual model. Partly cut prose is omitted if its surviving words cannot prove the corrected text.
+
+For a real loopback HTTP check (synthetic narration only, no app launch), compile the production client, start the five-request stub in another terminal, and pass the URL it prints:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer lockf /private/tmp/screendrop-team/build.lock \
+  xcrun swiftc -parse-as-library -target arm64-apple-macos27.0 \
+  scripts/check-recording-narrative.swift Screendrop/RecordingNarrativeGenerator.swift \
+  Screendrop/RecordingChapter.swift Screendrop/RecordingClipTimeline.swift \
+  Screendrop/RecordingTranscription.swift Screendrop/SortedSearch.swift \
+  -o /private/tmp/screendrop-team/f4-narrative-check
+python3 scripts/recording-narrative-stub.py
+# In the other terminal, use the printed loopback URL:
+/private/tmp/screendrop-team/f4-narrative-check http://localhost:<printed-port>/v1
+```
+
+F4 review regressions cover model clamping and field-specific replies, preserved HTTP/timeout/JSON fallback reasons, the half-second chapter end margin, automatic names after cuts in both Studio mapping and share data, manual/legacy names, and cache invalidation for cue/word/clip/chapter edits. Native chapter-field Return/focus-loss and single-step Undo remain in the coordinator's approved live round. The standalone client also accepts an optional model name after its URL for one real local-server check; it uses synthetic narration only.
+
+A missing title, bad JSON or HTTP error for one chapter preserves the server title/summary and other chapter suggestions; an omitted chapter suggestion keeps its existing name on acceptance. Chapter cancellation still stops the run. The optional real-model check logs raw replies for its synthetic narration, including a thin chapter opening.
