@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AF3100000000000000000005 /* Screendrop/FreeToUseMusicPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3100000000000000000006 /* Screendrop/FreeToUseMusicPickerModel.swift */; };
+		AF3100000000000000000003 /* Screendrop/FreeToUseMusicPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3100000000000000000004 /* Screendrop/FreeToUseMusicPreview.swift */; };
+		AF3100000000000000000001 /* Screendrop/FreeToUseMusicAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3100000000000000000002 /* Screendrop/FreeToUseMusicAPI.swift */; };
 		AF1700000000000000000004 /* Screendrop/RecordingReplacementAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */; };
 		AF1700000000000000000003 /* Screendrop/RecordingCompositionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */; };
 		AF1700000000000000000002 /* Screendrop/RecordingVoiceIsolation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */; };
@@ -91,6 +94,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AF3100000000000000000006 /* Screendrop/FreeToUseMusicPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/FreeToUseMusicPickerModel.swift; sourceTree = SOURCE_ROOT; };
+		AF3100000000000000000004 /* Screendrop/FreeToUseMusicPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/FreeToUseMusicPreview.swift; sourceTree = SOURCE_ROOT; };
+		AF3100000000000000000002 /* Screendrop/FreeToUseMusicAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/FreeToUseMusicAPI.swift; sourceTree = SOURCE_ROOT; };
 		AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingReplacementAudio.swift; sourceTree = SOURCE_ROOT; };
 		AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingCompositionBuilder.swift; sourceTree = SOURCE_ROOT; };
 		AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingVoiceIsolation.swift; sourceTree = SOURCE_ROOT; };
@@ -229,6 +235,9 @@
 		AA6100000000000000000003 /* Tested logic */ = {
 			isa = PBXGroup;
 			children = (
+				AF3100000000000000000006 /* Screendrop/FreeToUseMusicPickerModel.swift */,
+				AF3100000000000000000004 /* Screendrop/FreeToUseMusicPreview.swift */,
+				AF3100000000000000000002 /* Screendrop/FreeToUseMusicAPI.swift */,
 				AF1700000000000000000104 /* Screendrop/RecordingReplacementAudio.swift */,
 				AF1700000000000000000103 /* Screendrop/RecordingCompositionBuilder.swift */,
 				AF1700000000000000000102 /* Screendrop/RecordingVoiceIsolation.swift */,
@@ -416,6 +425,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AF3100000000000000000005 /* Screendrop/FreeToUseMusicPickerModel.swift in Sources */,
+				AF3100000000000000000003 /* Screendrop/FreeToUseMusicPreview.swift in Sources */,
+				AF3100000000000000000001 /* Screendrop/FreeToUseMusicAPI.swift in Sources */,
 				AF1700000000000000000004 /* Screendrop/RecordingReplacementAudio.swift in Sources */,
 				AF1700000000000000000003 /* Screendrop/RecordingCompositionBuilder.swift in Sources */,
 				AF1700000000000000000002 /* Screendrop/RecordingVoiceIsolation.swift in Sources */,
