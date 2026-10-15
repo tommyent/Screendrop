@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build after the Dev app; pass its DerivedData folder. Never launches the app."""
+"""Pass Dev DerivedData, optionally a windowless check script. Never launches the app."""
 import os
 from pathlib import Path
 import platform
@@ -11,7 +11,8 @@ import uuid
 repo = Path(__file__).resolve().parent.parent
 derived = Path(sys.argv[1]).resolve()
 products = derived / "Build/Products/Debug Dev"
-build = derived / "IdleSaveHarness"
+check_source = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else repo / "scripts/check-editor-idle-save.swift"
+build = derived / (check_source.stem if len(sys.argv) > 2 else "IdleSaveHarness")
 build.mkdir(exist_ok=True)
 lock = Path("/private/tmp/screendrop-team/bench.lock")
 lock.parent.mkdir(parents=True, exist_ok=True)
@@ -19,12 +20,12 @@ if lock.exists():
     sys.exit("Another benchmark owns bench.lock; stop and coordinate before running.")
 
 sources = sorted(str(p) for p in (repo / "Screendrop").rglob("*.swift") if p.name != "AppEntry.swift")
-sources.append(str(repo / "scripts/check-editor-idle-save.swift"))
+sources.append(str(check_source))
 source_list = build / "sources"
 source_list.write_text("\n".join(sources))
-binary = build / "check-editor-idle-save"
+binary = build / check_source.stem
 command = [
-    "xcrun", "swiftc", "-parse-as-library", "-module-name", "Screendrop",
+    "lockf", "/private/tmp/screendrop-team/build.lock", "xcrun", "swiftc", "-parse-as-library", "-module-name", "Screendrop",
     "-target", f"{platform.machine()}-apple-macos27.0", "-default-isolation", "MainActor",
     "-enable-upcoming-feature", "MemberImportVisibility",
     "-enable-upcoming-feature", "NonisolatedNonsendingByDefault", "-D", "DEBUG",

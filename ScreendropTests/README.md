@@ -36,6 +36,15 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 It excludes only `AppEntry.swift`, uses the existing built DockProgress dependency, and verifies Foundation's storage resolves inside a temporary home before creating synthetic captures. It covers crop/undo, image deletion, text/composition and drag gates, coalescing, transaction failure, and close/quit during a delayed render. One AppKit window exercises the close delegate but is never shown or focused. Three 5K background/blur commits provide timings. The runner holds the shared benchmark lock only while executing the checks.
 
+`ColourOpacityTests` checks alpha bounds, hue-only matching, palette alpha copying, sidecar/preset round-trips and legacy opaque swatches. The same full-source runner accepts the focused windowless opacity harness:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+  python3 scripts/check-editor-idle-save.py /path/to/DevDerivedData scripts/check-editor-colour-opacity.swift
+```
+
+It checks mixed-colour selection across all six swatch-bearing shapes, one-step drag Undo/Redo, style readout restoration, new strokes and remembered alpha. Synthetic text exports through `AnnotationRenderer` check 0%, 35% and 100% pixels. Popover dismissal, keyboard/VoiceOver adjustment, native colour-panel alpha policy and minimum-window layout still require the coordinator's approved live round.
+
 Video redaction also has a windowless harness against the production app sources. It uses generated movies and an isolated temporary home to check mask persistence/undo, invalid-input reporting, preview failure handling, sparse-frame timing, CPU/Metal rendering, movie/GIF pixels, drag transfers, poster freshness and unchanged original bytes. After a Dev build, pass its DerivedData folder:
 
 ```sh
