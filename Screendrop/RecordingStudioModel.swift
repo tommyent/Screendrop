@@ -1798,7 +1798,7 @@ final class RecordingStudioModel {
                 self.narrativeChapters = chapterSnapshot
                 self.narrativeStatus = suggestion.source
                 if (!url.isEmpty || !name.isEmpty) && server == nil {
-                    self.narrativeStatus = "Invalid local server URL or model. " + suggestion.source
+                    self.narrativeStatus = "Local model server failed: invalid URL or model; used " + suggestion.source
                 }
             } catch {
                 if !Task.isCancelled { self?.narrativeStatus = "Suggestions failed: \(error.localizedDescription)" }
