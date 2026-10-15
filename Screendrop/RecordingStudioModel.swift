@@ -1745,7 +1745,6 @@ final class RecordingStudioModel {
             registerUndo(actionName) { $0.applyChapters(previous, actionName: actionName) }
             chapters = next
             chapterError = nil
-            RecordingProjectStore.shared.reload()
         } catch {
             chapterError = "Chapters could not be saved: \(error.localizedDescription)"
         }

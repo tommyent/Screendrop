@@ -1154,6 +1154,32 @@ private struct StudioSubtitleBarView: View {
 /// field. Hovering a row skims the preview to that cue, clicking or editing
 /// commits the playhead there (paused), and the row under the playhead is
 /// highlighted so the list follows the video.
+private struct StudioChapterNameField: View {
+    let model: RecordingStudioModel
+    let chapter: RecordingChapter
+    @State private var draft: String?
+    @FocusState private var isEditing: Bool
+
+    var body: some View {
+        TextField("Chapter name", text: Binding(
+            get: { draft ?? chapter.title },
+            set: { draft = $0 }
+        ))
+        .textFieldStyle(.plain)
+        .focused($isEditing)
+        .onSubmit { commit() }
+        .onChange(of: isEditing) { _, editing in
+            if !editing { commit() }
+        }
+    }
+
+    private func commit() {
+        guard let draft else { return }
+        if draft != chapter.title { model.renameChapter(id: chapter.id, title: draft) }
+        if model.chapterError == nil { self.draft = nil }
+    }
+}
+
 private struct StudioSubtitleRow: View {
     @Bindable var model: RecordingStudioModel
     let cue: RecordingSubtitleCue
@@ -3352,11 +3378,7 @@ private struct StudioInspector: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Jump to \(chapter.title)")
-                    TextField("Chapter name", text: Binding(
-                        get: { chapter.title },
-                        set: { model.renameChapter(id: chapter.id, title: $0) }
-                    ))
-                    .textFieldStyle(.plain)
+                    StudioChapterNameField(model: model, chapter: chapter)
                     Button("Remove chapter", systemImage: "trash", role: .destructive) {
                         model.removeChapter(id: chapter.id)
                     }
