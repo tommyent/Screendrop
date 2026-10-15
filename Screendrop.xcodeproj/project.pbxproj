@@ -84,7 +84,6 @@
 		AF1400000000000000000003 /* Screendrop/RecordingTranscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF140000000000000000000C /* Screendrop/RecordingTranscription.swift */; };
 		AF1400000000000000000004 /* Screendrop/RecordingProject.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF140000000000000000000D /* Screendrop/RecordingProject.swift */; };
 		AF1400000000000000000005 /* Screendrop/SortedSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF140000000000000000000E /* Screendrop/SortedSearch.swift */; };
-		AF1400000000000000000006 /* Screendrop/RecordingNarrativeGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF140000000000000000000F /* Screendrop/RecordingNarrativeGenerator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -166,7 +165,6 @@
 		AF140000000000000000000C /* Screendrop/RecordingTranscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingTranscription.swift; sourceTree = SOURCE_ROOT; };
 		AF140000000000000000000D /* Screendrop/RecordingProject.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingProject.swift; sourceTree = SOURCE_ROOT; };
 		AF140000000000000000000E /* Screendrop/SortedSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/SortedSearch.swift; sourceTree = SOURCE_ROOT; };
-		AF140000000000000000000F /* Screendrop/RecordingNarrativeGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingNarrativeGenerator.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -228,7 +226,6 @@
 				AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */,
 				AF0500000000000000000102 /* Screendrop/RecordingInput.swift */,
 				AF0500000000000000000101 /* Screendrop/RecordingTranscript.swift */,
-				AF140000000000000000000F /* Screendrop/RecordingNarrativeGenerator.swift */,
 				AF140000000000000000000E /* Screendrop/SortedSearch.swift */,
 				AF140000000000000000000D /* Screendrop/RecordingProject.swift */,
 				AF140000000000000000000C /* Screendrop/RecordingTranscription.swift */,
@@ -413,7 +410,6 @@
 				AF0500000000000000000002 /* Screendrop/RecordingInput.swift in Sources */,
 				AF0500000000000000000001 /* Screendrop/RecordingTranscript.swift in Sources */,
 				AF2200000000000000000001 /* Screendrop/RecordingRedaction.swift in Sources */,
-				AF1400000000000000000006 /* Screendrop/RecordingNarrativeGenerator.swift in Sources */,
 				AF1400000000000000000005 /* Screendrop/SortedSearch.swift in Sources */,
 				AF1400000000000000000001 /* Screendrop/RecordingChapter.swift in Sources */,
 				AF1400000000000000000003 /* Screendrop/RecordingTranscription.swift in Sources */,

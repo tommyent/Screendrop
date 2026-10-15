@@ -3440,47 +3440,10 @@ private struct StudioInspector: View {
                 }
                 .font(.inspectorValue)
             }
-            narrativeControls
-        }
-    }
-
-    private var narrativeControls: some View {
-        VStack(alignment: .leading, spacing: InspectorMetrics.rowSpacing) {
-            if model.isGeneratingNarrative {
-                ProgressView().controlSize(.small)
-                InspectorActionButton("Cancel Generation", systemImage: "xmark") {
-                    model.cancelNarrativeSuggestions()
+            if !model.openingSentenceTitle.isEmpty {
+                InspectorActionButton("Use Opening Sentence as Title", systemImage: "textformat") {
+                    model.rename(to: model.openingSentenceTitle)
                 }
-            } else {
-                InspectorActionButton("Generate Names & Summary", systemImage: "sparkles") {
-                    model.generateNarrativeSuggestions()
-                }
-                .disabled(!model.canGenerateNarrativeSuggestions)
-            }
-            if let status = model.narrativeStatus { InspectorHint(status) }
-            if !model.narrativeSuggestionsAreCurrent {
-                InspectorHint("The recording changed. Generate again before accepting suggestions.")
-            }
-            if model.narrativeStatus != nil || !model.narrativeTitle.isEmpty {
-                TextField("Suggested title", text: $model.narrativeTitle, axis: .vertical)
-                    .font(.inspectorValue)
-                    .disabled(model.isGeneratingNarrative)
-                InspectorActionButton("Use as Title", systemImage: "checkmark") { model.useNarrativeTitle() }
-                    .disabled(model.isGeneratingNarrative || !model.narrativeSuggestionsAreCurrent || model.narrativeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            if model.hasNarrativeChapterNames {
-                ForEach(model.suggestedChapterNames) { chapter in
-                    Text(chapter.title).font(.inspectorValue)
-                }
-                InspectorActionButton("Use Chapter Names", systemImage: "list.bullet") { model.useNarrativeChapterNames() }
-                    .disabled(model.isGeneratingNarrative || !model.narrativeSuggestionsAreCurrent)
-            }
-            if model.narrativeStatus != nil || !model.narrativeSummary.isEmpty {
-                TextField("Summary draft", text: $model.narrativeSummary, axis: .vertical)
-                    .font(.inspectorValue)
-                    .disabled(model.isGeneratingNarrative)
-                InspectorActionButton("Save Summary", systemImage: "checkmark") { model.saveNarrationSummary() }
-                    .disabled(model.isGeneratingNarrative || !model.narrativeSuggestionsAreCurrent)
             }
         }
     }
