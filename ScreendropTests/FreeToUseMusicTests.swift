@@ -140,6 +140,20 @@ struct FreeToUseMusicTests {
         #expect(track.startOffset(at: -.infinity) == 0)
     }
 
+    @Test("Listening advances the scrub bar but only an explicit seek chooses the music start")
+    func listeningDoesNotChooseStart() {
+        let preview = FreeToUseMusicPreview()
+        preview.updatePlaybackPosition(10, duration: 131)
+        #expect(preview.position == 10)
+        #expect(preview.selectionPosition == 0)
+        preview.scrubPosition = 20
+        preview.updatePlaybackPosition(25, duration: 131)
+        #expect(preview.position == 25)
+        #expect(preview.selectionPosition == 20)
+        preview.stop()
+        #expect(preview.selectionPosition == 0)
+    }
+
     @Test("Server and malformed responses produce inline errors and permit retry")
     func errorsAndRetry() async throws {
         let api = client([url("music/tracks/all"): (503, Data())])

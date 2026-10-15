@@ -6,18 +6,18 @@ import Observation
 final class FreeToUseMusicPreview {
     private(set) var trackID: String?
     private(set) var position: TimeInterval = 0
+    private(set) var selectionPosition: TimeInterval = 0
     private(set) var isPlaying = false
     private(set) var error: String?
     var isScrubbing = false
 
     var scrubPosition: TimeInterval {
         get { position }
-        set { seek(to: newValue) }
-    }
-
-    var selectionPosition: TimeInterval {
-        let current = player.currentTime().seconds
-        return isScrubbing || seekID != nil || !current.isFinite ? position : current
+        set {
+            guard newValue.isFinite else { return }
+            selectionPosition = max(0, newValue)
+            seek(to: newValue)
+        }
     }
 
     @ObservationIgnored private let player = AVPlayer()
@@ -55,7 +55,7 @@ final class FreeToUseMusicPreview {
             MainActor.assumeIsolated {
                 guard let self, let item, self.player.currentItem === item,
                       !self.isScrubbing, self.seekID == nil, time.seconds.isFinite else { return }
-                self.position = min(track.duration, max(0, time.seconds))
+                self.updatePlaybackPosition(time.seconds, duration: track.duration)
             }
         }
         endObserver = NotificationCenter.default.addObserver(
@@ -73,6 +73,11 @@ final class FreeToUseMusicPreview {
     func retry(_ track: FreeToUseMusicAPI.Track) {
         stop()
         toggle(track)
+    }
+
+    func updatePlaybackPosition(_ seconds: TimeInterval, duration: TimeInterval) {
+        guard seconds.isFinite else { return }
+        position = min(duration, max(0, seconds))
     }
 
     private func seek(to seconds: TimeInterval) {
@@ -99,6 +104,7 @@ final class FreeToUseMusicPreview {
         player.replaceCurrentItem(with: nil)
         trackID = nil
         position = 0
+        selectionPosition = 0
         isPlaying = false
         isScrubbing = false
         seekID = nil
