@@ -125,6 +125,62 @@ struct RecordingExportRegressionChecks {
         print("PASS: version-2 cache rejected, re-rendered, and version-3 cache reused")
     }
 
+    final class Gate {
+        var continuation: CheckedContinuation<Void, Never>?
+
+        func wait() async {
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        func resume() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    static func until(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        while !condition() {
+            try check(ContinuousClock.now < deadline, "Timed out waiting for export state")
+            try await Task.sleep(for: .milliseconds(2))
+        }
+    }
+
+    static func cancelRetry(in directory: URL) async throws {
+        let model = RecordingStudioModel(url: directory.appendingPathComponent("unloaded.mov"))
+        defer { model.teardown() }
+        let first = Gate(), retry = Gate()
+        var starts = 0
+        model.startExportTask {
+            starts += 1
+            await first.wait()
+            model.exportState = Task.isCancelled ? .idle : .finished(directory)
+        }
+        try await until { first.continuation != nil }
+        model.cancelExport()
+        model.cancelExport()
+        try check(model.exportState.isExporting && model.hasRunningWork, "Cancel cleared busy state before the task exited")
+        model.startExportTask { starts += 1 }
+        await Task.yield()
+        try check(starts == 1 && model.exportState.isExporting && model.hasRunningWork, "Retry started while canceled export was suspended")
+        first.resume()
+        try await until { !model.hasRunningWork }
+        if case .idle = model.exportState { } else { throw Failure(description: "Canceled export did not return to idle") }
+
+        model.startExportTask {
+            starts += 1
+            await retry.wait()
+            model.exportState = .finished(directory)
+        }
+        try await until { retry.continuation != nil }
+        await Task.yield()
+        try check(starts == 2 && model.exportState.isExporting && model.hasRunningWork, "Completed cancellation cleared the retry's state")
+        retry.resume()
+        try await until { !model.hasRunningWork }
+        if case .finished = model.exportState { } else { throw Failure(description: "Retry did not complete") }
+        print("PASS: canceled model task stays busy, blocks retry until exit, and releases the task for a successful retry")
+    }
+
     static func main() async throws {
         guard let root = ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] else {
             throw Failure(description: "Run through check-recording-export-regressions.py")
@@ -133,6 +189,7 @@ struct RecordingExportRegressionChecks {
         let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
+        try await cancelRetry(in: directory)
         try await captionPixels(in: directory)
     }
 }

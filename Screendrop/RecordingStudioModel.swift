@@ -180,7 +180,7 @@ final class RecordingStudioModel {
     var shareState: RecordingStudioShareState = .idle
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportState.isExporting || audioExportState.isExporting || shareState.isBusy
+        exportTask != nil || exportState.isExporting || audioExportState.isExporting || shareState.isBusy
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -2178,13 +2178,12 @@ final class RecordingStudioModel {
             let configuration: RecordingStudioExporter.Configuration?
             do { configuration = session == nil ? try self.makeExportConfiguration() : nil }
             catch { self.exportState = .failed(error.localizedDescription); return }
-            self.exportState = .exporting(progress: 0)
             let report: @Sendable (Double) -> Void = { [weak self] progress in
                 Task { @MainActor [weak self] in
                     if self?.exportState.isExporting == true { self?.exportState = .exporting(progress: progress) }
                 }
             }
-            self.exportTask = Task { [weak self] in
+            self.startExportTask { [weak self] in
                 do {
                     let folder: URL
                     if let session {
@@ -2212,7 +2211,7 @@ final class RecordingStudioModel {
     func export() {
         // One render at a time: the share pipeline uses the same exporter,
         // so a second encode would just fight it for the media engine.
-        guard !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
+        guard exportTask == nil, !exportState.isExporting, !shareState.isBusy, isLoaded else { return }
         pause()
         let previewURL = sessionURL
 
@@ -2222,9 +2221,7 @@ final class RecordingStudioModel {
         if let cached = freshDeliverableURL {
             let suggestedFileName = exportSuggestedFileName
             let settings = exportSettings
-            // A copy is instant; a GIF takes a while, so it shows progress.
-            if settings.effectiveExportsGIF { exportState = .exporting(progress: 0) }
-            exportTask = Task { [weak self] in
+            startExportTask { [weak self] in
                 do {
                     let savedURL = try await Self.save(movie: cached, as: settings, suggestedFileName: suggestedFileName) { progress in
                         Task { @MainActor [weak self] in
@@ -2244,8 +2241,6 @@ final class RecordingStudioModel {
             return
         }
 
-        exportState = .exporting(progress: 0)
-
         let configuration: RecordingStudioExporter.Configuration
         do {
             configuration = try makeExportConfiguration()
@@ -2260,7 +2255,7 @@ final class RecordingStudioModel {
 
         let dockProgressID = DockExportProgressCoordinator.shared.start()
 
-        exportTask = Task { [weak self] in
+        startExportTask { [weak self] in
             do {
                 let exporter = RecordingStudioExporter()
                 let report: @Sendable (Double) -> Void = { progress in
@@ -2294,12 +2289,18 @@ final class RecordingStudioModel {
         }
     }
 
-    func cancelExport() {
-        exportTask?.cancel()
-        exportTask = nil
-        if exportState.isExporting {
-            exportState = .idle
+    func startExportTask(_ operation: @escaping @MainActor () async -> Void) {
+        guard exportTask == nil else { return }
+        exportState = .exporting(progress: 0)
+        exportTask = Task { [weak self] in
+            defer { self?.exportTask = nil }
+            await operation()
         }
+    }
+
+    func cancelExport() {
+        // Cancellation is cooperative; keep retry and close guarded until the task exits.
+        exportTask?.cancel()
     }
 
     // MARK: - Audio only
