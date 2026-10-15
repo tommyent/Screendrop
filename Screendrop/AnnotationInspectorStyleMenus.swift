@@ -15,6 +15,7 @@ struct AnnotationSwatchStrip: View {
     let selectedSwatch: AnnotationSwatch
     /// Six in the inspector; the toolbar's style pill puts them all in one row.
     var columnCount = 6
+    var showsAlpha = false
     let onSelect: (AnnotationSwatch) -> Void
 
     private static let swatchDiameter: CGFloat = 19
@@ -32,23 +33,23 @@ struct AnnotationSwatchStrip: View {
 
     private func swatchButton(for swatch: AnnotationSwatch) -> some View {
         Button {
-            onSelect(swatch)
+            onSelect(swatch.withAlpha(selectedSwatch.alpha))
         } label: {
             swatchCircle(
                 fill: AnyShapeStyle(swatch.color),
-                isSelected: selectedSwatch == swatch
+                isSelected: selectedSwatch.hasSameHue(as: swatch)
             )
         }
         .buttonStyle(.plain)
         .help(swatch.title)
         .accessibilityLabel(swatch.title)
-        .accessibilityAddTraits(selectedSwatch == swatch ? .isSelected : [])
+        .accessibilityAddTraits(selectedSwatch.hasSameHue(as: swatch) ? .isSelected : [])
     }
 
     private var customWell: some View {
         Button {
             AnnotationColorPanelBridge.shared.present(
-                current: selectedSwatch.nsColor
+                current: selectedSwatch.nsColor, showsAlpha: showsAlpha
             ) { color in
                 onSelect(.custom(from: color))
             }
@@ -86,7 +87,7 @@ struct AnnotationSwatchStrip: View {
     }
 
     private var isCustomSelected: Bool {
-        !AnnotationSwatch.allCases.contains(selectedSwatch)
+        !AnnotationSwatch.allCases.contains { selectedSwatch.hasSameHue(as: $0) }
     }
 }
 
@@ -99,9 +100,9 @@ final class AnnotationColorPanelBridge: NSObject {
 
     private var onChange: ((NSColor) -> Void)?
 
-    func present(current: NSColor, onChange: @escaping (NSColor) -> Void) {
+    func present(current: NSColor, showsAlpha: Bool = false, onChange: @escaping (NSColor) -> Void) {
         let panel = NSColorPanel.shared
-        panel.showsAlpha = false
+        panel.showsAlpha = showsAlpha
         panel.color = current
         self.onChange = onChange
         panel.setTarget(self)

@@ -31,6 +31,16 @@ struct AnnotationSwatch: Identifiable, Equatable, Hashable {
         NSColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
     }
 
+    func withAlpha(_ alpha: CGFloat) -> AnnotationSwatch {
+        guard alpha.isFinite else { return self }
+        return AnnotationSwatch(id, title: title, red: red, green: green, blue: blue,
+                                alpha: min(max(alpha, 0), 1))
+    }
+
+    func hasSameHue(as other: AnnotationSwatch) -> Bool {
+        red == other.red && green == other.green && blue == other.blue
+    }
+
     var numberedCircleTextNSColor: NSColor {
         isLight ? .black : .white
     }

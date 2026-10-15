@@ -6,6 +6,7 @@ import SwiftUI
 struct AnnotationStylePillButton: View {
     @Bindable var model: AnnotationEditorModel
     @State private var isPresented = false
+    @State private var isOpacityEditing = false
 
     private var isAvailable: Bool { model.isColorStyleAvailable || model.isTextStyleAvailable }
 
@@ -27,47 +28,75 @@ struct AnnotationStylePillButton: View {
         .accessibilityLabel("Colour and size, \(model.selectedSwatch.title)")
         .closesOnEditorEscape($isPresented)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            HStack(spacing: 12) {
-                AnnotationSwatchStrip(
-                    selectedSwatch: model.selectedSwatch,
-                    columnCount: AnnotationSwatch.allCases.count + 1
-                ) { swatch in
-                    model.setSwatch(swatch)
-                }
-                .fixedSize()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    AnnotationSwatchStrip(
+                        selectedSwatch: model.selectedSwatch,
+                        columnCount: AnnotationSwatch.allCases.count + 1,
+                        showsAlpha: true
+                    ) { swatch in
+                        model.setSwatch(swatch)
+                    }
+                    .fixedSize()
 
-                if model.isTextStyleAvailable {
-                    TaperedSlider(
-                        title: "Text size",
-                        value: model.selectedTextFontSize,
-                        stops: AnnotationSizeStops.textSizes,
-                        onEditing: model.setInspectorEditing
-                    ) { model.selectedTextFontSize = $0 }
+                    if model.isTextStyleAvailable {
+                        TaperedSlider(
+                            title: "Text size",
+                            value: model.selectedTextFontSize,
+                            stops: AnnotationSizeStops.textSizes,
+                            onEditing: model.setInspectorEditing
+                        ) { model.selectedTextFontSize = $0 }
 
-                    InspectorSegmented(
-                        options: TextBoxStyle.allCases,
-                        isSelected: { $0 == model.selectedTextBoxStyle },
-                        onTap: { model.selectedTextBoxStyle = $0 },
-                        label: { style in
-                            TextBoxStyleIcon(style: style)
-                                .help(style.title)
-                                .accessibilityLabel(style.title)
-                        },
-                        height: InspectorMetrics.controlHeight
-                    )
-                    .frame(width: 64)
-                } else if model.isStrokeStyleAvailable {
-                    TaperedSlider(
-                        title: "Line width",
-                        value: model.strokeWidth,
-                        stops: AnnotationSizeStops.lineWidths,
-                        onEditing: model.setInspectorEditing
-                    ) { model.setStrokeWidth($0) }
+                        InspectorSegmented(
+                            options: TextBoxStyle.allCases,
+                            isSelected: { $0 == model.selectedTextBoxStyle },
+                            onTap: { model.selectedTextBoxStyle = $0 },
+                            label: { style in
+                                TextBoxStyleIcon(style: style)
+                                    .help(style.title)
+                                    .accessibilityLabel(style.title)
+                            },
+                            height: InspectorMetrics.controlHeight
+                        )
+                        .frame(width: 64)
+                    } else if model.isStrokeStyleAvailable {
+                        TaperedSlider(
+                            title: "Line width",
+                            value: model.strokeWidth,
+                            stops: AnnotationSizeStops.lineWidths,
+                            onEditing: model.setInspectorEditing
+                        ) { model.setStrokeWidth($0) }
+                    }
                 }
+
+                HStack {
+                    Text("Opacity")
+                    Slider(value: Binding(
+                        get: { model.selectedSwatch.alpha },
+                        set: { model.setSwatchAlpha($0) }
+                    ), in: 0...1, step: 0.01) {
+                        Text("Opacity")
+                    } onEditingChanged: { setOpacityEditing($0) }
+                    .labelsHidden()
+                    .accessibilityValue(Text(model.selectedSwatch.alpha, format: .percent.precision(.fractionLength(0))))
+
+                    Text(model.selectedSwatch.alpha, format: .percent.precision(.fractionLength(0)))
+                        .monospacedDigit()
+                        .frame(width: 40, alignment: .trailing)
+                        .accessibilityHidden(true)
+                }
+                .font(.callout)
             }
+            .onDisappear { setOpacityEditing(false) }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
         }
+    }
+
+    private func setOpacityEditing(_ editing: Bool) {
+        guard isOpacityEditing != editing else { return }
+        isOpacityEditing = editing
+        model.setInspectorEditing(editing)
     }
 }
 

@@ -827,6 +827,26 @@ final class AnnotationEditorModel {
         }
     }
 
+    func setSwatchAlpha(_ alpha: CGFloat) {
+        guard alpha.isFinite else { return }
+        selectedSwatch = selectedSwatch.withAlpha(alpha)
+        engine.currentSwatch = selectedSwatch
+        saveAnnotationPreset()
+
+        // A mixed-colour selection keeps each shape's own RGB.
+        engine.applyStyleToSelection { shape in
+            switch shape.kind {
+            case var .geo(p): p.swatch = p.swatch.withAlpha(alpha); shape.kind = .geo(p)
+            case var .draw(p): p.swatch = p.swatch.withAlpha(alpha); shape.kind = .draw(p)
+            case var .arrow(p): p.swatch = p.swatch.withAlpha(alpha); shape.kind = .arrow(p)
+            case var .text(p): p.swatch = p.swatch.withAlpha(alpha); shape.kind = .text(p)
+            case var .numbered(p): p.swatch = p.swatch.withAlpha(alpha); shape.kind = .numbered(p)
+            case var .magnifier(p): p.swatch = p.swatch.withAlpha(alpha); shape.kind = .magnifier(p)
+            case .redaction, .highlight, .image: break
+            }
+        }
+    }
+
     func setStrokeWidth(_ width: CGFloat) {
         strokeWidth = width
         engine.currentStrokeWidth = Double(width)
@@ -859,7 +879,7 @@ final class AnnotationEditorModel {
 
     /// Pull the inspector's values from whatever is selected, so selecting a shape shows its style.
     private func syncStyleFromSelection() {
-        guard let shape = selectedShape else { return }
+        guard let shape = engine.selectedShapes.first else { return }
         if let dash = shape.geoProps?.dash ?? shape.arrowProps?.dash {
             handDrawn = dash == .draw
             engine.currentDash = dash
@@ -1452,6 +1472,7 @@ extension AnnotationEditorModel {
         let selection = engine.selectedIds
         engine.replaceDocument(shapes: snapshot.shapes, bindings: snapshot.bindings)
         engine.selectedIds = selection.filter { engine.document.shape($0) != nil }
+        syncStyleFromSelection()
     }
 
     private func removeOwnedCropFiles(keepingHistory: Bool = false) {
