@@ -2597,7 +2597,7 @@ final class RecordingStudioModel {
             audioVolume: Double(audioVolume),
             isolatedMicrophoneURL: voiceIsolationEnabled && !hasReplacementAudio ? isolatedMicrophone?.url : nil,
             microphoneTrackID: microphoneTrackID,
-            backgroundMusic: backgroundMusicConfiguration(includeAudio: !exportSettings.removeAudio),
+            backgroundMusic: backgroundMusicConfiguration(includeAudio: !exportSettings.removeAudio && !exportSettings.effectiveExportsGIF),
             reframe: reframe,
             fitContentAspect: fitContentAspect,
             usesUniformPadding: exportAspect == .original,

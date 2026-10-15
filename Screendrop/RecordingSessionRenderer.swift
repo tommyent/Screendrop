@@ -234,7 +234,7 @@ enum RecordingSessionRenderer {
             audioVolume: audioVolume,
             isolatedMicrophoneURL: isolatedMicrophoneURL,
             microphoneTrackID: microphoneTrackID,
-            backgroundMusic: !exportSettings.removeAudio ? document?.backgroundMusic.map {
+            backgroundMusic: !exportSettings.removeAudio && !exportSettings.effectiveExportsGIF ? document?.backgroundMusic.map {
                 .init(url: session.directoryURL.appendingPathComponent($0.fileName), settings: $0)
             } : nil,
             reframe: reframe,

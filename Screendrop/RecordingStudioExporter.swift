@@ -213,7 +213,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 microphoneTrackID: configuration.microphoneTrackID, isolatedMicrophone: isolatedMicrophone?.track)
         }
         let prepared = try await RecordingBackgroundMusicMixer.prepare(asset: baseAsset,
-            music: configuration.exportSettings.removeAudio ? nil : configuration.backgroundMusic,
+            music: configuration.exportSettings.removeAudio || configuration.exportSettings.effectiveExportsGIF ? nil : configuration.backgroundMusic,
             sourceURL: configuration.screenURL, microphoneTrackID: configuration.microphoneTrackID,
             timeline: clipTimeline, volume: configuration.audioVolume)
         let screenAsset = prepared.asset

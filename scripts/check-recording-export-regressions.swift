@@ -508,6 +508,27 @@ struct RecordingExportRegressionChecks {
                 "Replace/isolation lost music or source-mic ducking: \(levels)")
             try check(replacement ? levels[3] < 0.005 : levels[3] > 0.1, "Replace/isolation changed system track selection")
         }
+        var gifDocument = document
+        var gifSettings = configuration.exportSettings
+        gifSettings.exportsGIF = true
+        gifDocument.exportSettings = gifSettings
+        gifDocument.backgroundMusic?.fileName = "background-music.absent.wav"
+        try session.writeEditDocument(gifDocument)
+        let sharedGIF = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        try check(sharedGIF.backgroundMusic == nil, "Shared GIF configuration retained music")
+        let defensiveGIF = RecordingStudioExporter.Configuration(screenURL: session.screenURL, cameraURL: nil,
+            cameraOffset: 0, style: configuration.style, viewportTimeline: .identity,
+            pointerTimeline: nil, showsPressEffects: false, keystrokeTimeline: nil,
+            keystrokePlacement: configuration.keystrokePlacement, subtitleTimeline: nil,
+            subtitleStyle: configuration.subtitleStyle,
+            canvasSize: configuration.canvasSize, clipTimeline: cut, exportSettings: gifSettings,
+            microphoneTrackID: micID,
+            backgroundMusic: .init(url: session.directoryURL.appendingPathComponent("background-music.absent.wav"), settings: gifDocument.backgroundMusic!))
+        let intermediate = try await RecordingStudioExporter().export(defensiveGIF, progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: intermediate) }
+        let excludedMusic = try await level(intermediate, at: 0.85, frequency: 660)
+        try check(excludedMusic < 0.005, "GIF intermediate mixed music")
+        print("PASS: GIF configuration omits music; its intermediate exports without loading an absent song or applying music ducking")
         try check(try Data(contentsOf: session.screenURL) == original, "Mixing changed the source recording")
         print("PASS: Studio preview, shared video and audio-only exports retain voice/system audio, loop from offset, duck music on source mic and fade at edited end; independent volume; Replace/Isolate Voice remain compatible")
     }
