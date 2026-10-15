@@ -19,7 +19,7 @@ final class FreeToUseMusicPickerModel {
     @ObservationIgnored private let api: FreeToUseMusicAPI
     @ObservationIgnored private var tracksRequestID: UUID?
     @ObservationIgnored private var moreTask: Task<Void, Never>?
-    @ObservationIgnored private var downloadTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var downloadTask: Task<Void, Never>?
     @ObservationIgnored private var isClosed = false
     @ObservationIgnored private var failedOffset: TimeInterval = 0
 
@@ -97,6 +97,11 @@ final class FreeToUseMusicPickerModel {
             do {
                 let fileURL = try await api.download(track)
                 defer { try? FileManager.default.removeItem(at: fileURL) }
+                try Task.checkCancellation()
+                guard !isClosed else { return }
+                guard await RecordingReplacementAudio.load(url: fileURL, displayName: track.displayName) != nil else {
+                    throw FreeToUseMusicAPI.Failure.invalidAudio
+                }
                 try Task.checkCancellation()
                 guard !isClosed else { return }
                 // The Studio method copies synchronously before this temporary file is removed.

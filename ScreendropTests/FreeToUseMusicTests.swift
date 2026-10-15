@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 
@@ -20,7 +21,8 @@ nonisolated private final class MusicURLProtocol: URLProtocol, @unchecked Sendab
             return Self.replies[request.url!.absoluteString] ?? (500, Data())
         }
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
-                                       headerFields: ["Content-Type": "application/json"])!
+                                       headerFields: ["Content-Type": request.url!.host == "eu.data.freetouse.com"
+                                                      ? "application/octet-stream" : "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
@@ -51,6 +53,27 @@ struct FreeToUseMusicTests {
         mutate(&tracks)
         json["data"] = tracks
         return try JSONSerialization.data(withJSONObject: json)
+    }
+
+    private func firstTrack() throws -> FreeToUseMusicAPI.Track {
+        let page = try JSONDecoder().decode(FreeToUseMusicAPI.Page<FreeToUseMusicAPI.Track>.self,
+                                           from: fixture("search-instrumental"))
+        return try #require(page.data.first)
+    }
+
+    private func audioData() throws -> Data {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("music-test-\(UUID()).wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4800))
+        buffer.frameLength = buffer.frameCapacity
+        for frame in 0..<Int(buffer.frameLength) {
+            buffer.floatChannelData![0][frame] = 0.1 * sin(Float(frame) * 0.05)
+        }
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+        file.close()
+        return try Data(contentsOf: url)
     }
 
     @Test("Real category fixtures paginate through all three groups")
@@ -222,5 +245,39 @@ struct FreeToUseMusicTests {
         #expect(model.tracksError == nil)
         #expect(model.categoriesError == nil)
         #expect(!model.isLoading)
+    }
+
+    @Test("A nonempty invalid download stays inline with Retry; valid audio reaches the callback")
+    func validatesDownloadedAudio() async throws {
+        let track = try firstTrack()
+        let mp3 = try #require(track.mp3URL).absoluteString
+        let model = FreeToUseMusicPickerModel(api: client([mp3: (200, Data("<html>Maintenance</html>".utf8))]))
+        defer { model.close() }
+        var callbacks = 0
+        var dismissals = 0
+        model.use(track, setBackgroundMusic: { _, _, _, _ in callbacks += 1 }, dismiss: { dismissals += 1 })
+        await model.downloadTask?.value
+        #expect(callbacks == 0)
+        #expect(dismissals == 0)
+        #expect(model.failedDownloadID == track.id)
+        #expect(model.downloadError?.contains("didn't send an MP3") == true)
+        #expect(model.downloadingID == nil)
+
+        let data = try audioData()
+        MusicURLProtocol.configure([mp3: (200, data)])
+        var adopted: URL?
+        model.use(track, setBackgroundMusic: { fileURL, name, credit, offset in
+            adopted = fileURL
+            #expect((try? Data(contentsOf: fileURL)) == data)
+            #expect(name == track.displayName)
+            #expect(credit == track.credit)
+            #expect(offset == 0)
+            callbacks += 1
+        }, dismiss: { dismissals += 1 })
+        await model.downloadTask?.value
+        #expect(callbacks == 1)
+        #expect(dismissals == 1)
+        #expect(model.downloadError == nil)
+        #expect(!FileManager.default.fileExists(atPath: try #require(adopted).path))
     }
 }
