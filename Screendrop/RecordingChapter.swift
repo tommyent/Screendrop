@@ -38,7 +38,7 @@ nonisolated enum RecordingChapterPlanner {
                 let end = index + 1 < result.count ? result[index + 1].start : timeline.duration
                 let text = chapterText(readable, through: timeline, start: result[index].start, end: end)
                 let title = title(from: text)
-                result[index].title = title.isEmpty ? "Chapter" : title
+                result[index].title = title.isEmpty ? "Chapter \(index + 1)" : title
             }
         }
         return result

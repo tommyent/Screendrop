@@ -1903,9 +1903,13 @@ final class RecordingStudioModel {
         guard isLoaded, duration > 0 else { return }
         let time = min(currentTime, max(0, duration - 0.001))
         guard !visibleChapters.contains(where: { abs($0.start - time) < 0.5 }) else { return }
-        applyChapters(chapters + [RecordingChapter(
-            title: "Chapter \(chapters.count + 1)", start: clipTimeline.sourceTime(at: time)
-        )], actionName: "Add Chapter")
+        var chapter = RecordingChapter(
+            title: "Chapter \(chapters.count + 1)", start: clipTimeline.sourceTime(at: time), autoTitle: true
+        )
+        chapter.title = RecordingChapterPlanner.mapped(
+            chapters + [chapter], through: clipTimeline, cues: subtitleCues, words: transcriptWords
+        ).first(where: { $0.id == chapter.id })?.title ?? chapter.title
+        applyChapters(chapters + [chapter], actionName: "Add Chapter")
     }
 
     func suggestChapters() {
