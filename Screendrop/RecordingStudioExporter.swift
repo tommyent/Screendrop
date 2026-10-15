@@ -60,6 +60,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         let isolatedMicrophoneURL: URL?
         let microphoneTrackID: CMPersistentTrackID?
         let audioVolume: Double
+        let backgroundMusic: RecordingBackgroundMusicMixer.Configuration?
         /// Non-nil when exporting into a different aspect ratio; drives the
         /// crop-and-follow virtual camera in place of the zoom viewport.
         let reframe: ReframeTrack?
@@ -92,6 +93,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             audioVolume: Double = 1,
             isolatedMicrophoneURL: URL? = nil,
             microphoneTrackID: CMPersistentTrackID? = nil,
+            backgroundMusic: RecordingBackgroundMusicMixer.Configuration? = nil,
             reframe: ReframeTrack? = nil,
             fitContentAspect: CGFloat? = nil,
             usesUniformPadding: Bool = false,
@@ -117,6 +119,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
             self.audioVolume = audioVolume
             self.isolatedMicrophoneURL = isolatedMicrophoneURL
             self.microphoneTrackID = microphoneTrackID
+            self.backgroundMusic = backgroundMusic
             self.reframe = reframe
             self.fitContentAspect = fitContentAspect
             self.usesUniformPadding = usesUniformPadding
@@ -206,7 +209,6 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         guard let videoTrack = try await screenAsset.loadTracks(withMediaType: .video).first else {
             throw ExportError.noVideoTrack
         }
-        let audioTracks = try await screenAsset.loadTracks(withMediaType: .audio)
         let exportStartTime = CMTime.zero
         let exportTimeRange = CMTimeRange(
             start: exportStartTime,
@@ -235,39 +237,22 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         screenReader.add(videoOutput)
         screenReader.timeRange = exportTimeRange
 
-        // An imported soundtrack replaces the recorded one wholesale, and it
-        // needs its own reader: it is a different file, already carrying the
-        // finished cut's timing, so it plays straight through from zero
-        // while the screen reader stays on the composed video.
         var audioOutput: AVAssetReaderAudioMixOutput?
         var replacementReader: AVAssetReader?
         if !configuration.exportSettings.removeAudio {
-            if let replacementURL = configuration.audioReplacementURL {
-                let replacementAsset = AVURLAsset(url: replacementURL)
-                let replacementTracks = try await replacementAsset.loadTracks(withMediaType: .audio)
-                if !replacementTracks.isEmpty {
-                    let reader = try AVAssetReader(asset: replacementAsset)
-                    // Clamps a soundtrack that overruns the cut; a shorter
-                    // one simply leaves the tail silent.
-                    reader.timeRange = exportTimeRange
-                    let output = AVAssetReaderAudioMixOutput(
-                        audioTracks: replacementTracks,
-                        audioSettings: nil
-                    )
-                    output.audioMix = RecordingAudioGain.makeMix(tracks: replacementTracks, volume: configuration.audioVolume)
-                    output.alwaysCopiesSampleData = false
-                    reader.add(output)
-                    replacementReader = reader
-                    audioOutput = output
-                }
-            } else if !audioTracks.isEmpty {
-                let output = AVAssetReaderAudioMixOutput(
-                    audioTracks: audioTracks,
-                    audioSettings: nil
-                )
-                output.audioMix = RecordingAudioGain.makeMix(tracks: audioTracks, volume: configuration.audioVolume)
+            let base: AVAsset = configuration.audioReplacementURL.map { AVURLAsset(url: $0) } ?? screenAsset
+            let prepared = try await RecordingBackgroundMusicMixer.prepare(asset: base, music: configuration.backgroundMusic,
+                sourceURL: configuration.screenURL, microphoneTrackID: configuration.microphoneTrackID,
+                timeline: clipTimeline, volume: configuration.audioVolume)
+            let tracks = try await prepared.asset.loadTracks(withMediaType: .audio)
+            if !tracks.isEmpty {
+                let reader = try AVAssetReader(asset: prepared.asset)
+                reader.timeRange = exportTimeRange
+                let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: nil)
+                output.audioMix = prepared.mix
                 output.alwaysCopiesSampleData = false
-                screenReader.add(output)
+                reader.add(output)
+                replacementReader = reader
                 audioOutput = output
             }
         }
@@ -390,6 +375,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
                 output: screenAudioOutput,
                 input: writerAudioInput,
                 writer: writer,
+                endTime: exportTimeRange.end,
                 cancelFlag: cancelFlag
             )
             let (renderedFrames, _) = try await (videoDone, audioDone)
@@ -412,6 +398,7 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
 
         cameraFeed?.cancel()
 
+        writer.endSession(atSourceTime: exportTimeRange.end)
         await withCheckedContinuation { continuation in
             writer.finishWriting {
                 continuation.resume()
@@ -560,12 +547,14 @@ nonisolated final class RecordingStudioExporter: @unchecked Sendable {
         output: AVAssetReaderAudioMixOutput?,
         input: AVAssetWriterInput?,
         writer: AVAssetWriter,
+        endTime: CMTime,
         cancelFlag: CancelFlag
     ) async throws {
         guard let output, let input else { return }
 
         while let sampleBuffer = output.copyNextSampleBuffer() {
             if cancelFlag.isCancelled { throw ExportError.cancelled }
+            guard let sampleBuffer = try RecordingAudioExporter.clipped(sampleBuffer, endingAt: endTime) else { break }
             while !input.isReadyForMoreMediaData {
                 if cancelFlag.isCancelled { throw ExportError.cancelled }
                 if writer.status == .failed { throw ExportError.writerFailed(writer.error) }

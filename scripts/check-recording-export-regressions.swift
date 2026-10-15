@@ -354,12 +354,13 @@ struct RecordingExportRegressionChecks {
         file.close()
     }
 
-    static func audioLevels(at url: URL) async throws -> [Float] {
+    static func audioLevels(at url: URL, time: Double = 0.2, length: Double = 0.5,
+                            frequencies: [Float] = [220, 440, 900]) async throws -> [Float] {
         let asset = AVURLAsset(url: url)
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         let reader = try AVAssetReader(asset: asset)
-        reader.timeRange = CMTimeRange(start: CMTime(seconds: 0.2, preferredTimescale: 48000),
-                                      duration: CMTime(seconds: 0.5, preferredTimescale: 48000))
+        reader.timeRange = CMTimeRange(start: CMTime(seconds: time, preferredTimescale: 48000),
+                                      duration: CMTime(seconds: length, preferredTimescale: 48000))
         let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 1,
             AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
@@ -380,7 +381,7 @@ struct RecordingExportRegressionChecks {
             }
         }
         try check(!samples.isEmpty, "Export has no audible samples")
-        return [220, 440, 900].map { frequency in
+        return frequencies.map { frequency in
             var real: Float = 0, imaginary: Float = 0
             for (index, sample) in samples.enumerated() {
                 let phase = 2 * Float.pi * Float(frequency) * Float(index) / 48000
@@ -388,6 +389,120 @@ struct RecordingExportRegressionChecks {
             }
             return 2 * sqrt(real * real + imaginary * imaginary) / Float(samples.count)
         }
+    }
+
+    static func backgroundMusicMixing(in directory: URL) async throws {
+        func tone(_ url: URL, frequency: Float, duration: Double = 8, active: (Double) -> Bool = { _ in true }) throws {
+            let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: UInt32(duration * 48000))!
+            buffer.frameLength = buffer.frameCapacity
+            for frame in 0..<Int(buffer.frameLength) {
+                let time = Double(frame) / 48000
+                buffer.floatChannelData![0][frame] = active(time) ? 0.15 * sin(2 * .pi * frequency * Float(time)) : 0
+            }
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            try file.write(from: buffer)
+            file.close()
+        }
+        func level(_ url: URL, at time: Double, frequency: Float) async throws -> Float {
+            try await audioLevels(at: url, time: time, length: 0.12, frequencies: [frequency])[0]
+        }
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-mix.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        let videoURL = directory.appendingPathComponent("music-video.mov")
+        let micURL = directory.appendingPathComponent("music-mic.wav")
+        let systemURL = directory.appendingPathComponent("music-system.wav")
+        let musicURL = directory.appendingPathComponent("music.wav")
+        let isolatedURL = directory.appendingPathComponent("music-isolated.wav")
+        try await movie(at: videoURL)
+        try tone(micURL, frequency: 220, active: { (1...2).contains($0) || (4...5).contains($0) })
+        try tone(systemURL, frequency: 900)
+        try tone(isolatedURL, frequency: 440)
+        try tone(musicURL, frequency: 660, duration: 3, active: { $0 >= 1 })
+        let composition = AVMutableComposition()
+        for url in [videoURL, systemURL, micURL] {
+            let asset = AVURLAsset(url: url)
+            for track in try await asset.load(.tracks) {
+                let destination = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                try destination.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 8, timescale: 1)), of: track, at: .zero)
+            }
+        }
+        let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough)!
+        try await exporter.export(to: session.screenURL, as: .mov)
+        let original = try Data(contentsOf: session.screenURL)
+        var manifest = CaptureManifest()
+        manifest.duration = 8; manifest.pixelWidth = 320; manifest.pixelHeight = 180
+        manifest.includesMicrophone = true; manifest.includesSystemAudio = true
+        try session.writeCaptureManifest(manifest)
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0.5, sourceEnd: 3), .init(sourceStart: 4, sourceEnd: 8, speed: 2)])
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        model.setBackgroundMusic(fileURL: musicURL, displayName: "Tone music", credit: "Test credit", startOffset: 1)
+        for _ in 0..<500 where model.backgroundMusic == nil && model.backgroundMusicError == nil { try await Task.sleep(for: .milliseconds(10)) }
+        try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Music mixing fixture import failed")
+        var document = model.currentDocument()
+        document.clips = cut.segments
+        document.zoomEnabled = false; document.zoomCues = []
+        document.exportSettings?.resolution = .original
+        try session.writeEditDocument(document)
+        await model.discardChanges() // Restore through the model below by reopening the edited package.
+        model.teardown()
+        try session.writeEditDocument(document)
+        session.removeDraftDocument()
+        let preview = RecordingStudioModel(url: session.directoryURL)
+        defer { preview.teardown() }
+        await preview.load()
+        try check(preview.isLoaded && preview.musicWaveform.count > 0, "Studio music preview or waveform did not load")
+        let item = preview.screenPlayer.currentItem!
+        let previewDuration = try await item.asset.load(.duration).seconds
+        try check(abs(previewDuration - cut.duration) < 0.01, "Studio composition missed cut duration: \(previewDuration)")
+        let previewURL = directory.appendingPathComponent("music-preview.m4a")
+        let previewExport = AVAssetExportSession(asset: item.asset, presetName: AVAssetExportPresetAppleM4A)!
+        previewExport.audioMix = item.audioMix
+        try await previewExport.export(to: previewURL, as: .m4a)
+        let shared = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+        let configuration = try await RecordingSessionRenderer.makeConfiguration(for: session)
+        let micID = configuration.microphoneTrackID
+        try check(micID != nil && configuration.backgroundMusic != nil, "Shared renderer lost mic/music configuration")
+        let audio = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, microphoneTrackID: micID, backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: audio) }
+        for url in [previewURL, shared, audio] {
+            let quiet = try await level(url, at: 0.15, frequency: 660)
+            let ducked = try await level(url, at: 0.85, frequency: 660)
+            let voice = try await level(url, at: 0.85, frequency: 220)
+            let system = try await level(url, at: 0.85, frequency: 900)
+            let repeated = try await level(url, at: 2.1, frequency: 660)
+            let faded = try await level(url, at: 4.3, frequency: 660)
+            try check(quiet > 0.025 && ducked > 0.004 && ducked < quiet * 0.4 && voice > 0.1 && system > 0.1,
+                "Music/voice/system mix or ducking failed: \(quiet), \(ducked), \(voice), \(system)")
+            try check(repeated > 0.025 && faded < quiet * 0.3, "Music loop/start offset/fade failed: \(repeated), \(faded)")
+            let duration = try await AVURLAsset(url: url).load(.duration).seconds
+            // Playback duration is checked on the composition, separately from this harness-only encoded proxy.
+            if url != previewURL {
+                try check(abs(duration - cut.duration) < 0.06, "Music export missed cut duration: \(url.lastPathComponent) = \(duration), expected \(cut.duration)")
+            }
+        }
+        let muted = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+            replacementURL: nil, format: .wav, volume: 0, microphoneTrackID: micID,
+            backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: muted) }
+        let mutedMusic = try await level(muted, at: 0.85, frequency: 660)
+        try check(mutedMusic > 0.004, "Recorded volume muted independent music")
+        for replacement in [false, true] {
+            let url = try await RecordingAudioExporter().export(.init(screenURL: session.screenURL, clipTimeline: cut,
+                replacementURL: replacement ? isolatedURL : nil, format: .wav,
+                isolatedMicrophoneURL: replacement ? nil : isolatedURL, microphoneTrackID: micID,
+                backgroundMusic: configuration.backgroundMusic), progress: { _ in })
+            defer { try? FileManager.default.removeItem(at: url) }
+            let levels = try await audioLevels(at: url, time: 0.85, length: 0.12, frequencies: [220, 440, 660, 900])
+            try check(levels[0] < 0.005 && levels[1] > 0.1 && levels[2] > 0.004 && levels[2] < 0.02,
+                "Replace/isolation lost music or source-mic ducking: \(levels)")
+            try check(replacement ? levels[3] < 0.005 : levels[3] > 0.1, "Replace/isolation changed system track selection")
+        }
+        try check(try Data(contentsOf: session.screenURL) == original, "Mixing changed the source recording")
+        print("PASS: Studio preview, shared video and audio-only exports retain voice/system audio, loop from offset, duck music on source mic and fade at edited end; independent volume; Replace/Isolate Voice remain compatible")
     }
 
     static func backgroundMusicStorage(in directory: URL) async throws {
@@ -601,6 +716,7 @@ struct RecordingExportRegressionChecks {
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
         try await quickLookInstant(in: directory)
+        try await backgroundMusicMixing(in: directory)
         try await backgroundMusicStorage(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
