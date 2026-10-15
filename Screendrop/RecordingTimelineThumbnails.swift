@@ -71,6 +71,7 @@ final class RecordingTimelineThumbnailStore {
     var onChange: (() -> Void)?
 
     private var url: URL?
+    private var redactions: [RecordingRedaction] = []
     private var duration: TimeInterval = 0
     private var images: [Key: NSImage] = [:]
     private var insertionOrder: [Key] = []
@@ -81,9 +82,10 @@ final class RecordingTimelineThumbnailStore {
     private var frozenLevel: Int?
     private var thawTask: Task<Void, Never>?
 
-    func prepare(url: URL, duration: TimeInterval) {
+    func prepare(url: URL, duration: TimeInterval, redactions: [RecordingRedaction] = []) {
         cancel()
         self.url = url
+        self.redactions = redactions
         self.duration = max(0, duration.isFinite ? duration : 0)
         images.removeAll()
         insertionOrder.removeAll()
@@ -91,6 +93,7 @@ final class RecordingTimelineThumbnailStore {
         queue.removeAll()
         settledLevel = nil
         frozenLevel = nil
+        onChange?()
         guard self.duration > 0 else { return }
         for index in 0..<Self.baseTileCount {
             enqueue(Key(level: 0, index: index))
@@ -252,10 +255,11 @@ final class RecordingTimelineThumbnailStore {
         let batch = Array(queue.suffix(Self.batchSize))
         queue.removeLast(batch.count)
         let requests = batch.map { request(for: $0) }
+        let regions = redactions
 
         task = Task { [weak self] in
             let renderTask = Task.detached(priority: .userInitiated) {
-                await Self.render(url: url, requests: requests)
+                await Self.render(url: url, requests: requests, redactions: regions)
             }
             let samples = await withTaskCancellationHandler {
                 await renderTask.value
@@ -297,9 +301,13 @@ final class RecordingTimelineThumbnailStore {
         insertionOrder = survivors
     }
 
-    nonisolated private static func render(url: URL, requests: [Request]) async -> [Sample] {
+    nonisolated private static func render(url: URL, requests: [Request], redactions: [RecordingRedaction]) async -> [Sample] {
         guard !requests.isEmpty, !Task.isCancelled else { return [] }
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        if !redactions.isEmpty {
+            do { generator.videoComposition = try await RecordingRedactionFilter.composition(asset: generator.asset, redactions: redactions) }
+            catch { return [] }
+        }
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 180, height: 110)
         let cancellation = ImageGenerationCancellation(generator: generator)

@@ -40,7 +40,7 @@ enum RecordingSessionRenderer {
         let pointerSynthesized = manifest?.pointerSynthesized == true
         // Draft edits count: a flatten made for an upload must show what the
         // user last saw in Studio, not the last state they pressed Save on.
-        let editDocument = session.effectiveEditDocument()
+        let editDocument = try session.editDocumentForRendering()
         guard session.hasCamera || pointerSynthesized || editDocument != nil else {
             return session.screenURL
         }
@@ -66,7 +66,7 @@ enum RecordingSessionRenderer {
     static func makeConfiguration(
         for session: RecordingSession
     ) async throws -> RecordingStudioExporter.Configuration {
-        try await makeConfiguration(for: session, editDocument: session.effectiveEditDocument())
+        try await makeConfiguration(for: session, editDocument: session.editDocumentForRendering())
     }
 
     private static func makeConfiguration(
@@ -206,7 +206,8 @@ enum RecordingSessionRenderer {
             audioVolume: audioVolume,
             reframe: reframe,
             fitContentAspect: fitContentAspect,
-            usesUniformPadding: aspect == .original
+            usesUniformPadding: aspect == .original,
+            redactions: document?.redactions ?? []
         )
     }
 

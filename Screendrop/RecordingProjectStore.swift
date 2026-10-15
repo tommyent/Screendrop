@@ -23,6 +23,8 @@ nonisolated struct RecordingProjectSummary: Identifiable, Equatable, Sendable {
     var hasUnsavedDraft: Bool
     var sizeOnDisk: Int64
     var lastOpenedAt: Date?
+    /// Makes summaries unequal after edits so Library refreshes thumbnails even when size and draft status stay unchanged.
+    var lastEditedAt: Date?
 
     var id: URL { session.directoryURL }
 
@@ -94,7 +96,10 @@ final class RecordingProjectStore {
             isSaved: session.hasSavedProject,
             hasUnsavedDraft: session.hasUnsavedDraft,
             sizeOnDisk: sizeOnDisk(of: session.directoryURL),
-            lastOpenedAt: metadata?.lastOpenedAt
+            lastOpenedAt: metadata?.lastOpenedAt,
+            lastEditedAt: [session.editDocumentURL, session.draftDocumentURL].compactMap {
+                try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            }.max()
         )
     }
 

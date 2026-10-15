@@ -11,8 +11,13 @@ import UniformTypeIdentifiers
 
 enum VideoPreviewImageLoader {
     static func thumbnail(at url: URL, maxPixelSize: CGFloat) async -> NSImage? {
-        let asset = AVURLAsset(url: url)
+        guard let preview = try? RecordingPreviewSource(url) else { return nil }
+        let asset = AVURLAsset(url: preview.url)
         let generator = AVAssetImageGenerator(asset: asset)
+        if !preview.redactions.isEmpty {
+            do { generator.videoComposition = try await RecordingRedactionFilter.composition(asset: asset, redactions: preview.redactions) }
+            catch { return nil }
+        }
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: maxPixelSize, height: maxPixelSize)
 
