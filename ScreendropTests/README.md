@@ -54,3 +54,5 @@ python3 scripts/recording-narrative-stub.py
 ```
 
 F4 review regressions cover model clamping and field-specific replies, preserved HTTP/timeout/JSON fallback reasons, the half-second chapter end margin, automatic names after cuts in both Studio mapping and share data, manual/legacy names, and cache invalidation for cue/word/clip/chapter edits. Native chapter-field Return/focus-loss and single-step Undo remain in the coordinator's approved live round. The standalone client also accepts an optional model name after its URL for one real local-server check; it uses synthetic narration only.
+
+A missing title, bad JSON or HTTP error for one chapter preserves the server title/summary and other chapter suggestions; an omitted chapter suggestion keeps its existing name on acceptance. Chapter cancellation still stops the run. The optional real-model check logs raw replies for its synthetic narration, including a thin chapter opening.

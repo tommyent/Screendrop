@@ -11,12 +11,29 @@ nonisolated private final class NarrativeStubProtocol: URLProtocol, @unchecked S
             return
         }
         let malformed = path.contains("malformed")
-        let body = request.httpBody ?? Data()
+        var body = request.httpBody ?? Data()
+        if body.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                guard count > 0 else { break }
+                body.append(contentsOf: buffer.prefix(count))
+            }
+        }
         let payload = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
         let titleOnly = path.contains("title-only") || payload?["max_tokens"] as? Int == 128
-        let content = malformed ? "not JSON" : titleOnly ? #"{"title":"A useful title"}"# : #"{"title":"A useful title","summary":"A factual summary of the narration."}"#
+        let messages = payload?["messages"] as? [[String: String]]
+        let failedChapter = path.contains("chapter-failure") && titleOnly && messages?.last?["content"] == "Okay so now"
+        let content: String
+        if malformed || (failedChapter && path.contains("chapter-failure-json")) { content = "not JSON" }
+        else if failedChapter { content = "{}" }
+        else if titleOnly { content = #"{"title":"A useful title"}"# }
+        else { content = #"{"title":"A useful title","summary":"A factual summary of the narration."}"# }
         let data = try! JSONSerialization.data(withJSONObject: ["choices": [["message": ["content": content]]]])
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: path.contains("http-error") ? 503 : 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        let status = path.contains("http-error") || (failedChapter && path.contains("chapter-failure-http")) ? 503 : 200
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -75,6 +92,38 @@ struct RecordingNarrativeTests {
         #expect(rules.summary.isEmpty && rules.chapterTitles.isEmpty)
         #expect(rules.source.contains("Local model server failed: bad JSON; used Opening-sentence title"))
         #expect(!rules.source.contains("pause-based"))
+    }
+
+    @Test func failingChapterKeepsOtherServerSuggestions() async throws {
+        let session = stubSession()
+        defer { session.invalidateAndCancel() }
+        let first = UUID(), thin = UUID(), last = UUID()
+        let input = RecordingNarrativeInput(text: "Choose an export preset. Save the recording.", chapters: [
+            .init(id: first, text: "Choose an export preset."),
+            .init(id: thin, text: "Okay so now"),
+            .init(id: last, text: "Save the recording.")
+        ])
+        for failure in ["missing", "http", "json"] {
+            let result = try await RecordingNarrativeGenerator.generate(input,
+                server: RecordingModelServer(url: "http://localhost/chapter-failure-\(failure)/v1", model: "fixture"), session: session,
+                apple: { _, _ in
+                    Issue.record("A failed chapter must not discard the successful server title and summary")
+                    throw RecordingNarrativeGenerator.Failure.unavailable
+                })
+            #expect(result.source == "Local model server")
+            #expect(result.title == "A useful title" && result.summary == "A factual summary of the narration.")
+            #expect(result.chapterTitles == [first: "A useful title", last: "A useful title"])
+        }
+    }
+
+    @Test func chapterCancellationStopsGeneration() async throws {
+        do {
+            _ = try await RecordingNarrativeGenerator.generate(.init(text: "Narration.", chapters: [.init(id: UUID(), text: "Chapter.")]), server: nil, apple: { _, fields in
+                if fields == .title { throw CancellationError() }
+                return .init(title: "Title", summary: "Summary")
+            })
+            Issue.record("Chapter cancellation must not return partial suggestions")
+        } catch { #expect(error is CancellationError) }
     }
 
     @Test func titleOnlyServerResponsesAndFailureReasons() async throws {

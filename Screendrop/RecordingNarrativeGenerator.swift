@@ -142,7 +142,8 @@ nonisolated enum RecordingNarrativeGenerator {
         return RecordingNarrativeText(title: title, summary: summary)
     }
 
-    static func serverText(_ text: String, server: RecordingModelServer, fields: Fields = .both, session: URLSession = .shared) async throws -> RecordingNarrativeText {
+    static func serverText(_ text: String, server: RecordingModelServer, fields: Fields = .both, session: URLSession = .shared,
+                           onReply: (@Sendable (Fields, Data) -> Void)? = nil) async throws -> RecordingNarrativeText {
         var request = URLRequest(url: server.url, timeoutInterval: 60)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -154,6 +155,7 @@ nonisolated enum RecordingNarrativeGenerator {
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse, data.count <= 256 * 1024 else { throw Failure.invalidResponse }
+        onReply?(fields, data)
         guard (200..<300).contains(response.statusCode) else { throw Failure.http(response.statusCode) }
         struct Response: Decodable {
             struct Choice: Decodable {
@@ -205,13 +207,14 @@ nonisolated enum RecordingNarrativeGenerator {
 
     static func generate(
         _ input: RecordingNarrativeInput, server: RecordingModelServer?, session: URLSession = .shared,
+        onServerReply: (@Sendable (Fields, Data) -> Void)? = nil,
         apple: @Sendable (String, Fields) async throws -> RecordingNarrativeText = { try await appleText($0, fields: $1) }
     ) async throws -> RecordingNarrativeSuggestion {
         var serverFailure = ""
         if let server {
             do {
                 return try await generate(input, source: "Local model server") {
-                    try await serverText($0, server: server, fields: $1, session: session)
+                    try await serverText($0, server: server, fields: $1, session: session, onReply: onServerReply)
                 }
             } catch {
                 try Task.checkCancellation()
@@ -259,7 +262,13 @@ nonisolated enum RecordingNarrativeGenerator {
         for chapter in input.chapters where !chapter.text.isEmpty {
             try Task.checkCancellation()
             // Chapter names use their opening; the whole narration remains in the summary reduction.
-            names[chapter.id] = try await smallerText(String(chapter.text.prefix(2000)), fields: .title, using: produce).title
+            do {
+                names[chapter.id] = try await smallerText(String(chapter.text.prefix(2000)), fields: .title, using: produce).title
+            } catch {
+                try Task.checkCancellation()
+                if error is CancellationError { throw error }
+                // An omitted suggestion preserves this chapter's existing name when applied.
+            }
         }
         return RecordingNarrativeSuggestion(title: title, summary: summaries[0], chapterTitles: names, source: source)
     }

@@ -7,14 +7,24 @@ import Foundation
         let id = UUID()
         let input = RecordingNarrativeInput(text: "Choose an export preset. Save the recording.", chapters: [.init(id: id, text: "Choose the export preset.")])
         if CommandLine.arguments.count > 2 {
-            let result = try await RecordingNarrativeGenerator.generate(input,
-                server: RecordingModelServer(url: base, model: CommandLine.arguments[2]))
+            let realInput = RecordingNarrativeInput(text: input.text, chapters: [
+                input.chapters[0], .init(id: UUID(), text: "Okay so now"), .init(id: UUID(), text: "Save the recording.")
+            ])
+            let result = try await RecordingNarrativeGenerator.generate(realInput,
+                server: RecordingModelServer(url: base, model: CommandLine.arguments[2]),
+                onServerReply: { fields, data in
+                    FileHandle.standardOutput.write(Data("RAW \(fields): \(String(decoding: data, as: UTF8.self))\n".utf8))
+                })
             precondition(result.source == "Local model server", result.source)
             precondition(!result.title.isEmpty && result.title.count <= 80)
             precondition(!result.summary.isEmpty && result.summary.count <= 400)
-            precondition(result.chapterTitles[id]?.isEmpty == false && result.chapterTitles[id]!.count <= 80)
-            print("PASS: real local model returned a bounded title, summary and chapter name")
-            print("Title: \(result.title)\nSummary: \(result.summary)\nChapter: \(result.chapterTitles[id]!)")
+            precondition(result.chapterTitles.values.allSatisfy { !$0.isEmpty && $0.count <= 80 })
+            print("PASS: real local model title and summary retained; chapter names are best effort")
+            print("Source: \(result.source)\nTitle: \(result.title)\nSummary: \(result.summary)")
+            for chapter in realInput.chapters {
+                let title = result.chapterTitles[chapter.id] ?? RecordingChapterPlanner.title(from: chapter.text)
+                print("Chapter (\(result.chapterTitles[chapter.id] == nil ? "rule-based" : "model")): \(title)")
+            }
             return
         }
         let good = try await RecordingNarrativeGenerator.generate(input, server: RecordingModelServer(url: base, model: "fixture"), apple: { _, _ in throw RecordingNarrativeGenerator.Failure.unavailable })
