@@ -760,6 +760,7 @@ final class RecordingStudioModel {
         isApplyingDocument = true
         defer { isApplyingDocument = false }
 
+        pause()
         cancelVoiceIsolation()
         voiceIsolationEnabled = document.isolateVoice
         backgroundMusicTask?.cancel()
