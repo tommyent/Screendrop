@@ -102,6 +102,26 @@ struct RecordingVoiceIsolationTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).allSatisfy { !$0.hasPrefix(".voice-") })
     }
 
+    @Test func overlappingRendersKeepOneCompletedCache() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let sourceURL = try makeAudio(in: directory, name: "mic", amplitude: 0)
+        let original = try Data(contentsOf: sourceURL)
+        let asset = AVURLAsset(url: sourceURL)
+        let track = try #require(try await asset.loadTracks(withMediaType: .audio).first)
+        let destination = directory.appendingPathComponent(RecordingVoiceIsolation.fileName)
+        async let first: Void = RecordingVoiceIsolation.render(sourceURL: sourceURL, microphoneTrackID: track.trackID,
+            destinationURL: destination, progress: { _ in })
+        async let second: Void = RecordingVoiceIsolation.render(sourceURL: sourceURL, microphoneTrackID: track.trackID,
+            destinationURL: destination, progress: { _ in })
+        _ = try await (first, second)
+        let cache = AVURLAsset(url: destination)
+        #expect(abs(try await cache.load(.duration).seconds - 3) < 0.025)
+        #expect(try Data(contentsOf: sourceURL) == original)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+            == [RecordingVoiceIsolation.fileName, "mic.wav"].sorted())
+    }
+
     @Test func failedRenderLeavesOriginalAndNoCache() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

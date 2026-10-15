@@ -90,7 +90,12 @@ nonisolated enum RecordingVoiceIsolation {
         if FileManager.default.fileExists(atPath: destinationURL.path) {
             _ = try FileManager.default.replaceItemAt(destinationURL, withItemAt: pendingURL)
         } else {
-            try FileManager.default.moveItem(at: pendingURL, to: destinationURL)
+            do {
+                try FileManager.default.moveItem(at: pendingURL, to: destinationURL)
+            } catch let error as CocoaError where error.code == .fileWriteFileExists
+                && FileManager.default.fileExists(atPath: destinationURL.path) {
+                // Another render installed its completed cache first.
+            }
         }
         progress(1)
     }
