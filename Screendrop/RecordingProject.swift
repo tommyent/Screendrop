@@ -22,6 +22,8 @@ nonisolated struct RecordingProjectMetadata: Codable, Sendable, Equatable {
     var lastOpenedAt: Date?
     /// Library tags. Optional so project files without them still decode.
     var tags: [String]?
+    var chapters: [RecordingChapter]?
+    var narrationSummary: String?
 
     init(
         version: Int? = RecordingProjectMetadata.currentVersion,

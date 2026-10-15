@@ -4,6 +4,9 @@ import SwiftUI
 struct VideoSettingsPane: View {
     @AppStorage(ScreendropPreferences.revealExportInFinderKey) private var revealExportInFinder = true
 
+    @AppStorage(RecordingNarrativeGenerator.serverURLKey) private var modelServerURL = ""
+    @AppStorage(RecordingNarrativeGenerator.serverModelKey) private var modelServerModel = ""
+
     var body: some View {
         Form {
             AfterCaptureActionsSection(type: .recording, title: "After Recording")
@@ -16,6 +19,14 @@ struct VideoSettingsPane: View {
                     Toggle(isOn: $revealExportInFinder) { label }
                 }
                 .toggleStyle(.switch)
+            }
+
+            Section("Local model server") {
+                TextField("URL", text: $modelServerURL, prompt: Text("http://localhost:11434/v1"))
+                TextField("Model", text: $modelServerModel, prompt: Text("llama3.2:3b"))
+                Text("Used only when you generate narration suggestions. Edited narration is sent to this URL. Leave blank to use Apple's on-device model; if neither is available, opening-sentence and pause rules still work.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Projects") {

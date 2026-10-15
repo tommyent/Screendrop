@@ -40,6 +40,7 @@ nonisolated enum CloudSidecarUploader {
         uploadID: String,
         uploadedFileURL: URL,
         transcriptData: Data?,
+        chapterData: Data?,
         createdAt: Date,
         customTitle: String? = nil,
         mediaKey: String? = nil,
@@ -69,6 +70,10 @@ nonisolated enum CloudSidecarUploader {
 
         if let transcriptData {
             fields.append(("transcript", String(decoding: transcriptData, as: UTF8.self)))
+        }
+
+        if let chapterData {
+            fields.append(("chapters", String(decoding: chapterData, as: UTF8.self)))
         }
 
         try Task.checkCancellation()
@@ -243,6 +248,23 @@ nonisolated enum CloudSidecarUploader {
             uploadedFileURL: uploadedFileURL
         ) else { return nil }
         return try? JSONEncoder().encode(transcript)
+    }
+
+    static func chapterData(sessionDirectory: URL, uploadedFileURL: URL) -> Data? {
+        let session = RecordingSession(directoryURL: sessionDirectory)
+        let chapters = session.loadProjectMetadata()?.chapters ?? []
+        let isRaw = uploadedFileURL.standardizedFileURL == session.screenURL.standardizedFileURL
+        let document = isRaw ? session.effectiveEditDocument() : session.loadRenderStamp()
+        guard let sourceDuration = session.loadCaptureManifest()?.duration else { return nil }
+        let timeline: RecordingClipTimeline
+        if isRaw {
+            timeline = .full(sourceDuration: sourceDuration)
+        } else if let clips = document?.clips, !clips.isEmpty {
+            timeline = RecordingClipTimeline(segments: clips).normalized(to: sourceDuration)
+        } else {
+            timeline = .legacyTrim(start: document?.trimStart, end: document?.trimEnd, sourceDuration: sourceDuration)
+        }
+        return try? RecordingChapterPlanner.shareData(chapters, through: timeline, cues: document?.subtitleCues ?? [], words: document?.subtitleWords ?? [])
     }
 
     private static func transcriptPayload(
