@@ -46,7 +46,7 @@ final class CloudUploader: NSObject {
 
     /// One cancellable operation covers preparation and transport. Its ID
     /// keeps a cancelled completion from clearing a newer retry's state.
-    private var activeTasks: [UUID: (id: UUID, task: Task<(CloudUploadResult, URL, Data?), any Error>)] = [:]
+    private var activeTasks: [UUID: (id: UUID, task: Task<(CloudUploadResult, URL, Data?, Data?), any Error>)] = [:]
 
     private override init() {
         super.init()
@@ -63,7 +63,8 @@ final class CloudUploader: NSObject {
         socialEnabled: Bool = true,
         expiresAt: Date? = nil,
         allowAnonymousComments: Bool? = nil,
-        password: String? = nil
+        password: String? = nil,
+        chapterData: Data? = nil
     ) async throws -> CloudUploadResult {
         let allowAnonymousComments = allowAnonymousComments ?? CloudUploadPreferences.lastAnonymousComments
         try Task.checkCancellation()
@@ -81,7 +82,7 @@ final class CloudUploader: NSObject {
         uploadProgress[itemID] = 0
         failedItemIDs.remove(itemID)
 
-        let uploadTask = Task { [weak self] () throws -> (CloudUploadResult, URL, Data?) in
+        let uploadTask = Task { [weak self] () throws -> (CloudUploadResult, URL, Data?, Data?) in
             guard let self else { throw CancellationError() }
             try Task.checkCancellation()
 
@@ -102,6 +103,9 @@ final class CloudUploader: NSObject {
             let transcriptData = isVideo && RecordingSession.isSessionDirectory(sessionDirectory)
                 ? CloudSidecarUploader.transcriptData(sessionDirectory: sessionDirectory, uploadedFileURL: fileURL)
                 : nil
+            let frozenChapters = chapterData ?? (isVideo && RecordingSession.isSessionDirectory(sessionDirectory)
+                ? CloudSidecarUploader.chapterData(sessionDirectory: sessionDirectory, uploadedFileURL: fileURL)
+                : nil)
             let dimensions: (width: Int, height: Int)?
             let duration: Double?
 
@@ -140,7 +144,7 @@ final class CloudUploader: NSObject {
                 }
             )
 
-            return (result, fileURL, transcriptData)
+            return (result, fileURL, transcriptData, frozenChapters)
         }
 
         activeTasks[itemID] = (operationID, uploadTask)
@@ -154,7 +158,7 @@ final class CloudUploader: NSObject {
         }
 
         do {
-            let (result, uploadedFileURL, transcriptData) = try await withTaskCancellationHandler {
+            let (result, uploadedFileURL, transcriptData, frozenChapters) = try await withTaskCancellationHandler {
                 try await uploadTask.value
             } onCancel: {
                 uploadTask.cancel()
@@ -171,7 +175,7 @@ final class CloudUploader: NSObject {
             uploadedURLs[itemID] = result.url
             if result.expiryIgnored { showExpiryIgnoredNotice() }
             if mimeTypeForFile(uploadedFileURL).hasPrefix("video/") {
-                scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, title: title, creds: creds)
+                scheduleSidecarUpload(uploadID: result.id, fileURL: uploadedFileURL, transcriptData: transcriptData, chapterData: frozenChapters, title: title, creds: creds)
             }
             // The Library's storage bar; a video's sidecars land in the next reading.
             CloudLibraryModel.shared.refreshUsage()
@@ -191,7 +195,7 @@ final class CloudUploader: NSObject {
     /// Ships the share-page extras (poster, title, transcript) after the
     /// video itself is up. Best-effort and detached: the share link is
     /// already usable, sidecars enrich the page when they land.
-    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, transcriptData: Data?, title: String?, creds: CloudCredentials) {
+    private func scheduleSidecarUpload(uploadID: String, fileURL: URL, transcriptData: Data?, chapterData: Data?, title: String?, creds: CloudCredentials) {
         let item = ScreenshotHistoryStore.shared.items.first {
             $0.url.standardizedFileURL == fileURL.standardizedFileURL
         }
@@ -201,6 +205,7 @@ final class CloudUploader: NSObject {
                 uploadID: uploadID,
                 uploadedFileURL: fileURL,
                 transcriptData: transcriptData,
+                chapterData: chapterData,
                 createdAt: createdAt,
                 customTitle: title,
                 creds: creds

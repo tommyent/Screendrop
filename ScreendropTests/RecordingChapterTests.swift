@@ -30,6 +30,20 @@ struct RecordingChapterTests {
         #expect(chapters.last?.title == "Corrected next")
     }
 
+    @Test func uploadPayloadUsesEditedTimesAndFreezesAValue() throws {
+        var chapters = [RecordingChapter(title: "First", start: 2), RecordingChapter(title: "Cut", start: 12), RecordingChapter(title: "Later", start: 25)]
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 10, speed: 2), .init(sourceStart: 20, sourceEnd: 30)])
+        let data = try RecordingChapterPlanner.shareData(chapters, through: timeline)
+        chapters[0].title = "Changed after upload started"
+        let payload = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        #expect(payload.count == 2)
+        #expect(payload[0]["title"] as? String == "First")
+        #expect(payload[0]["start"] as? Double == 0)
+        #expect(payload[1]["start"] as? Double == 10)
+        #expect(payload[0]["id"] == nil)
+        #expect(String(decoding: try RecordingChapterPlanner.shareData([], through: timeline), as: UTF8.self) == "[]")
+    }
+
     @Test func oldMetadataAndNewChaptersRoundTrip() throws {
         var metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: Data(#"{"version":1,"displayName":"Existing"}"#.utf8))
         #expect(metadata.chapters == nil)

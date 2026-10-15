@@ -2547,6 +2547,7 @@ final class RecordingStudioModel {
         }
         let session = session
         let sharedDocument = currentDocument()
+        let sharedChapterData = try? RecordingChapterPlanner.shareData(chapters, through: clipTimeline)
         let renderedDocument = session == nil ? nil : sharedDocument
         shareItemID = nil
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
@@ -2615,7 +2616,8 @@ final class RecordingStudioModel {
                     socialEnabled: options.socialEnabled,
                     expiresAt: options.expiry.date(),
                     allowAnonymousComments: options.allowAnonymousComments,
-                    password: options.password
+                    password: options.password,
+                    chapterData: sharedChapterData
                 )
 
                 NSPasteboard.general.clearContents()

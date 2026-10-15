@@ -29,6 +29,18 @@ nonisolated enum RecordingChapterPlanner {
         return result
     }
 
+    static func shareData(_ chapters: [RecordingChapter], through timeline: RecordingClipTimeline) throws -> Data {
+        struct WireChapter: Encodable {
+            var title: String
+            var start: TimeInterval
+        }
+        var mapped = mapped(chapters, through: timeline)
+        if !mapped.isEmpty { mapped[0].start = 0 }
+        return try JSONEncoder().encode(mapped.map {
+            WireChapter(title: $0.title.isEmpty ? "Chapter" : $0.title, start: $0.start)
+        })
+    }
+
     static func suggest(
         cues: [RecordingSubtitleCue], words: [RecordingTranscriptWord],
         timeline: RecordingClipTimeline, keeping existing: [RecordingChapter]
