@@ -60,6 +60,8 @@ struct DrawProps: Codable, Equatable {
     var isComplete = false
     var isPen = false
     var isClosed = false
+    /// Missing in older documents, which remain ordinary freehand strokes.
+    var isHighlighter: Bool?
     var swatch: AnnotationSwatch = .red
     var strokeWidth: Double = 8
 }
@@ -323,7 +325,7 @@ struct AnnoShape: Codable, Equatable, Identifiable {
             case (.rectangle, .solid): .filledRectangle
             case (.ellipse, _): .ellipse
             }
-        case .draw: .freehand
+        case let .draw(props): props.isHighlighter == true ? .highlighter : .freehand
         case let .arrow(p):
             p.arrowheadStart == .none && p.arrowheadEnd == .none ? .line : .arrow
         case .text: .text

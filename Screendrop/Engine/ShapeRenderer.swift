@@ -107,11 +107,11 @@ enum AnnoShapeRenderer {
         guard !props.points.isEmpty else { return [] }
 
         let options = FreehandSettings.forDrawShape(
-            isPen: props.isPen,
+            isPen: props.isPen && props.isHighlighter != true,
             isComplete: props.isComplete,
             strokeWidth: props.strokeWidth,
             forceComplete: false,
-            forceSolid: false
+            forceSolid: props.isHighlighter == true
         )
         let ink = SvgInk.render(props.points, options)
         return [RenderElement(

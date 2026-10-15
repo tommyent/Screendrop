@@ -112,7 +112,7 @@ struct EditorInteractionTests {
             }
             #expect(engine.shapes.count == 1, "\(tool) creates one shape")
             guard let shape = engine.shapes.first else { continue }
-            let nextTool: AnnotationTool = tool == .freehand || tool == .numberedCircle ? tool : .select
+            let nextTool: AnnotationTool = [.freehand, .highlighter, .numberedCircle].contains(tool) ? tool : .select
             #expect(engine.tool == nextTool && engine.selectedIds == [shape.id], "\(tool) finishes with the newest shape selected")
             engine.undo()
             #expect(engine.shapes.isEmpty)
@@ -121,8 +121,8 @@ struct EditorInteractionTests {
         }
     }
 
-    @Test static func freehandAndNumberedCirclesCanBeDrawnInRuns() {
-        for tool in [AnnotationTool.freehand, .numberedCircle] {
+    @Test static func freehandHighlighterAndNumberedCirclesCanBeDrawnInRuns() {
+        for tool in [AnnotationTool.freehand, .highlighter, .numberedCircle] {
             let engine = editor()
             engine.replaceDocument(shapes: [])
             engine.tool = tool
@@ -145,7 +145,7 @@ struct EditorInteractionTests {
     }
 
     @Test static func uncommittedDrawsAndExplicitToolChanges() {
-        for tool in [AnnotationTool.arrow, .line, .freehand] {
+        for tool in [AnnotationTool.arrow, .line, .freehand, .highlighter] {
             let engine = editor()
             engine.replaceDocument(shapes: [])
             engine.tool = tool
@@ -163,6 +163,78 @@ struct EditorInteractionTests {
         if let id = text.editingTextId { text.updateEditingText(id, to: "Keep my next tool") }
         text.tool = .arrow
         #expect(text.editingTextId == nil && text.tool == .arrow)
+    }
+
+    @Test static func highlighterLatchesHorizontalAndIgnoresPressure() throws {
+        for horizontal in [false, true] {
+            let engine = editor()
+            engine.replaceDocument(shapes: [])
+            engine.tool = .highlighter
+            engine.viewport.imageSize = CGSize(width: 1800, height: 600)
+            engine.currentStrokeWidth = 16
+            var down = pointer(100, 100)
+            down.shift = horizontal; down.isPen = true; down.pressure = 0.1
+            engine.pointerDown(down)
+            for point in [Vec(200, 140), Vec(300, 180), Vec(400, 120), Vec(200, 80), Vec(110, 100)] {
+                var move = pointer(point.x, point.y)
+                move.shift = !horizontal; move.isPen = true; move.pressure = 0.9
+                engine.pointerMove(move)
+            }
+            engine.pointerUp(pointer(110, 100))
+            let shape = try #require(engine.shapes.first)
+            let props = try #require(shape.drawProps)
+            #expect(shape.tool == .highlighter && props.isHighlighter == true)
+            #expect(!props.isPen && !props.isClosed && props.isComplete)
+            #expect(props.points.allSatisfy { $0.z == 0.5 })
+            #expect(props.strokeWidth == 32)
+            #expect(horizontal ? props.points.count == 2 && props.points.allSatisfy { $0.y == 0 }
+                               : props.points.count == 6 && props.points.contains { $0.y != 0 })
+            engine.undo(); #expect(engine.shapes.isEmpty)
+            engine.redo(); #expect(engine.shapes == [shape])
+        }
+    }
+
+    @Test static func commandForcesMarkerDrawingOverASelection() {
+        let engine = editor()
+        let original = engine.shapes[0]
+        engine.tool = .highlighter; engine.selectedIds = [original.id]
+        engine.pointerDown(pointer(100, 100, command: true))
+        guard case .drawing = engine.interaction else { Issue.record("Command did not force marker drawing"); return }
+        engine.pointerMove(pointer(250, 100))
+        engine.pointerUp(pointer(250, 100))
+        #expect(engine.shapes.count == 2 && engine.shapes[0] == original)
+        #expect(engine.shapes[1].tool == .highlighter && engine.tool == .highlighter)
+    }
+
+    @Test(arguments: [false, true])
+    static func highlighterCanBeSelectedResizedAndRotated(horizontal: Bool) throws {
+        let engine = editor()
+        let props = DrawProps(points: horizontal ? [Vec(0, 0), Vec(300, 0)] : [Vec(0, 0), Vec(200, 40), Vec(300, 100)],
+                              isComplete: true, isHighlighter: true, strokeWidth: 16)
+        let marker = AnnoShape(x: 100, y: 100, kind: .draw(props))
+        engine.replaceDocument(shapes: [marker]); engine.tool = .select
+        let hit = marker.pageTransform.applyToPoint(engine.document.geometry(marker).vertices[1])
+        engine.pointerDown(pointer(hit.x, hit.y))
+        #expect(engine.selectedIds == [marker.id])
+        engine.pointerUp(pointer(hit.x, hit.y))
+        let bounds = try #require(engine.selectionBounds)
+        let corner = bounds.pagePoint(Vec(1, 1))
+        engine.pointerDown(pointer(corner.x, corner.y))
+        guard case .resizing = engine.interaction else { Issue.record("Marker handle did not resize"); return }
+        engine.pointerMove(pointer(corner.x + 100, corner.y + 50, command: true))
+        engine.pointerUp(pointer(corner.x + 100, corner.y + 50))
+        let resized = try #require(engine.shapes.first)
+        #expect(resized.drawProps?.points != props.points && resized.tool == .highlighter)
+        #expect(resized.swatch == marker.swatch && resized.strokeWidth == marker.strokeWidth)
+        let center = try #require(engine.selectionBounds).pageCenter
+        engine.markUndo()
+        engine.setInteraction(.rotating(center: center, startAngle: 0, initial: engine.document.snapshot()))
+        engine.pointerMove(pointer(center.x, center.y + 100, command: true))
+        engine.pointerUp(pointer(center.x, center.y + 100))
+        let rotated = try #require(engine.shapes.first)
+        #expect(abs(rotated.rotation - .pi / 2) < 0.0001 && rotated.tool == .highlighter)
+        engine.undo(); #expect(engine.shapes == [resized])
+        engine.undo(); #expect(engine.shapes == [marker])
     }
 
     static func regionGrabChecks() {

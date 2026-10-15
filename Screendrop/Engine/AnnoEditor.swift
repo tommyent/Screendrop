@@ -74,7 +74,7 @@ struct AnnoSelectionBounds {
 /// The interaction state machine. Each case holds what the drag needs to keep going.
 enum AnnoInteraction {
     case idle
-    case drawing(id: AnnoShapeID, origin: Vec)
+    case drawing(id: AnnoShapeID, origin: Vec, horizontal: Bool)
     case creatingGeo(id: AnnoShapeID, origin: Vec)
     case creatingArrow(id: AnnoShapeID)
     case creatingMagnifier(id: AnnoShapeID, origin: Vec)
