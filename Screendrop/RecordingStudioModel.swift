@@ -411,6 +411,9 @@ final class RecordingStudioModel {
                 microphoneMusicAnalysis = try await availableMusicAnalysis(url: screenURL, trackID: id) ?? RecordingMusicAnalysis(levels: [])
             }
             guard !Task.isCancelled, !isTornDown, backgroundMusicSettings == settings else { return }
+            var normalized = settings
+            normalized.startOffset = RecordingBackgroundMusic.startOffset(settings.startOffset, duration: resolved.duration)
+            backgroundMusicSettings = normalized
             musicWaveform = analysis?.waveform ?? []
             backgroundMusic = resolved
         } catch {

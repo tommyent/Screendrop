@@ -17,7 +17,8 @@ struct RecordingBackgroundMusicTests {
         }
         #expect(RecordingBackgroundMusic.startOffset(.nan, duration: 8) == 0)
         #expect(RecordingBackgroundMusic.startOffset(-10, duration: 8) == 0)
-        #expect(RecordingBackgroundMusic.startOffset(50, duration: 8) == 7.95)
+        #expect(RecordingBackgroundMusic.startOffset(50, duration: 8) == 7)
+        #expect(RecordingBackgroundMusic.startOffset(50, duration: 0.25) == 0)
         #expect(RecordingBackgroundMusic.DuckAmount.aLittle.gain > RecordingBackgroundMusic.DuckAmount.medium.gain)
         #expect(abs(RecordingBackgroundMusic.DuckAmount.aLot.gain - 0.1) < 0.0001)
     }
@@ -31,6 +32,8 @@ struct RecordingBackgroundMusicTests {
             == [.init(sourceStart: 1, duration: 3, editorStart: 0)])
         #expect(RecordingMusicEnvelope.placements(trackDuration: 20, startOffset: 2, duration: 3, loop: true)
             == [.init(sourceStart: 2, duration: 3, editorStart: 0)])
+        let tail = RecordingMusicEnvelope.placements(trackDuration: 10, startOffset: 9.99, duration: 600, loop: true)
+        #expect(tail.count == 600 && tail.allSatisfy { $0.sourceStart == 9 && $0.duration == 1 })
     }
 
     @Test func speechDetectionBridgesShortGapsAndKeepsSilence() {

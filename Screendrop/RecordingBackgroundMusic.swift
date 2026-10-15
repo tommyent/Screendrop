@@ -35,6 +35,6 @@ nonisolated struct RecordingBackgroundMusic: Codable, Equatable, Sendable {
     }
 
     static func startOffset(_ value: TimeInterval, duration: TimeInterval) -> TimeInterval {
-        min(max(0, value.isFinite ? value : 0), max(0, duration - 0.05))
+        min(max(0, value.isFinite ? value : 0), max(0, duration - 1))
     }
 }

@@ -25,11 +25,11 @@ nonisolated enum RecordingBackgroundMusicMixer {
             throw CocoaError(.fileReadCorruptFile)
         }
         let range = music.track.timeRange
-        let start = max(settings.startOffset, range.start.seconds)
-        let end = min(music.duration, range.end.seconds)
-        guard end > start else { throw CocoaError(.fileReadCorruptFile) }
-        for part in RecordingMusicEnvelope.placements(trackDuration: end, startOffset: start, duration: timeline.duration, loop: settings.loop) {
-            try track.insertTimeRange(CMTimeRange(start: time(part.sourceStart), duration: time(part.duration)),
+        let start = range.start.seconds
+        let length = min(music.duration, range.end.seconds) - start
+        guard length > 0 else { throw CocoaError(.fileReadCorruptFile) }
+        for part in RecordingMusicEnvelope.placements(trackDuration: length, startOffset: settings.startOffset - start, duration: timeline.duration, loop: settings.loop) {
+            try track.insertTimeRange(CMTimeRange(start: time(start + part.sourceStart), duration: time(part.duration)),
                                       of: music.track, at: time(part.editorStart))
         }
         return (composition, track.trackID)

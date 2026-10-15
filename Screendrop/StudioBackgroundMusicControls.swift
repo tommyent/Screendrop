@@ -17,7 +17,7 @@ struct StudioBackgroundMusicControls: View {
                 if let music = model.backgroundMusic {
                     MusicStartWaveform(levels: model.musicWaveform, start: Double(model.musicStartOffset), duration: music.duration)
                     InspectorSlider("Starts at", value: $model.musicStartOffset,
-                        range: 0...CGFloat(max(0.001, music.duration - 0.05)),
+                        range: 0...CGFloat(max(0, music.duration - 1)),
                         format: InspectorValueFormat(multiplier: 1, fractionDigits: 1, suffix: " s",
                             showsPositiveSign: false, step: 0.1, acceptedSuffixes: ["s"]),
                         onEditingChanged: model.setMusicSliderEditing)
