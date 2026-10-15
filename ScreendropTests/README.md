@@ -36,3 +36,19 @@ Session snapshot checks cover unedited opens, five-session retention, deduplicat
 
 
 `RecordingChapterTests` checks pause proposals, preservation of manual names, cut/speed mapping, source-anchor restoration, opening-sentence bounds, invalid anchors and backward-compatible project metadata. Chapter edits are navigation metadata; they do not change the render document.
+
+`RecordingNarrativeTests` uses an in-memory URLProtocol stub to check OpenAI-style server decoding, model fallback order, malformed responses, long narration reduction, Unicode and cancellation. It does not contact a server or use an actual model. Partly cut prose is omitted if its surviving words cannot prove the corrected text.
+
+For a real loopback HTTP check (synthetic narration only, no app launch), compile the production client, start the five-request stub in another terminal, and pass the URL it prints:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer lockf /private/tmp/screendrop-team/build.lock \
+  xcrun swiftc -parse-as-library -target arm64-apple-macos27.0 \
+  scripts/check-recording-narrative.swift Screendrop/RecordingNarrativeGenerator.swift \
+  Screendrop/RecordingChapter.swift Screendrop/RecordingClipTimeline.swift \
+  Screendrop/RecordingTranscription.swift Screendrop/SortedSearch.swift \
+  -o /private/tmp/screendrop-team/f4-narrative-check
+python3 scripts/recording-narrative-stub.py
+# In the other terminal, use the printed loopback URL:
+/private/tmp/screendrop-team/f4-narrative-check http://localhost:<printed-port>/v1
+```

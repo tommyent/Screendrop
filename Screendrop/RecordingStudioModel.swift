@@ -144,6 +144,15 @@ final class RecordingStudioModel {
     private var reframeFocusResolved = false
     private(set) var chapters: [RecordingChapter] = []
     private(set) var chapterError: String?
+    var narrativeTitle = ""
+    var narrativeSummary = ""
+    private(set) var narrativeStatus: String?
+    private(set) var isGeneratingNarrative = false
+    private(set) var hasNarrativeChapterNames = false
+    private var narrativeChapterNames: [UUID: String] = [:]
+    private var narrativeDocument: RecordingEditDocument?
+    private var narrativeChapters: [RecordingChapter] = []
+    private var narrativeTask: Task<Void, Never>?
 
     private(set) var subtitleCues: [RecordingSubtitleCue] = []
     private(set) var subtitleTimeline = SubtitleTimeline.empty
@@ -343,7 +352,10 @@ final class RecordingStudioModel {
         wallpaperCacheLease = AnnotationBackgroundRenderer.beginWallpaperUse()
 
         if let session {
-            chapters = session.loadProjectMetadata()?.chapters ?? []
+            let metadata = session.loadProjectMetadata()
+            chapters = metadata?.chapters ?? []
+            narrativeSummary = metadata?.narrationSummary ?? ""
+            if !narrativeSummary.isEmpty { narrativeStatus = "Summary saved in this project." }
             manifest = session.loadCaptureManifest()
             pointerCapture = session.loadPointerCapture() ?? PointerCaptureFile()
         }
@@ -558,6 +570,7 @@ final class RecordingStudioModel {
         replacementAudioTask?.cancel()
         cancelShare()
         transcriptionTask?.cancel()
+        narrativeTask?.cancel()
         projectSaveTask?.cancel()
         autosaveTask?.cancel()
         if let session, !StudioProjectRegistry.shared.hasLoadedEditor(for: sessionURL) { removeUnusedReplacementAudio(in: session) }
@@ -1733,6 +1746,104 @@ final class RecordingStudioModel {
             RecordingProjectStore.shared.reload()
         } catch {
             chapterError = "Chapters could not be saved: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Narration suggestions
+
+    private var narrativeInput: RecordingNarrativeInput {
+        let cues = RecordingChapterPlanner.survivingCues(subtitleCues, words: transcriptWords, through: clipTimeline)
+        let mapped = visibleChapters
+        let chapterText = mapped.enumerated().map { index, chapter in
+            let end = index + 1 < mapped.count ? mapped[index + 1].start : duration
+            let text = cues.filter {
+                guard let time = clipTimeline.editorTime(forSourceTime: $0.start) else { return false }
+                return $0.end > clipTimeline.sourceTime(at: chapter.start) && time < end
+            }.map(\.text).joined(separator: " ")
+            return RecordingNarrativeInput.Chapter(id: chapter.id, text: text)
+        }
+        return RecordingNarrativeInput(text: cues.map(\.text).joined(separator: " "), chapters: chapterText)
+    }
+
+    var openingSentenceTitle: String { RecordingChapterPlanner.title(from: narrativeInput.text) }
+
+    var narrativeSuggestionsAreCurrent: Bool {
+        narrativeDocument == nil || (narrativeDocument == currentDocument() && narrativeChapters == chapters)
+    }
+
+    func generateNarrativeSuggestions() {
+        guard !isGeneratingNarrative, isLoaded, !narrativeInput.text.isEmpty else { return }
+        let input = narrativeInput
+        let document = currentDocument()
+        let chapterSnapshot = chapters
+        let url = UserDefaults.standard.string(forKey: RecordingNarrativeGenerator.serverURLKey) ?? ""
+        let name = UserDefaults.standard.string(forKey: RecordingNarrativeGenerator.serverModelKey) ?? ""
+        let server = try? RecordingModelServer(url: url, model: name)
+        isGeneratingNarrative = true
+        narrativeStatus = "Generating narration suggestions…"
+        narrativeTask = Task { [weak self] in
+            defer { self?.isGeneratingNarrative = false }
+            do {
+                let suggestion = try await RecordingNarrativeGenerator.generate(input, server: server)
+                guard let self, !Task.isCancelled, !self.isTornDown else { return }
+                guard self.currentDocument() == document, self.chapters == chapterSnapshot else {
+                    self.narrativeStatus = "The recording changed. Generate again for the current edit."
+                    return
+                }
+                self.narrativeTitle = suggestion.title
+                self.narrativeSummary = suggestion.summary
+                self.narrativeChapterNames = suggestion.chapterTitles
+                self.hasNarrativeChapterNames = !suggestion.chapterTitles.isEmpty
+                self.narrativeDocument = document
+                self.narrativeChapters = chapterSnapshot
+                self.narrativeStatus = suggestion.source
+                if (!url.isEmpty || !name.isEmpty) && server == nil {
+                    self.narrativeStatus = "Invalid local server URL or model. " + suggestion.source
+                }
+            } catch {
+                if !Task.isCancelled { self?.narrativeStatus = "Suggestions failed: \(error.localizedDescription)" }
+            }
+        }
+    }
+
+    func cancelNarrativeSuggestions() {
+        narrativeTask?.cancel()
+        narrativeStatus = "Generation canceled."
+    }
+
+    func useNarrativeTitle() {
+        guard narrativeSuggestionsAreCurrent, !narrativeTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        rename(to: String(narrativeTitle.prefix(80)))
+    }
+
+    var suggestedChapterNames: [RecordingChapter] {
+        visibleChapters.compactMap { chapter in
+            guard let title = narrativeChapterNames[chapter.id] else { return nil }
+            var chapter = chapter
+            chapter.title = title
+            return chapter
+        }
+    }
+
+    func useNarrativeChapterNames() {
+        guard narrativeSuggestionsAreCurrent else { return }
+        let next = chapters.map { chapter in
+            var chapter = chapter
+            if let title = narrativeChapterNames[chapter.id] { chapter.title = title }
+            return chapter
+        }
+        applyChapters(next, actionName: "Use Chapter Names")
+        narrativeChapters = chapters
+    }
+
+    func saveNarrationSummary() {
+        guard let session, narrativeSuggestionsAreCurrent else { return }
+        do {
+            let summary = narrativeSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+            try session.updateProjectMetadata { $0.narrationSummary = summary.isEmpty ? nil : summary }
+            narrativeStatus = "Summary saved in this project."
+        } catch {
+            narrativeStatus = "Summary could not be saved: \(error.localizedDescription)"
         }
     }
 

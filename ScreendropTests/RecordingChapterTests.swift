@@ -44,6 +44,25 @@ struct RecordingChapterTests {
         #expect(String(decoding: try RecordingChapterPlanner.shareData([], through: timeline), as: UTF8.self) == "[]")
     }
 
+    @Test func partiallyCutProseCannotReintroduceRemovedNarration() {
+        let words = [RecordingTranscriptWord(text: "Private ", start: 0, end: 1), RecordingTranscriptWord(text: "public", start: 2, end: 3)]
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 1.5, sourceEnd: 5)])
+        let original = RecordingSubtitleCue(start: 0, end: 3, text: "Private public")
+        #expect(RecordingChapterPlanner.survivingCues([original], words: words, through: timeline).isEmpty)
+        let corrected = RecordingSubtitleCue(start: 0, end: 3, text: "public")
+        #expect(RecordingChapterPlanner.survivingCues([corrected], words: words, through: timeline).map(\.text) == ["public"])
+        #expect(RecordingChapterPlanner.survivingCues([original], words: [], through: timeline).isEmpty)
+    }
+
+    @Test func cutBoundaryBelongsToTheFollowingSurvivingFootage() {
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 10), .init(sourceStart: 20, sourceEnd: 30)])
+        let chapters = [RecordingChapter(title: "Removed at splice", start: 10), RecordingChapter(title: "Surviving", start: 20)]
+        #expect(RecordingChapterPlanner.mapped(chapters, through: timeline).map(\.title) == ["Surviving"])
+        let words = [RecordingTranscriptWord(text: "Cut", start: 10, end: 11), RecordingTranscriptWord(text: "Kept", start: 20, end: 21)]
+        let proposed = RecordingChapterPlanner.suggest(cues: [], words: words, timeline: timeline, keeping: [])
+        #expect(proposed.map(\.start) == [20])
+    }
+
     @Test func oldMetadataAndNewChaptersRoundTrip() throws {
         var metadata = try JSONDecoder().decode(RecordingProjectMetadata.self, from: Data(#"{"version":1,"displayName":"Existing"}"#.utf8))
         #expect(metadata.chapters == nil)
