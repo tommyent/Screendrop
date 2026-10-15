@@ -8,8 +8,7 @@
 //  session's source timeline onto the uploaded cut when the exported
 //  (edited) movie is what went up.
 //
-//  Sidecars are best-effort: the share link already works without them,
-//  so failures are logged and swallowed.
+//  New uploads send sidecars best-effort; replacement waits for fresh assets.
 //
 
 import AVFoundation
@@ -36,8 +35,7 @@ nonisolated private struct CloudTranscriptPayload: Encodable {
 }
 
 nonisolated enum CloudSidecarUploader {
-    /// Fire-and-forget sidecar upload for a video that just finished its
-    /// primary upload. `transcriptData` is nil for videos without a transcript.
+    /// `transcriptData` is nil for videos without a transcript.
     static func uploadVideoSidecars(
         uploadID: String,
         uploadedFileURL: URL,
@@ -45,21 +43,29 @@ nonisolated enum CloudSidecarUploader {
         chapterData: Data?,
         createdAt: Date,
         customTitle: String? = nil,
+        mediaKey: String? = nil,
+        replacingVideo: Bool = false,
         creds: CloudCredentials
-    ) async {
+    ) async throws {
         var fields: [(name: String, value: String)] = []
         var files: [(name: String, filename: String, contentType: String, data: Data)] = []
 
         let trimmedCustomTitle = customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        fields.append(("title", trimmedCustomTitle?.isEmpty == false ? trimmedCustomTitle! : defaultTitle(for: createdAt)))
+        if !replacingVideo {
+            fields.append(("title", trimmedCustomTitle?.isEmpty == false ? trimmedCustomTitle! : defaultTitle(for: createdAt)))
+        }
 
         if let poster = await posterFrame(for: uploadedFileURL) {
             files.append(("poster", "poster.jpg", "image/jpeg", poster))
+        } else if replacingVideo {
+            throw CloudUploadError.serverError(0, "The shared video changed, but its poster could not be generated. Retry Replace shared video.")
         }
 
         if let storyboard = await storyboard(for: uploadedFileURL) {
             files.append(("storyboard", "storyboard.jpg", "image/jpeg", storyboard.imageData))
             fields.append(("storyboard_meta", storyboard.metaJSON))
+        } else if replacingVideo, let duration = try? await AVURLAsset(url: uploadedFileURL).load(.duration).seconds, duration >= 2 {
+            throw CloudUploadError.serverError(0, "The shared video changed, but its storyboard could not be generated. Retry Replace shared video.")
         }
 
         if let transcriptData {
@@ -70,16 +76,14 @@ nonisolated enum CloudSidecarUploader {
             fields.append(("chapters", String(decoding: chapterData, as: UTF8.self)))
         }
 
-        do {
-            try await postAssets(
-                uploadID: uploadID,
-                fields: fields,
-                files: files,
-                creds: creds
-            )
-        } catch {
-            print("Sidecar upload failed for \(uploadID): \(error)")
-        }
+        try Task.checkCancellation()
+        try await postAssets(
+            uploadID: uploadID,
+            fields: fields,
+            files: files,
+            mediaKey: mediaKey,
+            creds: creds
+        )
     }
 
     // MARK: - Title
@@ -330,6 +334,7 @@ nonisolated enum CloudSidecarUploader {
         uploadID: String,
         fields: [(name: String, value: String)],
         files: [(name: String, filename: String, contentType: String, data: Data)],
+        mediaKey: String?,
         creds: CloudCredentials
     ) async throws {
         guard !fields.isEmpty || !files.isEmpty else { return }
@@ -371,6 +376,7 @@ nonisolated enum CloudSidecarUploader {
         request.timeoutInterval = 120
         let token = creds.uploadToken.trimmingCharacters(in: .whitespacesAndNewlines)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let mediaKey { request.setValue(mediaKey, forHTTPHeaderField: "X-Media-Key") }
         request.setValue(
             "multipart/form-data; boundary=\(boundary)",
             forHTTPHeaderField: "Content-Type"

@@ -7,6 +7,33 @@ import Darwin
 import ImageIO
 import Metal
 
+nonisolated final class ChapterAssetProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var received: (mediaKey: String?, body: String)?
+
+    static func payload() -> (mediaKey: String?, body: String)? { lock.withLock { received } }
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "chapter-upload.invalid" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        var body = request.httpBody ?? Data()
+        if body.isEmpty, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var bytes = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&bytes, maxLength: bytes.count)
+                guard count > 0 else { break }
+                body.append(contentsOf: bytes.prefix(count))
+            }
+        }
+        Self.lock.withLock { Self.received = (request.value(forHTTPHeaderField: "X-Media-Key"), String(decoding: body, as: UTF8.self)) }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("{}".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
 // Run with check-video-redaction.py and the Dev DerivedData path. No windows or live services.
 @main
 struct VideoRedactionChecks {
@@ -34,7 +61,7 @@ struct VideoRedactionChecks {
         return result
     }
 
-    static func movie(at url: URL) async throws {
+    static func movie(at url: URL, duration: Double = 3) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 384, AVVideoHeightKey: 216
@@ -45,11 +72,11 @@ struct VideoRedactionChecks {
         writer.startSession(atSourceTime: .zero)
         let source = try buffer()
         // Sparse capture: the same frame is held across both redaction boundaries.
-        for time in [0.0, 2.9] {
+        for time in [0.0, duration - 0.1] {
             while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(2)) }
             try check(adaptor.append(source, withPresentationTime: CMTime(seconds: time, preferredTimescale: 600)), "Fixture append")
         }
-        writer.endSession(atSourceTime: CMTime(seconds: 3, preferredTimescale: 600))
+        writer.endSession(atSourceTime: CMTime(seconds: duration, preferredTimescale: 600))
         input.markAsFinished()
         await writer.finishWriting()
         try check(writer.status == .completed, "Fixture writer finish")
@@ -131,6 +158,50 @@ struct VideoRedactionChecks {
         print("PASS actual Metal versus CPU filtered source, downsampling, crop/zoom and shutter samples")
     }
 
+    static func frozenChapterSidecars(in home: URL) async throws {
+        let session = RecordingSession(directoryURL: home.appendingPathComponent("chapter-fixture.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: true)
+        try session.writeCaptureManifest(CaptureManifest(duration: 3, pixelWidth: 384, pixelHeight: 216))
+        try session.updateProjectMetadata {
+            $0.chapters = [RecordingChapter(title: "First", start: 0), RecordingChapter(title: "Cut", start: 1.2), RecordingChapter(title: "Later", start: 2.2)]
+        }
+        var document = RecordingEditDocument(style: .init(), zoomEnabled: false, zoomCues: [],
+            clipTimeline: .full(sourceDuration: 3), exportSettings: .init())
+        session.writeRenderStamp(document)
+        let original = CloudSidecarUploader.chapterData(sessionDirectory: session.directoryURL, uploadedFileURL: session.finalURL)
+        document.redactions = [.init(start: 0, end: 3, rect: CGRect(x: 0, y: 0, width: 0.5, height: 0.5))]
+        session.writeRenderStamp(document)
+        try check(CloudSidecarUploader.chapterData(sessionDirectory: session.directoryURL, uploadedFileURL: session.finalURL) == original,
+                  "Redaction-only replacement changed chapters")
+
+        let cut = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 1, speed: 2), .init(sourceStart: 2, sourceEnd: 3)])
+        document = RecordingEditDocument(style: .init(), zoomEnabled: false, zoomCues: [], clipTimeline: cut, exportSettings: .init())
+        session.writeRenderStamp(document)
+        try await movie(at: session.finalURL, duration: cut.duration)
+        // A newer draft must not change the cut whose movie is being uploaded.
+        try session.writeDraftDocument(RecordingEditDocument(style: .init(), zoomEnabled: false, zoomCues: [],
+            clipTimeline: .full(sourceDuration: 3), exportSettings: .init()))
+        guard let frozen = CloudSidecarUploader.chapterData(sessionDirectory: session.directoryURL, uploadedFileURL: session.finalURL),
+              let chapters = try JSONSerialization.jsonObject(with: frozen) as? [[String: Any]] else {
+            throw Failure.check("Frozen chapter payload missing")
+        }
+        try check(chapters.compactMap { $0["title"] as? String } == ["First", "Later"], "Cut chapter was retained")
+        try check(abs((chapters.last?["start"] as? Double ?? -1) - 0.7) < 0.000_001, "Cut/speed chapter time was not remapped")
+        try session.updateProjectMetadata { $0.chapters = [] }
+        session.writeRenderStamp(nil)
+
+        try check(URLProtocol.registerClass(ChapterAssetProtocol.self), "Chapter transport fixture registration")
+        defer { URLProtocol.unregisterClass(ChapterAssetProtocol.self) }
+        let revision = "replacements/abcd1234/frozen-cut"
+        try await CloudSidecarUploader.uploadVideoSidecars(uploadID: "abcd1234", uploadedFileURL: session.finalURL,
+            transcriptData: nil, chapterData: frozen, createdAt: .distantPast, mediaKey: revision, replacingVideo: true,
+            creds: CloudCredentials(workerURL: "https://chapter-upload.invalid", uploadToken: "synthetic-test-token"))
+        guard let sent = ChapterAssetProtocol.payload() else { throw Failure.check("Chapter sidecar request missing") }
+        try check(sent.mediaKey == revision && sent.body.contains("name=\"chapters\"")
+                  && sent.body.contains(String(decoding: frozen, as: UTF8.self)), "Frozen chapters or media revision changed during sidecar upload")
+        print("PASS frozen chapter sidecars: redaction-only unchanged, cuts/speed remapped, later draft/metadata ignored, revision-bound multipart verified")
+    }
+
     @MainActor static func main() async throws {
         setbuf(stdout, nil)
         try await renderers()
@@ -141,6 +212,7 @@ struct VideoRedactionChecks {
         try check(actualHome == isolated && support.hasPrefix(isolated + "/")
                   && home.hasPrefix("/private/tmp/"), "Foundation storage is not isolated: \(actualHome), \(support)")
         NSApplication.shared.setActivationPolicy(.prohibited)
+        try await frozenChapterSidecars(in: URL(fileURLWithPath: home))
         let root = URL(fileURLWithPath: home).appendingPathComponent("fixture.screendroprec")
         try check(root.path.hasPrefix("/private/tmp/"), "Harness home is not isolated")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -163,13 +235,19 @@ struct VideoRedactionChecks {
         let decoded = try JSONDecoder().decode(RecordingEditDocument.self, from: JSONSerialization.data(withJSONObject: legacy))
         try check(decoded.redactions.isEmpty, "Legacy document decode")
         try session.writeEditDocument(document)
+        _ = await ScreenshotHistoryStore.shared.importRecordingSession(session)
+        let historyItem = ScreenshotHistoryStore.shared.items.first { $0.recordingSessionPath == root.standardizedFileURL.path }!
+        let sharedLink = "https://share.example.invalid/abcd1234"
+        ScreenshotHistoryStore.shared.setLibraryCloudURL(id: historyItem.id, cloudURL: sharedLink)
         let editor = RecordingStudioModel(url: root)
         await editor.load()
         try check(editor.isLoaded, "Editor load: \(editor.loadError ?? "")")
         editor.seek(to: 0.5)
         editor.beginRedaction(); editor.workingVideoCropRect = bounds; editor.addRedaction()
         try check(editor.redactions.count == 1 && session.loadDraftDocument()?.redactions.count == 1, "Add/draft")
+        try check(editor.needsSharedVideoReplacement, "Legacy shared link must warn after Add")
         editor.undo(); try check(editor.redactions.isEmpty, "Undo redaction")
+        try check(!editor.needsSharedVideoReplacement, "Undo Add clears the notice")
         editor.redo(); try check(editor.redactions.count == 1, "Redo redaction")
         var region = editor.redactions[0]
         region.end = 1.5; region.strength = 1
@@ -188,6 +266,28 @@ struct VideoRedactionChecks {
         let reopened = RecordingStudioModel(url: root)
         await reopened.load()
         try check(reopened.isLoaded && reopened.redactions == [region], "Reopen masks")
+        try check(reopened.needsSharedVideoReplacement, "Reopening must keep the stale-share notice")
+        ScreenshotHistoryStore.shared.recordCloudUpload(id: historyItem.id, cloudURL: sharedLink, redactions: [region])
+        try check(!reopened.needsSharedVideoReplacement, "Successful replacement clears the notice")
+        let storedItem = ScreenshotHistoryStore.shared.items.first { $0.id == historyItem.id }!
+        let diskItems = try JSONDecoder().decode([ScreenshotHistoryItem].self, from: Data(contentsOf:
+            ScreendropStorage.applicationSupportDirectory.appendingPathComponent("history.json")))
+        try check(diskItems.first { $0.id == historyItem.id } == storedItem, "Uploaded masks were not saved to History")
+        let encodedItem = try JSONEncoder().encode(storedItem)
+        let restoredItem = try JSONDecoder().decode(ScreenshotHistoryItem.self, from: encodedItem)
+        try check(restoredItem.cloudURL == sharedLink && restoredItem.cloudRedactions == [region], "Uploaded masks persist with the same link")
+        var legacyItem = try JSONSerialization.jsonObject(with: encodedItem) as! [String: Any]
+        legacyItem.removeValue(forKey: "cloudRedactions")
+        let legacyHistory = try JSONDecoder().decode(ScreenshotHistoryItem.self, from: JSONSerialization.data(withJSONObject: legacyItem))
+        try check(legacyHistory.cloudRedactions == nil && legacyHistory.cloudURL == sharedLink, "Legacy History still loads conservatively")
+        var changedRegion = region; changedRegion.strength = 0.7
+        reopened.updateRedaction(changedRegion)
+        try check(reopened.needsSharedVideoReplacement, "Editing a shared mask warns again")
+        reopened.undo()
+        try check(!reopened.needsSharedVideoReplacement, "Undo to the uploaded masks clears the notice")
+        ScreenshotHistoryStore.shared.setLibraryCloudURL(id: historyItem.id, cloudURL: nil)
+        try check(!reopened.needsSharedVideoReplacement, "Deleting the link clears the notice")
+        print("PASS shared-video notice add/undo/reopen/replace/edit/delete and History legacy/snapshot persistence")
         for _ in 0..<200 where reopened.isPreparingRedactionPreview { try await Task.sleep(for: .milliseconds(10)) }
         try check(reopened.screenPlayer.currentItem?.videoComposition != nil, "Studio preview filter missing")
         NotificationCenter.default.post(name: AVPlayerItem.failedToPlayToEndTimeNotification, object: reopened.screenPlayer.currentItem)

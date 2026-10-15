@@ -10,6 +10,20 @@ struct RecordingRedactionTests {
         RecordingRedaction(start: 2, end: 4, rect: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4))
     }
 
+    @Test func sharedRedactionsStayStaleUntilTheUploadedSnapshotMatches() throws {
+        let original = region()
+        #expect(!RecordingRedaction.needsSharedReplacement([], shared: nil))
+        #expect(RecordingRedaction.needsSharedReplacement([original], shared: nil))
+        #expect(RecordingRedaction.needsSharedReplacement([original], shared: []))
+        let saved = try JSONDecoder().decode([RecordingRedaction].self, from: JSONEncoder().encode([original]))
+        #expect(!RecordingRedaction.needsSharedReplacement([original], shared: saved))
+        var edited = original
+        edited.end += 1
+        #expect(RecordingRedaction.needsSharedReplacement([edited], shared: saved))
+        #expect(RecordingRedaction.needsSharedReplacement([original, edited], shared: saved))
+        #expect(!RecordingRedaction.needsSharedReplacement([original], shared: saved)) // Undo.
+    }
+
     @Test func boundsAndTimingRejectInvalidData() throws {
         let valid = region()
         try valid.validate(sourceDuration: 5)

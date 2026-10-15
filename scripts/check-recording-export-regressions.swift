@@ -339,6 +339,56 @@ struct RecordingExportRegressionChecks {
         print("PASS: version 6 preserves isolation and redactions; legacy off; shared video and audio exports use isolated mic plus system audio through cuts; Studio progress/cancel/cache/off, unfinished draft stays off, and failure fallback")
     }
 
+    static func cancelShareRetry(in directory: URL) async throws {
+        let model = RecordingStudioModel(url: directory.appendingPathComponent("unloaded.mov"))
+        defer { model.teardown() }
+        let first = Gate(), retry = Gate(), deletion = Gate()
+        var starts = 0
+        model.shareState = .uploading
+        model.startShareTask {
+            starts += 1
+            await first.wait()
+            model.shareState = Task.isCancelled ? .idle : .finished("first")
+        }
+        try await until { first.continuation != nil }
+        model.cancelShare()
+        model.cancelShare()
+        try check(model.shareState.isBusy && model.hasRunningWork, "Cancel cleared share busy state before exit")
+        model.startShareTask { starts += 1 }
+        await Task.yield()
+        try check(starts == 1 && model.shareState.isBusy && model.hasRunningWork, "Retry entered while the canceled share was held")
+        first.resume()
+        try await until { !model.hasRunningWork }
+        try check(model.shareState == .idle, "Canceled share did not settle at idle")
+
+        model.shareState = .rendering(progress: 0)
+        model.startShareTask {
+            starts += 1
+            await retry.wait()
+            model.shareState = .finished("replacement")
+        }
+        try await until { retry.continuation != nil }
+        await Task.yield()
+        try check(starts == 2 && model.shareState == .rendering(progress: 0) && model.hasRunningWork,
+                  "The old share cleared the retry's state")
+        retry.resume()
+        try await until { !model.hasRunningWork }
+        try check(model.shareState == .finished("replacement"), "Replacement retry did not complete")
+
+        // Deletion uses the same retained task even while no share progress is shown.
+        model.shareState = .idle
+        model.startShareTask { await deletion.wait() }
+        try await until { deletion.continuation != nil }
+        model.cancelShare()
+        try check(model.hasRunningWork, "A canceled deletion released the shared task guard")
+        model.startShareTask { starts += 1 }
+        await Task.yield()
+        try check(starts == 2, "Share entered while deletion was unwinding")
+        deletion.resume()
+        try await until { !model.hasRunningWork }
+        print("PASS: held share cancel/retry retains busy state until exit; stale completion cannot clear retry; deletion shares the guard")
+    }
+
     static func main() async throws {
         guard let root = ProcessInfo.processInfo.environment["CFFIXED_USER_HOME"] else {
             throw Failure(description: "Run through check-recording-export-regressions.py")
@@ -349,6 +399,7 @@ struct RecordingExportRegressionChecks {
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
+        try await cancelShareRetry(in: directory)
         try await captionPixels(in: directory)
     }
 }

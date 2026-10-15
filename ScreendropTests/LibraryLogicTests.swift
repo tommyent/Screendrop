@@ -2,6 +2,52 @@ import Foundation
 import Testing
 
 struct LibraryLogicTests {
+    @Test func cloudMediaRevisionSurvivesListingAndKeysPreviewRequests() throws {
+        let data = Data("""
+        {"uploads":[{"id":"abcd1234","url":"https://share.example.invalid/abcd1234","filename":"clip.mp4","mediaType":"video","createdAt":"2026-10-15T00:00:00Z","mediaKey":"uploads/abcd1234/media-new"}]}
+        """.utf8)
+        var upload = try #require(CloudUploadList.decode(data).uploads.first)
+        #expect(upload.mediaKey == "uploads/abcd1234/media-new")
+        let url = try #require(CloudPreviewCache.mediaURL(for: upload))
+        #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "v", value: upload.mediaKey)])
+        upload.mediaKey = nil
+        #expect(CloudPreviewCache.mediaURL(for: upload)?.query == nil)
+    }
+
+    @Test func cloudPreviewReusesOnlyTheMatchingCachedRevision() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let directory = folder.appendingPathComponent("abcd1234")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let movie = directory.appendingPathComponent("clip.mp4")
+        try Data("synthetic masked movie".utf8).write(to: movie)
+        try "new-media".write(to: directory.appendingPathComponent(".media-key"), atomically: true, encoding: .utf8)
+        var upload = CloudUpload(id: "abcd1234", url: "https://example.invalid/abcd1234", title: nil, filename: "clip.mp4",
+            mediaType: "video", size: nil, duration: nil, createdAt: .distantPast, views: nil, thumbnailUrl: nil, mediaKey: "new-media")
+        let cache = CloudPreviewCache(folder: folder, limit: 1024)
+        let result = try await cache.file(for: upload)
+        #expect(result.resolvingSymlinksInPath() == movie.resolvingSymlinksInPath())
+        #expect(try Data(contentsOf: result) == Data("synthetic masked movie".utf8))
+        upload.mediaKey = "replacement-media"
+        #expect(try cache.cachedFile(for: upload) == nil)
+        #expect(!FileManager.default.fileExists(atPath: movie.path))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("legacy unredacted movie".utf8).write(to: movie)
+        #expect(try cache.cachedFile(for: upload) == nil)
+        #expect(!FileManager.default.fileExists(atPath: movie.path))
+    }
+
+    @Test func replacementOnlyTargetsTheConfiguredWorker() {
+        let base = "https://share.example.invalid"
+        #expect(CloudUploadList.replacementID(of: base + "/abcd1234", workerBase: base) == "abcd1234")
+        for link in ["https://other.invalid/abcd1234", "http://share.example.invalid/abcd1234",
+                     base + ":8443/abcd1234", base + "/api/upload/abcd1234", base + "/../abcd1234",
+                     base + "/bad%2Fid", base + "/", "not a link"] {
+            #expect(CloudUploadList.replacementID(of: link, workerBase: base) == nil)
+        }
+        #expect(CloudUploadList.replacementID(of: nil, workerBase: base) == nil)
+    }
+
     private func comment(_ id: String, second: TimeInterval) -> CloudComment {
         CloudComment(id: id, uploadId: "fixture", authorName: "Fixture", authorAvatar: nil,
                      text: "test", timestamp: nil, createdAt: Date(timeIntervalSince1970: second),

@@ -14,6 +14,7 @@ nonisolated struct CloudUpload: Identifiable, Hashable, Sendable, Decodable {
     let createdAt: Date
     let views: Int?
     let thumbnailUrl: String?
+    var mediaKey: String? = nil
     /// Nil: the link never expires.
     var expiresAt: Date? = nil
     var allowAnonymousComments: Bool? = nil
@@ -38,7 +39,7 @@ nonisolated struct CloudUpload: Identifiable, Hashable, Sendable, Decodable {
 extension CloudUpload {
     private nonisolated enum CodingKeys: String, CodingKey {
         case id, url, title, filename, mediaType, size, duration, createdAt, views, thumbnailUrl
-        case expiresAt, allowAnonymousComments, socialEnabled, hasPassword, commentCount, likeCount
+        case mediaKey, expiresAt, allowAnonymousComments, socialEnabled, hasPassword, commentCount, likeCount
     }
 
     nonisolated init(from decoder: any Decoder) throws {
@@ -54,6 +55,7 @@ extension CloudUpload {
             createdAt: try c.decode(Date.self, forKey: .createdAt),
             views: try c.decodeIfPresent(Int.self, forKey: .views),
             thumbnailUrl: try c.decodeIfPresent(String.self, forKey: .thumbnailUrl),
+            mediaKey: try c.decodeIfPresent(String.self, forKey: .mediaKey),
             expiresAt: try c.decodeIfPresent(Date.self, forKey: .expiresAt),
             allowAnonymousComments: try c.decodeIfPresent(Bool.self, forKey: .allowAnonymousComments),
             socialEnabled: try c.decodeIfPresent(Bool.self, forKey: .socialEnabled),
@@ -200,6 +202,15 @@ nonisolated enum CloudUploadList {
     /// The upload ID in a share link, its last path component.
     static func uploadID(of link: String?) -> String? {
         guard let link, let id = URL(string: link)?.lastPathComponent, !id.isEmpty, id != "/" else { return nil }
+        return id
+    }
+
+    /// A saved link may belong to a previously configured Worker.
+    static func replacementID(of link: String?, workerBase: String?) -> String? {
+        guard let link, let workerBase, let url = URL(string: link), let base = URL(string: workerBase),
+              url.scheme?.lowercased() == base.scheme?.lowercased(),
+              url.host?.lowercased() == base.host?.lowercased(), url.port == base.port,
+              let id = uploadID(of: link), CloudPreviewCache.isSafeID(id), url.path == "/" + id else { return nil }
         return id
     }
 }
