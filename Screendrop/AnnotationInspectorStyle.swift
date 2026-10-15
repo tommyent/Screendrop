@@ -366,7 +366,6 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
     @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
 
-    @State private var isHeaderHovering = false
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     var body: some View {
@@ -379,9 +378,9 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
                         HStack(spacing: 6) {
                             Text(title)
                                 .font(.inspectorSectionHeader)
-                                // Stay the lighter grey when expanded. Hover is the
-                                // clickable cue, so it still darkens.
-                                .foregroundStyle(isHeaderHovering ? Color.primary.opacity(0.85) : InspectorControlPalette.label)
+                                // The same ink as InspectorSection's titles, so every
+                                // section label in the inspector reads alike.
+                                .foregroundStyle(Palette.label.opacity(0.95))
                                 .fixedSize()
 
                             if let summary, !isExpanded {
@@ -408,7 +407,6 @@ struct InspectorDisclosureSection<Content: View, Accessory: View>: View {
             }
             .padding(.horizontal, InspectorMetrics.horizontalPadding)
             .frame(height: 36)
-            .onHover { isHeaderHovering = $0 }
 
             VStack(alignment: .leading, spacing: 0) {
                 if isExpanded {
