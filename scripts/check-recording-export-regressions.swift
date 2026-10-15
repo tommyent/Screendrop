@@ -113,6 +113,37 @@ struct RecordingExportRegressionChecks {
         }
     }
 
+    static func unchangedRenderReuse(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("reuse.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        func installStopRender() throws { // An unedited recording's render is stamped with no document.
+            try Data("stop-time render".utf8).write(to: session.finalURL)
+            session.writeRenderStamp(nil)
+        }
+        try installStopRender()
+
+        let model = RecordingStudioModel(url: session.directoryURL)
+        await model.load()
+        try check(model.isLoaded, "Unedited fixture did not load")
+        try check(session.freshFinalURL(matching: model.currentDocument()) == nil, "Control: the in-memory baseline matched the render")
+        model.flushDraft() // Quick Look, Copy and Share flush every open project
+        try check(session.freshFinalURL(matching: nil) == session.finalURL, "Flushing an unedited project dropped its render")
+        model.teardown() // Closing Studio
+        try check(session.freshFinalURL(matching: nil) == session.finalURL && !session.hasSavedProject
+                  && !FileManager.default.fileExists(atPath: session.draftDocumentURL.path), "Closing Studio dropped the render or saved edits")
+
+        let edited = RecordingStudioModel(url: session.directoryURL)
+        defer { edited.teardown() }
+        await edited.load()
+        edited.zoomEnabled.toggle()
+        edited.flushDraft()
+        try check(session.existingFinalURL == nil, "An edited draft kept the stale render")
+        try installStopRender()
+        try check(edited.saveProject(reportingFailure: false) && session.existingFinalURL == nil, "A saved edit kept the stale render")
+        print("PASS: an unedited recording keeps its Stop-time render through flush and close (control: baseline never matches it); drafts and saves with edits still drop it")
+    }
+
     static func captionPixels(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("fixture.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -448,6 +479,7 @@ struct RecordingExportRegressionChecks {
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
         try await chapterRenameUndo(in: directory)
+        try await unchangedRenderReuse(in: directory)
         try await voiceIsolation(in: directory)
         try await cancelRetry(in: directory)
         try await cancelShareRetry(in: directory)
