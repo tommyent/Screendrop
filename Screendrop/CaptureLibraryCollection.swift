@@ -354,8 +354,7 @@ final class LibraryCollectionLayout: NSCollectionViewFlowLayout {
     }
 
     /// The flow layout keeps the item sizes it measured, so a new `itemSize`
-    /// from `prepare()` only took effect on the next data reload, such as
-    /// switching to list and back.
+    /// from `prepare()` only took effect on the next data reload.
     override func invalidationContext(forBoundsChange newBounds: NSRect) -> NSCollectionViewLayoutInvalidationContext {
         let context = super.invalidationContext(forBoundsChange: newBounds)
         (context as? NSCollectionViewFlowLayoutInvalidationContext)?.invalidateFlowLayoutDelegateMetrics = true
