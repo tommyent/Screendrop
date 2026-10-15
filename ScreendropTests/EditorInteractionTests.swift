@@ -165,30 +165,38 @@ struct EditorInteractionTests {
         #expect(text.editingTextId == nil && text.tool == .arrow)
     }
 
-    @Test static func highlighterLatchesHorizontalAndIgnoresPressure() throws {
-        for horizontal in [false, true] {
+    @Test(arguments: [false, true])
+    static func highlighterDrawsOneAxisLockedSegmentRegardlessOfShift(shift: Bool) throws {
+        for destination in [Vec(400, 120), Vec(120, 400), Vec(20, 80), Vec(80, 20), Vec(200, 200)] {
             let engine = editor()
             engine.replaceDocument(shapes: [])
             engine.tool = .highlighter
             engine.viewport.imageSize = CGSize(width: 1800, height: 600)
             engine.currentStrokeWidth = 16
+            engine.currentSwatch = AnnotationStylePreset.defaultHighlighterSwatch
+            engine.currentDash = .draw
             var down = pointer(100, 100)
-            down.shift = horizontal; down.isPen = true; down.pressure = 0.1
+            down.shift = shift; down.isPen = true; down.pressure = 0.1
             engine.pointerDown(down)
-            for point in [Vec(200, 140), Vec(300, 180), Vec(400, 120), Vec(200, 80), Vec(110, 100)] {
+            for point in [Vec(200, 140), Vec(130, 300), destination] {
                 var move = pointer(point.x, point.y)
-                move.shift = !horizontal; move.isPen = true; move.pressure = 0.9
+                move.shift = !shift; move.isPen = true; move.pressure = 0.9
                 engine.pointerMove(move)
+                let props = try #require(engine.shapes.first?.arrowProps)
+                #expect(props.start.x == props.end.x || props.start.y == props.end.y)
+                #expect(props.bend == 0 && props.dash == .solid)
             }
-            engine.pointerUp(pointer(110, 100))
+            engine.pointerUp(pointer(destination.x, destination.y))
+            #expect(engine.shapes.count == 1)
             let shape = try #require(engine.shapes.first)
-            let props = try #require(shape.drawProps)
+            let props = try #require(shape.arrowProps)
+            let horizontal = abs(destination.x - 100) >= abs(destination.y - 100)
             #expect(shape.tool == .highlighter && props.isHighlighter == true)
-            #expect(!props.isPen && !props.isClosed && props.isComplete)
-            #expect(props.points.allSatisfy { $0.z == 0.5 })
+            #expect(shape.drawProps == nil && props.start == .zero)
+            #expect(props.end == (horizontal ? Vec(destination.x - 100, 0) : Vec(0, destination.y - 100)))
+            #expect(props.arrowheadStart == .none && props.arrowheadEnd == .none)
+            #expect(shape.swatch == AnnotationStylePreset.defaultHighlighterSwatch && shape.swatch?.alpha == 0.35)
             #expect(props.strokeWidth == 32)
-            #expect(horizontal ? props.points.count == 2 && props.points.allSatisfy { $0.y == 0 }
-                               : props.points.count == 6 && props.points.contains { $0.y != 0 })
             engine.undo(); #expect(engine.shapes.isEmpty)
             engine.redo(); #expect(engine.shapes == [shape])
         }
@@ -199,7 +207,7 @@ struct EditorInteractionTests {
         let original = engine.shapes[0]
         engine.tool = .highlighter; engine.selectedIds = [original.id]
         engine.pointerDown(pointer(100, 100, command: true))
-        guard case .drawing = engine.interaction else { Issue.record("Command did not force marker drawing"); return }
+        guard case .creatingArrow = engine.interaction else { Issue.record("Command did not force marker drawing"); return }
         engine.pointerMove(pointer(250, 100))
         engine.pointerUp(pointer(250, 100))
         #expect(engine.shapes.count == 2 && engine.shapes[0] == original)
@@ -207,7 +215,79 @@ struct EditorInteractionTests {
     }
 
     @Test(arguments: [false, true])
-    static func highlighterCanBeSelectedResizedAndRotated(horizontal: Bool) throws {
+    static func highlighterHasOnlyEndpointsAndItsBodyMoves(horizontal: Bool) throws {
+        let engine = editor()
+        let props = ArrowProps(end: horizontal ? Vec(300, 0) : Vec(0, 300), arrowheadEnd: .none,
+                               swatch: AnnotationStylePreset.defaultHighlighterSwatch, strokeWidth: 16, isHighlighter: true)
+        let marker = AnnoShape(x: 100, y: 100, kind: .arrow(props))
+        engine.replaceDocument(shapes: [marker]); engine.tool = .highlighter
+        let middle = marker.pageTransform.applyToPoint(Vec.med(props.start, props.end))
+        engine.pointerDown(pointer(middle.x, middle.y))
+        #expect(engine.selectedIds == [marker.id])
+        engine.pointerUp(pointer(middle.x, middle.y))
+        #expect(engine.handle(at: Vec(100, 100)) == .arrowStart)
+        #expect(engine.handle(at: marker.pageTransform.applyToPoint(props.end)) == .arrowEnd)
+        #expect(engine.handle(at: middle) == nil)
+        #expect(engine.handle(at: Vec(86, 86)) == nil)
+        engine.pointerDown(pointer(middle.x, middle.y))
+        guard case .translating = engine.interaction else { Issue.record("Marker body did not move"); return }
+        engine.pointerMove(pointer(middle.x + 40, middle.y + 30, command: true))
+        engine.pointerUp(pointer(middle.x + 40, middle.y + 30))
+        let moved = try #require(engine.shapes.first)
+        #expect(moved.x == 140 && moved.y == 130 && moved.arrowProps == props)
+        engine.undo(); #expect(engine.shapes == [marker])
+        engine.redo(); #expect(engine.shapes == [moved])
+    }
+
+    @Test(arguments: [AnnoSelectionHandle.arrowStart, .arrowEnd])
+    static func highlighterEndpointDragsStayOnAnAxis(handle: AnnoSelectionHandle) throws {
+        let engine = editor()
+        let props = ArrowProps(end: Vec(300, 0), arrowheadEnd: .none,
+                               swatch: AnnotationStylePreset.defaultHighlighterSwatch, strokeWidth: 16, isHighlighter: true)
+        let marker = AnnoShape(x: 100, y: 100, kind: .arrow(props))
+        var targetProps = GeoProps(); targetProps.w = 100; targetProps.h = 100
+        let target = AnnoShape(x: 600, y: 104, kind: .geo(targetProps))
+        engine.replaceDocument(shapes: [marker, target]); engine.selectedIds = [marker.id]
+        let anchor = handle == .arrowStart ? props.end : props.start
+        let initialPoint = marker.pageTransform.applyToPoint(handle == .arrowStart ? props.start : props.end)
+        engine.pointerDown(pointer(initialPoint.x, initialPoint.y))
+        guard case let .draggingArrowHandle(_, grabbed) = engine.interaction else {
+            Issue.record("Marker endpoint did not start an endpoint drag"); return
+        }
+        #expect(grabbed == handle)
+        for offset in [Vec(200, 35), Vec(20, 200), Vec(-200, 35), Vec(20, -200), Vec(200, 200), Vec(0, 0)] {
+            let point = marker.pageTransform.applyToPoint(Vec.add(anchor, offset))
+            var move = pointer(point.x, point.y); move.shift = true
+            engine.pointerMove(move)
+            let actual = try #require(engine.document.shape(marker.id)?.arrowProps)
+            let horizontal = abs(offset.x) >= abs(offset.y)
+            let expected = Vec.add(anchor, horizontal ? Vec(offset.x, 0) : Vec(0, offset.y))
+            #expect((handle == .arrowStart ? actual.start : actual.end) == expected)
+            #expect((handle == .arrowStart ? actual.end : actual.start) == anchor)
+            #expect(actual.bend == 0 && actual.strokeWidth == 16 && actual.swatch == props.swatch)
+            #expect(engine.document.bindings.isEmpty)
+        }
+        engine.pointerUp(pointer(100, 100))
+        engine.undo(); #expect(engine.shapes == [marker, target])
+    }
+
+    @Test static func highlighterNeverBindsToShapesDuringCreationOrEndpointDrags() throws {
+        let engine = editor(fill: .solid)
+        engine.tool = .highlighter
+        engine.pointerDown(pointer(100, 100, command: true))
+        engine.pointerMove(pointer(300, 104))
+        engine.pointerUp(pointer(300, 104))
+        let marker = try #require(engine.shapes.last)
+        #expect(marker.arrowProps?.end == Vec(200, 0) && engine.document.bindings.isEmpty)
+        engine.pointerDown(pointer(300, 100))
+        engine.pointerMove(pointer(300, 258))
+        engine.pointerUp(pointer(300, 258))
+        #expect(engine.document.shape(marker.id)?.arrowProps?.end == Vec(200, 0))
+        #expect(engine.document.bindings.isEmpty)
+    }
+
+    @Test(arguments: [false, true])
+    static func legacyFreehandHighlighterCanStillBeSelectedResizedAndRotated(horizontal: Bool) throws {
         let engine = editor()
         let props = DrawProps(points: horizontal ? [Vec(0, 0), Vec(300, 0)] : [Vec(0, 0), Vec(200, 40), Vec(300, 100)],
                               isComplete: true, isHighlighter: true, strokeWidth: 16)

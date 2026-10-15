@@ -74,7 +74,7 @@ struct AnnoSelectionBounds {
 /// The interaction state machine. Each case holds what the drag needs to keep going.
 enum AnnoInteraction {
     case idle
-    case drawing(id: AnnoShapeID, origin: Vec, horizontal: Bool)
+    case drawing(id: AnnoShapeID, origin: Vec)
     case creatingGeo(id: AnnoShapeID, origin: Vec)
     case creatingArrow(id: AnnoShapeID)
     case creatingMagnifier(id: AnnoShapeID, origin: Vec)
@@ -439,7 +439,7 @@ final class AnnoEditor {
                 (.arrowMiddle, info.middle),
                 (.arrowEnd, info.end.handle),
             ]
-            for (handle, localPoint) in candidates {
+            for (handle, localPoint) in candidates where handle != .arrowMiddle || shape.arrowProps?.isHighlighter != true {
                 let screen = pageToScreen(transform.applyToPoint(localPoint))
                 if Vec.dist(screen, screenPoint) <= hitRadius { return handle }
             }

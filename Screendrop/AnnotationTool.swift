@@ -96,7 +96,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable, Codable {
         let shortcut: String
         switch self {
         case .select, .filledRectangle, .freehand: return title
-        case .highlighter: return "Highlighter: hold Shift before drawing for a horizontal line"
+        case .highlighter: return "Highlighter: draw a horizontal or vertical line"
         case .rectangle: shortcut = "R"
         case .ellipse: shortcut = "O"
         case .line: shortcut = "L"

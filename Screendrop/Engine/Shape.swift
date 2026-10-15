@@ -90,6 +90,8 @@ struct ArrowProps: Codable, Equatable {
     var swatch: AnnotationSwatch = .red
     var strokeWidth: Double = 8
     var dash: DashStyle = .solid
+    /// Absent in older lines and arrows; freehand highlighters keep their DrawProps.
+    var isHighlighter: Bool?
 }
 
 enum TextAlign: String, CaseIterable, Codable {
@@ -327,7 +329,8 @@ struct AnnoShape: Codable, Equatable, Identifiable {
             }
         case let .draw(props): props.isHighlighter == true ? .highlighter : .freehand
         case let .arrow(p):
-            p.arrowheadStart == .none && p.arrowheadEnd == .none ? .line : .arrow
+            p.isHighlighter == true ? .highlighter
+                : p.arrowheadStart == .none && p.arrowheadEnd == .none ? .line : .arrow
         case .text: .text
         case let .redaction(p): p.kind == .blur ? .blur : .pixelate
         case .highlight: .highlight

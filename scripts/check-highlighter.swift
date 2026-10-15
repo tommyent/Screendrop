@@ -61,16 +61,22 @@ struct HighlighterChecks {
 
     static func exports(_ source: URL, image: CGImage) throws {
         let base = try exportedPixels(source: source, shapes: [])
-        var props = DrawProps(points: [Vec(0, 0), Vec(390, 0)], isComplete: true,
-                              isHighlighter: true, swatch: AnnotationStylePreset.defaultHighlighterSwatch, strokeWidth: 16)
-        let marker = AnnoShape(x: 40, y: 80, kind: .draw(props))
+        var props = ArrowProps(end: Vec(390, 0), arrowheadEnd: .none,
+                               swatch: AnnotationStylePreset.defaultHighlighterSwatch, strokeWidth: 16, isHighlighter: true)
+        let marker = AnnoShape(x: 40, y: 80, kind: .arrow(props))
         let marked = try exportedPixels(source: source, shapes: [marker])
-        let overlapping = try exportedPixels(source: source, shapes: [marker, AnnoShape(x: 40, y: 80, kind: .draw(props))])
+        let overlapping = try exportedPixels(source: source, shapes: [marker, AnnoShape(x: 40, y: 80, kind: .arrow(props))])
+        let legacy = AnnoShape(x: 40, y: 80, kind: .draw(DrawProps(points: [Vec(0, 0), Vec(390, 0)],
+                               isComplete: true, isHighlighter: true, swatch: props.swatch, strokeWidth: 16)))
+        let legacyPixels = try exportedPixels(source: source, shapes: [legacy])
         var darkText = 0, whitePaper = 0
         for index in stride(from: 0, to: marked.count, by: 4) {
             let x = (index / 4) % 480, y = index / 1920
             // Interior pixels exclude the glyph and marker's antialiased edges.
             guard (50..<400).contains(x), (75..<85).contains(y) else { continue }
+            try check(zip(marked[index..<(index + 4)], legacyPixels[index..<(index + 4)]).allSatisfy {
+                abs(Int($0) - Int($1)) <= 1
+            }, "Straight/legacy marker interior pixels differ")
             if base[index] == 0 && base[index + 1] == 0 && base[index + 2] == 0 {
                 try check(abs(Int(marked[index]) - 89) <= 2 && abs(Int(marked[index + 1]) - 73) <= 2
                           && abs(Int(marked[index + 2]) - 16) <= 2,
@@ -95,7 +101,7 @@ struct HighlighterChecks {
         try check(zip(canvasPixels, marked).allSatisfy { abs(Int($0) - Int($1)) <= 1 }, "Shared canvas/export pixel mismatch")
         for alpha in [CGFloat(0), 1] {
             props.swatch = AnnotationSwatch("yellow", title: "Yellow", red: 1, green: 0.82, blue: 0.18, alpha: alpha)
-            let output = try exportedPixels(source: source, shapes: [AnnoShape(x: 40, y: 80, kind: .draw(props))])
+            let output = try exportedPixels(source: source, shapes: [AnnoShape(x: 40, y: 80, kind: .arrow(props))])
             if alpha == 0 {
                 try check(output == base, "Zero-alpha marker changed pixels")
             } else {
@@ -105,7 +111,7 @@ struct HighlighterChecks {
                 }, "Opaque marker did not paint solid yellow")
             }
         }
-        print("PASS: actual PNG export over synthetic text; normal 35% alpha, overlap, 0%/100%, shared canvas-drawing parity")
+        print("PASS: straight and legacy PNG exports over synthetic text; normal 35% alpha, overlap, 0%/100%, shared canvas-drawing parity")
     }
 
     static func modelStyles(_ source: URL) throws {
@@ -114,6 +120,7 @@ struct HighlighterChecks {
         let model = AnnotationEditorModel()
         model.load(url: source, dismiss: dismiss)
         model.selectTool(.freehand); model.setSwatch(.blue); model.setStrokeWidth(6)
+        model.setHandDrawn(true)
         model.selectTool(.highlighter)
         try check(model.selectedSwatch == AnnotationStylePreset.defaultHighlighterSwatch && model.strokeWidth == 16,
                   "Marker defaults missing")
@@ -148,6 +155,8 @@ struct HighlighterChecks {
         reopened.endInteraction(at: CGPoint(x: 300, y: 120), imageFrame: frame, boundaryFrame: frame)
         try check(reopened.shapes.last?.tool == .highlighter && reopened.shapes.last?.swatch == custom
                   && reopened.shapes.last?.strokeWidth == reopened.engine.pageStrokeWidth(24), "Next marker used pen style")
+        try check(reopened.shapes.last?.arrowProps?.dash == .solid && reopened.handDrawn,
+                  "Marker inherited the hand-drawn style or overwrote it")
         reopened.setSwatch(AnnotationStylePreset.defaultHighlighterSwatch)
         try check(reopened.shapes.last?.swatch?.alpha == 0.35, "Marker recolour lost alpha")
         reopened.undo()
@@ -155,7 +164,14 @@ struct HighlighterChecks {
                   "Undo did not restore marker colour alpha and displayed style")
         reopened.escapeSelectionOrDisarm(); reopened.escapeSelectionOrDisarm(); reopened.selectTool(.freehand)
         try check(reopened.selectedSwatch == .blue && reopened.strokeWidth == 6, "Escape lost the selected pen style")
-        print("PASS: actual model defaults, independent pen/marker styles, preset reload, selection, next stroke, alpha Undo and Escape")
+        let marker = reopened.shapes.last!
+        let line = AnnoShape(x: 40, y: 50, kind: .arrow(ArrowProps(arrowheadEnd: .none)))
+        reopened.engine.replaceDocument(shapes: [marker, line]); reopened.engine.selectedIds = [marker.id, line.id]
+        reopened.setHandDrawn(true)
+        try check(reopened.engine.document.shape(marker.id)?.arrowProps?.dash == .solid
+                  && reopened.engine.document.shape(line.id)?.arrowProps?.dash == .draw,
+                  "Mixed selection bent the marker with the line's hand-drawn style")
+        print("PASS: actual model defaults, independent pen/marker styles, preset reload, selection, next stroke, alpha Undo, Escape and mixed hand-drawn styles")
     }
 
     static func main() throws {

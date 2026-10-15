@@ -7,23 +7,32 @@ struct EditorExportTests {
         #expect(NSImage(systemSymbolName: AnnotationTool.highlighter.systemImage, accessibilityDescription: nil) != nil)
     }
 
-    @Test func highlighterUsesOneConstantWidthNormalAlphaOutline() throws {
+    @Test(arguments: [false, true])
+    func highlighterUsesOneConstantWidthNormalAlphaStroke(legacy: Bool) throws {
         let size = CGSize(width: 400, height: 180)
         let swatch = AnnotationStylePreset.defaultHighlighterSwatch
         var props = DrawProps(points: (0...20).map { Vec(Double($0) * 15, 0, Double($0) / 20) },
                               isComplete: true, isPen: true, isHighlighter: true, swatch: swatch, strokeWidth: 16)
-        let marker = AnnoShape(x: 40, y: 60, kind: .draw(props))
+        let kind: AnnoShapeKind = legacy ? .draw(props)
+            : .arrow(ArrowProps(end: Vec(300, 0), arrowheadEnd: .none, swatch: swatch, strokeWidth: 16, isHighlighter: true))
+        let marker = AnnoShape(x: 40, y: 60, kind: kind)
         let document = AnnoDocument(); document.add(marker)
         let elements = AnnoShapeRenderer.elements(for: marker, in: document)
         guard case let .path(path) = try #require(elements.first).content else {
             Issue.record("Marker did not produce an outline"); return
         }
-        #expect(elements.count == 1 && elements[0].fill == swatch.nsColor)
-        #expect(abs(path.boundingBoxOfPath.height - 16) < 0.01)
-        props.points = props.points.map { Vec($0.x, $0.y, 0.5) }; props.isPen = false
-        guard case let .path(unpressured) = try #require(AnnoShapeRenderer.elements(
-            for: AnnoShape(x: 0, y: 0, kind: .draw(props)), in: document).first).content else { return }
-        #expect(path == unpressured)
+        #expect(elements.count == 1)
+        if legacy {
+            #expect(elements[0].fill == swatch.nsColor && abs(path.boundingBoxOfPath.height - 16) < 0.01)
+            props.points = props.points.map { Vec($0.x, $0.y, 0.5) }; props.isPen = false
+            guard case let .path(unpressured) = try #require(AnnoShapeRenderer.elements(
+                for: AnnoShape(x: 0, y: 0, kind: .draw(props)), in: document).first).content else { return }
+            #expect(path == unpressured)
+        } else {
+            #expect(elements[0].stroke == swatch.nsColor && elements[0].strokeWidth == 16)
+            #expect(elements[0].fill == nil && elements[0].dashes.isEmpty)
+            #expect(path.boundingBoxOfPath.height == 0 && path.boundingBoxOfPath.width == 300)
+        }
 
         let context = try #require(CGContext(data: nil, width: 400, height: 180, bitsPerComponent: 8,
                                             bytesPerRow: 1600, space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -39,7 +48,7 @@ struct EditorExportTests {
         #expect(zip(pixel(110, 60), [89, 73, 16, 255]).allSatisfy { abs($0 - $1) <= 1 }, "Text pixel: \(pixel(110, 60))")
         #expect(pixel(200, 48) == [255, 255, 255, 255])
         // Draw only the additional stroke over the first pass.
-        let overlap = AnnoDocument(); overlap.add(AnnoShape(x: 40, y: 60, kind: .draw(props)))
+        let overlap = AnnoDocument(); overlap.add(AnnoShape(x: 40, y: 60, kind: kind))
         AnnoShapeDrawing.draw(overlap, in: context, target: target)
         #expect(pixel(200, 60)[2] < 182 && pixel(110, 60)[0] > 89)
     }

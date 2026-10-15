@@ -294,7 +294,9 @@ final class AnnoCanvasNSView: NSView {
             }
 
             // A measurement shows only the guide: it has no handles to offer.
-            for point in [info.start.handle, info.middle, info.end.handle] where !shape.isMeasurement {
+            let handles = shape.arrowProps?.isHighlighter == true
+                ? [info.start.handle, info.end.handle] : [info.start.handle, info.middle, info.end.handle]
+            for point in handles where !shape.isMeasurement {
                 drawRoundHandle(at: editor.pageToScreen(transform.applyToPoint(point)), in: context)
             }
             return

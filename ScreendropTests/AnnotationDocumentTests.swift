@@ -31,7 +31,7 @@ struct AnnotationDocumentTests {
     }
 
     @Test func oldFreehandAndMarkedDrawDocumentsRoundTrip() throws {
-        let plain = DrawProps(points: [Vec(0, 0), Vec(100, 40)], isComplete: true)
+        let plain = DrawProps(points: [Vec(0, 0), Vec(100, 0), Vec(100, 80)], isComplete: true)
         let legacyData = try JSONEncoder().encode(plain)
         let legacyJSON = try #require(JSONSerialization.jsonObject(with: legacyData) as? [String: Any])
         #expect(legacyJSON["isHighlighter"] == nil)
@@ -50,6 +50,31 @@ struct AnnotationDocumentTests {
         #expect(restored.shapes[0].swatch?.alpha == 0.35)
         #expect(restored.shapes[1].tool == .highlight && AnnotationTool.highlight.rawValue == "highlight")
         #expect(AnnotationTool.highlight.title == "Spotlight" && AnnotationTool.highlight.helpText.hasPrefix("Spotlight:"))
+    }
+
+    @Test func oldLinesAndArrowsDecodeWithoutTheHighlighterFlag() throws {
+        for head in [Arrowhead.none, .arrow] {
+            let props = ArrowProps(arrowheadEnd: head)
+            let data = try JSONEncoder().encode(props)
+            let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            #expect(json["isHighlighter"] == nil)
+            let decoded = try JSONDecoder().decode(ArrowProps.self, from: data)
+            let shape = AnnoShape(x: 0, y: 0, kind: .arrow(decoded))
+            #expect(decoded.isHighlighter == nil && shape.tool == (head == .none ? .line : .arrow))
+        }
+    }
+
+    @Test func straightHighlighterDocumentRoundTripsWithItsStyleAndGeometry() throws {
+        try withFiles { _, _, sidecar in
+            let props = ArrowProps(end: Vec(0, -240), arrowheadEnd: .none,
+                                   swatch: AnnotationStylePreset.defaultHighlighterSwatch, strokeWidth: 16, isHighlighter: true)
+            let shape = AnnoShape(x: 100, y: 300, kind: .arrow(props))
+            let document = AnnotationDocument(shapes: [shape], background: AnnotationBackgroundSettings())
+            try JSONEncoder().encode(document).write(to: sidecar)
+            let restored = try #require(try AnnotationDocument.load(from: sidecar))
+            #expect(restored == document && restored.shapes[0].tool == .highlighter)
+            #expect(restored.shapes[0].swatch?.alpha == 0.35)
+        }
     }
 
     @Test func unknownShapeRefusesAndPreservesAllThreeFiles() throws {
