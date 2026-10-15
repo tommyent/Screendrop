@@ -195,7 +195,7 @@ final class RecordingStudioModel {
     private(set) var sharedVideoError: String?
     /// Work that closing the window or quitting would cancel.
     var hasRunningWork: Bool {
-        exportTask != nil || shareTask != nil || backgroundMusicTask != nil || isIsolatingVoice || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
+        isRestoringDocument || exportTask != nil || shareTask != nil || backgroundMusicTask != nil || isIsolatingVoice || exportState.isExporting || audioExportState.isExporting || shareState.isBusy || isDeletingSharedLink
     }
     /// Upload identity while sharing, so the UI can read the uploader's
     /// live progress and the history card mirrors the state.
@@ -276,7 +276,7 @@ final class RecordingStudioModel {
     }
 
     private func changeBackgroundMusic(_ change: (inout RecordingBackgroundMusic) -> Void) {
-        guard var settings = backgroundMusicSettings else { return }
+        guard !isRestoringDocument, var settings = backgroundMusicSettings else { return }
         change(&settings)
         guard settings != backgroundMusicSettings else { return }
         let rebuild = settings.startOffset != backgroundMusicSettings?.startOffset || settings.loop != backgroundMusicSettings?.loop
@@ -294,7 +294,7 @@ final class RecordingStudioModel {
 
     /// The picker deletes its download on return; copy synchronously before resolving audio.
     func setBackgroundMusic(fileURL: URL, displayName: String, credit: String?, startOffset: TimeInterval) {
-        guard isLoaded, let session else { return }
+        guard isLoaded, !isRestoringDocument, let session else { return }
         pause()
         backgroundMusicTask?.cancel()
         backgroundMusicTask = nil
@@ -348,6 +348,7 @@ final class RecordingStudioModel {
     }
 
     func removeBackgroundMusic() {
+        guard !isRestoringDocument else { return }
         backgroundMusicTask?.cancel()
         backgroundMusicTask = nil
         pause()
@@ -377,6 +378,7 @@ final class RecordingStudioModel {
             musicWaveform = analysis?.waveform ?? []
             backgroundMusic = resolved
         } catch {
+            guard !Task.isCancelled, !isTornDown else { return }
             backgroundMusicError = "Could not prepare music: \(error.localizedDescription)"
         }
     }
@@ -500,6 +502,22 @@ final class RecordingStudioModel {
     /// Set while a stored document is being applied to the model, so the
     /// resulting property writes don't register as user edits.
     private var isApplyingDocument = false
+    private var documentRestoreID: UUID?
+    private var documentRestoreTask: Task<Void, Never>?
+    var isRestoringDocument: Bool { documentRestoreID != nil }
+
+    private func beginDocumentRestore() -> UUID {
+        let id = UUID()
+        documentRestoreID = id
+        pause()
+        return id
+    }
+
+    private func finishDocumentRestore(_ id: UUID) {
+        guard documentRestoreID == id else { return }
+        documentRestoreID = nil
+        documentRestoreTask = nil
+    }
     /// Whether the editor holds edits that have not been committed to
     /// `edit.json`. Stored rather than derived: the title bar reads it on
     /// every body evaluation, and rebuilding the whole document to compare
@@ -824,6 +842,9 @@ final class RecordingStudioModel {
     func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
+        documentRestoreTask?.cancel()
+        documentRestoreTask = nil
+        documentRestoreID = nil
         // Persist only a fully loaded document, before releasing its data.
         if isLoaded { writeDraftNow() }
         isLoaded = false
@@ -924,7 +945,7 @@ final class RecordingStudioModel {
     }
 
     func play() {
-        guard !isPlaying, !isEditingSourceRegion, !isPreparingRedactionPreview, redactionPreviewError == nil else { return }
+        guard !isRestoringDocument, !isPlaying, !isEditingSourceRegion, !isPreparingRedactionPreview, redactionPreviewError == nil else { return }
         if hoverPreviewTime != nil {
             hoverPreviewTime = nil
         }
@@ -1033,12 +1054,12 @@ final class RecordingStudioModel {
 
     var canUndo: Bool {
         _ = undoRevision
-        return editUndoManager.canUndo
+        return !isRestoringDocument && editUndoManager.canUndo
     }
 
     var canRedo: Bool {
         _ = undoRevision
-        return editUndoManager.canRedo
+        return !isRestoringDocument && editUndoManager.canRedo
     }
 
     var selectedClip: RecordingClipSegment? {
@@ -1067,14 +1088,14 @@ final class RecordingStudioModel {
     }
 
     func undo() {
-        guard editUndoManager.canUndo else { return }
+        guard !isRestoringDocument, editUndoManager.canUndo else { return }
         pause()
         editUndoManager.undo()
         undoRevision &+= 1
     }
 
     func redo() {
-        guard editUndoManager.canRedo else { return }
+        guard !isRestoringDocument, editUndoManager.canRedo else { return }
         pause()
         editUndoManager.redo()
         undoRevision &+= 1
@@ -1625,7 +1646,7 @@ final class RecordingStudioModel {
     }
 
     private func scheduleProjectSave() {
-        guard isLoaded, !isApplyingDocument else { return }
+        guard isLoaded, !isApplyingDocument, !isRestoringDocument else { return }
         hasUnsavedChanges = true
         hasEditsSinceOpening = true
         // The uploaded link no longer matches; bring Upload back.
@@ -1695,7 +1716,7 @@ final class RecordingStudioModel {
     /// committed `edit.json`, so a crash or a failed save costs nothing.
     @discardableResult
     private func writeDraftNow() -> Bool {
-        guard isLoaded else { return false }
+        guard isLoaded, !isRestoringDocument else { return false }
         let document = currentDocument()
         guard let session else {
             hasUnsavedChanges = document != lastSavedDocument
@@ -1752,7 +1773,7 @@ final class RecordingStudioModel {
     /// working copy to `edit.json` and clears the draft.
     @discardableResult
     func saveProject(reportingFailure: Bool = true) -> Bool {
-        guard isLoaded, let session else { return false }
+        guard isLoaded, !isRestoringDocument, let session else { return false }
         projectSaveTask?.cancel()
         autosaveTask?.cancel()
         let document = currentDocument()
@@ -1782,14 +1803,16 @@ final class RecordingStudioModel {
     /// Throws away everything since the last save and returns the editor to
     /// that state. Only offered for projects that have actually been saved.
     func discardChanges() async {
-        guard isLoaded, let session else { return }
+        guard isLoaded, !isRestoringDocument, let session else { return }
         projectSaveTask?.cancel()
         replacementAudioTask?.cancel()
         replacementAudioTask = nil
         session.removeDraftDocument()
         guard let document = lastSavedDocument else { return }
+        let restoreID = beginDocumentRestore()
         applyDocumentSettings(document)
         await applyDocumentTimeline(document)
+        finishDocumentRestore(restoreID)
         // Rebuilding the timeline touches published state; let the normal
         // draft path settle the dirty flag rather than assuming it landed.
         flushDraft()
@@ -1834,8 +1857,6 @@ final class RecordingStudioModel {
         await resolveBackgroundMusic()
         await resolveVoiceIsolation()
         guard !isTornDown, !Task.isCancelled else { return }
-        isApplyingDocument = false
-
         try? rebuildScreenPlayerItem(preserving: currentTime)
         loadTimelineThumbnails()
         loadStylePoster()
@@ -1918,13 +1939,13 @@ final class RecordingStudioModel {
         registerUndo(actionName) { target in
             target.revert(to: previous, stylePresetID: previousStylePresetID, actionName: actionName)
         }
-        pause()
+        let restoreID = beginDocumentRestore()
         selectedCueID = nil
         applyDocumentSettings(document)
         appliedStylePresetID = stylePresetID
-        scheduleProjectSave()
-        Task {
+        documentRestoreTask = Task {
             await applyDocumentTimeline(document, keepingUndo: true)
+            finishDocumentRestore(restoreID)
             scheduleProjectSave()
         }
     }

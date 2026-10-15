@@ -536,12 +536,34 @@ struct RecordingExportRegressionChecks {
         model.musicVolume = 0.4
         model.removeBackgroundMusic()
         try check(model.currentDocument().backgroundMusic == nil, "Music removal did not clear selection")
-        model.musicAnalysisOverride = { _, _ in nil }
+        let restoreGate = Gate()
+        model.musicAnalysisOverride = { _, _ in await restoreGate.wait(); return nil }
         model.screenPlayer.isMuted = true
         model.cameraPlayer.isMuted = true
         model.play()
         try check(model.isPlaying, "Muted restore fixture did not start its synthetic playback clock")
+        let restoring = Task { await model.discardChanges() }
+        try await until { restoreGate.continuation != nil }
+        let heldSettings = model.backgroundMusicSettings
+        let heldFiles = try FileManager.default.contentsOfDirectory(atPath: session.directoryURL.path)
+        try check(model.isRestoringDocument && model.hasRunningWork && !model.canUndo && !model.canRedo, "Restore did not own its busy state")
+        model.play()
+        model.musicVolume = 0.9
+        model.musicStartOffset = 1
+        model.musicLoops = false
+        model.musicDucks = false
+        model.musicDuckAmount = .aLot
+        model.removeBackgroundMusic()
+        model.setBackgroundMusic(fileURL: storedURL, displayName: "Interleaved", credit: nil, startOffset: 0)
         await model.discardChanges()
+        try check(!model.isPlaying && model.backgroundMusicSettings == heldSettings && model.isRestoringDocument,
+                  "Play or music edits interleaved with held restoration")
+        try check(try FileManager.default.contentsOfDirectory(atPath: session.directoryURL.path) == heldFiles,
+                  "A blocked import still copied a file")
+        restoreGate.resume()
+        await restoring.value
+        try check(!model.isRestoringDocument && !model.hasRunningWork, "Completed restore kept its owned busy state")
+        model.musicAnalysisOverride = { _, _ in nil }
         try check(!model.isPlaying, "Restoring music left the previous player running during audio reload")
         try check(model.backgroundMusic != nil && model.backgroundMusicError == nil, "Unavailable analysis prevented Studio music restoration")
         try check(model.backgroundMusic != nil && model.currentDocument().backgroundMusic == stored.backgroundMusic, "Discard did not restore saved music")
@@ -558,6 +580,7 @@ struct RecordingExportRegressionChecks {
         legacy.removeValue(forKey: "backgroundMusic")
         let old = try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: JSONSerialization.data(withJSONObject: legacy))
         try check(old.backgroundMusic == nil && old.formatVersion == 6, "Legacy document selected music or changed version")
+        print("PASS: held music restore blocks Play/import/removal/settings until resolution and player rebuild finish")
         print("PASS: music copies before picker callback returns; metadata/save/discard/legacy round trip; invalid import preserves selection; cleanup preserves source and saved music")
     }
 

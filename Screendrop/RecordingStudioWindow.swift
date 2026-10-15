@@ -2100,7 +2100,7 @@ private struct StudioTimelineEditor: View {
                 .keyboardShortcut(.space, modifiers: [])
                 .help(model.isPlaying ? "Pause (Space)" : "Play (Space)")
                 .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
-                .disabled(!model.isLoaded)
+                .disabled(!model.isLoaded || model.isRestoringDocument)
 
                 timelineButton("Skip to End", systemImage: "forward.end.fill") {
                     model.pause()
@@ -3752,6 +3752,7 @@ private struct StudioInspector: View {
 
             StudioBackgroundMusicControls(model: model)
         }
+        .disabled(model.isRestoringDocument)
     }
 
     /// One button carrying the whole export state, so progress and results
