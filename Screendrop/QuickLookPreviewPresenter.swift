@@ -44,23 +44,38 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
         shared.dismiss()
     }
     
+    /// What Quick Look can show right away: the fresh render, or the screen
+    /// master when no redaction would be missing from it (it lacks the
+    /// pointer, camera and edits, but opens without a full encode). Nil
+    /// means the recording has to be rendered first: pending redactions, or
+    /// edits that can't be read.
+    static func immediateURL(for url: URL) -> URL? {
+        guard let source = try? RecordingPreviewSource(url), source.redactions.isEmpty else { return nil }
+        return source.url
+    }
+
     private func show(urls: [URL], collapsingPreviewStack: Bool) {
         preparationTask?.cancel()
         if urls.contains(where: { RecordingDeliverable.session(for: $0) != nil }) {
-            preparationTask = Task { [weak self] in
-                do {
-                    StudioProjectRegistry.shared.flushDrafts()
-                    var prepared: [URL] = []
-                    for url in urls { prepared.append(try await RecordingDeliverable.resolve(for: url)) }
-                    guard !Task.isCancelled else { return }
-                    self?.present(urls: prepared, collapsingPreviewStack: collapsingPreviewStack)
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    FailureAlert.present(message: "The recording preview could not be prepared", error: error)
+            StudioProjectRegistry.shared.flushDrafts()
+        }
+        let immediate = urls.map(Self.immediateURL)
+        guard immediate.contains(nil) else {
+            present(urls: immediate.compactMap { $0 }, collapsingPreviewStack: collapsingPreviewStack)
+            return
+        }
+        preparationTask = Task { [weak self] in
+            do {
+                var prepared: [URL] = []
+                for (url, ready) in zip(urls, immediate) {
+                    if let ready { prepared.append(ready) } else { prepared.append(try await RecordingDeliverable.resolve(for: url)) }
                 }
+                guard !Task.isCancelled else { return }
+                self?.present(urls: prepared, collapsingPreviewStack: collapsingPreviewStack)
+            } catch {
+                guard !Task.isCancelled else { return }
+                FailureAlert.present(message: "The recording preview could not be prepared", error: error)
             }
-        } else {
-            present(urls: urls, collapsingPreviewStack: collapsingPreviewStack)
         }
     }
 
