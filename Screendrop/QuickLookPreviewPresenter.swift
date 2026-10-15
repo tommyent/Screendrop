@@ -13,6 +13,7 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
     static let shared = QuickLookPreviewPresenter()
     
     private var previewURLs: [NSURL] = []
+    private var preparationTask: Task<Void, Never>?
     /// Set when Quick Look itself tucked an expanded stack into its peek tab,
     /// so closing Quick Look expands only a stack it tucked. It records that
     /// first collapse, not later changes: if the stack is expanded and tucked
@@ -44,6 +45,26 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
     }
     
     private func show(urls: [URL], collapsingPreviewStack: Bool) {
+        preparationTask?.cancel()
+        if urls.contains(where: { RecordingDeliverable.session(for: $0) != nil }) {
+            preparationTask = Task { [weak self] in
+                do {
+                    StudioProjectRegistry.shared.flushDrafts()
+                    var prepared: [URL] = []
+                    for url in urls { prepared.append(try await RecordingDeliverable.resolve(for: url)) }
+                    guard !Task.isCancelled else { return }
+                    self?.present(urls: prepared, collapsingPreviewStack: collapsingPreviewStack)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    FailureAlert.present(message: "The recording preview could not be prepared", error: error)
+                }
+            }
+        } else {
+            present(urls: urls, collapsingPreviewStack: collapsingPreviewStack)
+        }
+    }
+
+    private func present(urls: [URL], collapsingPreviewStack: Bool) {
         previewURLs = urls.map { $0 as NSURL }
         
         guard let panel = QLPreviewPanel.shared() else {
@@ -82,6 +103,8 @@ final class QuickLookPreviewPresenter: NSObject, QLPreviewPanelDataSource, QLPre
     }
     
     private func dismiss() {
+        preparationTask?.cancel()
+        preparationTask = nil
         // Only restore (expand) the overlay if Quick Look is actually on screen.
         // This method doubles as generic cleanup that's called whenever cards are
         // inserted or removed; in those cases there's no Quick Look window to

@@ -229,6 +229,14 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         loadDraftDocument() ?? loadEditDocument()
     }
 
+    /// Missing legacy edits are fine; existing unreadable edits must never expose the master.
+    func editDocumentForRendering() throws -> RecordingEditDocument? {
+        let url = FileManager.default.fileExists(atPath: draftDocumentURL.path)
+            ? draftDocumentURL : editDocumentURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try CaptureManifest.decoder.decode(RecordingEditDocument.self, from: Data(contentsOf: url))
+    }
+
     /// True when unsaved edits are sitting in the draft. A draft identical to
     /// the saved document is just a leftover and doesn't count.
     var hasUnsavedDraft: Bool {

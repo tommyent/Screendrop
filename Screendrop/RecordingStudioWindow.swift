@@ -93,7 +93,10 @@ private struct RecordingStudioContent: View {
             .sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.flexible, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
-                if model.isCroppingVideo {
+                if model.isSelectingRedaction {
+                    Button("Cancel") { model.cancelRedaction() }
+                    Button("Add Redaction") { model.addRedaction() }
+                } else if model.isCroppingVideo {
                     videoCropActions
                 } else {
                     if model.canShareToCloud {
@@ -492,17 +495,17 @@ private struct StudioCanvas: View {
                 StudioCanvasComposition(
                     model: model,
                     canvasSize: canvasSize,
-                    isEditingVideoCrop: model.isCroppingVideo
+                    isEditingVideoCrop: model.isEditingSourceRegion
                 )
                 // Clicking the picture plays or pauses, like a player.
                 // The camera bubble and zoom target keep their own drags.
                 .contentShape(Rectangle())
                 .gesture(
                     TapGesture().onEnded(togglePlayback),
-                    including: model.isCroppingVideo ? .subviews : .all
+                    including: model.isEditingSourceRegion ? .subviews : .all
                 )
 
-                if model.isCroppingVideo {
+                if model.isEditingSourceRegion {
                     VideoCropOverlay(
                         model: model,
                         canvasSize: canvasSize,
@@ -549,7 +552,7 @@ private struct StudioCanvas: View {
         }
         // Cropping swaps it for the crop actions in the toolbar.
         .overlay(alignment: .topTrailing) {
-            if !model.isCroppingVideo {
+            if !model.isEditingSourceRegion {
                 AnnotationDockButton(systemImage: "crop", title: "Crop", help: "Crop the finished video canvas") {
                     withAnimation(.snappy(duration: 0.22)) {
                         model.beginVideoCrop()
@@ -657,6 +660,15 @@ private struct StudioCanvasComposition: View {
                     .clipped()
 
                 StudioPlayerLayerView(player: model.screenPlayer, gravity: .resize)
+                    .opacity(model.isPreparingRedactionPreview || model.redactionPreviewError != nil ? 0 : 1)
+                    .overlay {
+                        if model.isPreparingRedactionPreview || model.redactionPreviewError != nil {
+                            Color.black
+                            Text(model.redactionPreviewError ?? "Preparing redacted preview…")
+                                .foregroundStyle(.white)
+                                .padding()
+                        }
+                    }
                     .frame(
                         width: layout.contentFillSize.width,
                         height: layout.contentFillSize.height
@@ -867,6 +879,26 @@ private struct VideoCropOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            if model.isSelectingRedaction {
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .frame(width: videoFrame.width, height: videoFrame.height)
+                    .position(x: videoFrame.midX, y: videoFrame.midY)
+                    .gesture(DragGesture(coordinateSpace: .named(Self.coordinateSpaceName)).onChanged { value in
+                        let rect = CGRect(x: min(value.startLocation.x, value.location.x),
+                                          y: min(value.startLocation.y, value.location.y),
+                                          width: abs(value.location.x - value.startLocation.x),
+                                          height: abs(value.location.y - value.startLocation.y)).intersection(videoFrame)
+                        if rect.width > 1, rect.height > 1 {
+                            model.workingVideoCropRect = CGRect(x: (rect.minX - videoFrame.minX) / videoFrame.width,
+                                                              y: (rect.minY - videoFrame.minY) / videoFrame.height,
+                                                              width: rect.width / videoFrame.width,
+                                                              height: rect.height / videoFrame.height)
+                        }
+                    })
+                    .accessibilityHidden(true)
+            }
             Path { path in
                 path.addRect(videoFrame)
                 path.addRect(cropViewRect)
@@ -2771,6 +2803,7 @@ private enum StudioInspectorSection: String, Hashable, CaseIterable {
     case transcription
     case camera
     case audio
+    case redactions
 }
 
 private enum StudioInspectorSectionState {
@@ -2875,6 +2908,14 @@ private struct StudioInspector: View {
                 }
 
                 InspectorGroupBreak()
+
+                InspectorDisclosureSection(
+                    "Redactions",
+                    summary: model.redactions.isEmpty ? nil : "\(model.redactions.count)",
+                    isExpanded: expansionBinding(for: .redactions)
+                ) {
+                    RecordingRedactionControls(model: model)
+                }
 
                 InspectorDisclosureSection(
                     title: "Zoom & Clicks",

@@ -36,5 +36,12 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 It excludes only `AppEntry.swift`, uses the existing built DockProgress dependency, and verifies Foundation's storage resolves inside a temporary home before creating synthetic captures. It covers crop/undo, image deletion, text/composition and drag gates, coalescing, transaction failure, and close/quit during a delayed render. One AppKit window exercises the close delegate but is never shown or focused. Three 5K background/blur commits provide timings. The runner holds the shared benchmark lock only while executing the checks.
 
+Video redaction also has a windowless harness against the production app sources. It uses generated movies and an isolated temporary home to check mask persistence/undo, invalid-input reporting, preview failure handling, sparse-frame timing, CPU/Metal rendering, movie/GIF pixels, drag transfers, poster freshness and unchanged original bytes. After a Dev build, pass its DerivedData folder:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+  python3 scripts/check-video-redaction.py /path/to/DevDerivedData
+```
+
 Session snapshot checks cover unedited opens, five-session retention, deduplication, cropped pixels and pasted pictures after restore, Undo/Redo and auto-save in both editors, and Studio soundtrack retention and write failures. Recovery cases include unreadable metadata, failed pruning, error suppression and both saved-open and crash-draft-open sessions during storage failures. Library Trash uses a disposable destination to check that the snapshot folder moves with its capture; no files go to the user's Trash.
 

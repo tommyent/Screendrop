@@ -12,6 +12,7 @@
 		AF0500000000000000000003 /* Screendrop/RecordingClipTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */; };
 		AF0500000000000000000002 /* Screendrop/RecordingInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000102 /* Screendrop/RecordingInput.swift */; };
 		AF0500000000000000000001 /* Screendrop/RecordingTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0500000000000000000101 /* Screendrop/RecordingTranscript.swift */; };
+		AF2200000000000000000001 /* Screendrop/RecordingRedaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2200000000000000000011 /* Screendrop/RecordingRedaction.swift */; };
 		AF0200000000000000000001 /* Screendrop/UnsplashAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0200000000000000000002 /* Screendrop/UnsplashAPI.swift */; };
 		AF0100000000000000000001 /* Screendrop/ImageTextWarmUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */; };
 		AF0F00000000000000000001 /* Screendrop/RecordingMicrophoneLevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0F00000000000000000002 /* Screendrop/RecordingMicrophoneLevel.swift */; };
@@ -87,6 +88,7 @@
 		AF0500000000000000000103 /* Screendrop/RecordingClipTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingClipTimeline.swift; sourceTree = SOURCE_ROOT; };
 		AF0500000000000000000102 /* Screendrop/RecordingInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingInput.swift; sourceTree = SOURCE_ROOT; };
 		AF0500000000000000000101 /* Screendrop/RecordingTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingTranscript.swift; sourceTree = SOURCE_ROOT; };
+		AF2200000000000000000011 /* Screendrop/RecordingRedaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingRedaction.swift; sourceTree = SOURCE_ROOT; };
 		AF0200000000000000000002 /* Screendrop/UnsplashAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/UnsplashAPI.swift; sourceTree = SOURCE_ROOT; };
 		AF0100000000000000000002 /* Screendrop/ImageTextWarmUp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/ImageTextWarmUp.swift; sourceTree = SOURCE_ROOT; };
 		AF0F00000000000000000002 /* Screendrop/RecordingMicrophoneLevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/RecordingMicrophoneLevel.swift; sourceTree = SOURCE_ROOT; };
@@ -191,6 +193,7 @@
 		316389142F9DC05A002A7AF3 = {
 			isa = PBXGroup;
 			children = (
+				AF2200000000000000000011 /* Screendrop/RecordingRedaction.swift */,
 				3163891F2F9DC05A002A7AF3 /* Screendrop */,
 				AA6100000000000000000002 /* ScreendropTests */,
 				AA6100000000000000000003 /* Tested logic */,
@@ -394,6 +397,7 @@
 				AF0500000000000000000003 /* Screendrop/RecordingClipTimeline.swift in Sources */,
 				AF0500000000000000000002 /* Screendrop/RecordingInput.swift in Sources */,
 				AF0500000000000000000001 /* Screendrop/RecordingTranscript.swift in Sources */,
+				AF2200000000000000000001 /* Screendrop/RecordingRedaction.swift in Sources */,
 				AF0200000000000000000001 /* Screendrop/UnsplashAPI.swift in Sources */,
 				AF0100000000000000000001 /* Screendrop/ImageTextWarmUp.swift in Sources */,
 				AF0F00000000000000000001 /* Screendrop/RecordingMicrophoneLevel.swift in Sources */,

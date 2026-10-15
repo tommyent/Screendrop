@@ -34,12 +34,16 @@ actor CaptureLibraryThumbnails {
 
     private func image(at url: URL, owner: URL, isVideo: Bool, version: String, maxPixelSize: Int, top: Bool) async -> CGImage? {
         guard !Task.isCancelled else { return nil }
+        let preview: RecordingPreviewSource?
+        do { preview = isVideo ? try await RecordingPreviewSource(url) : nil }
+        catch { return nil }
+        let url = preview?.url ?? url
         let size = Self.bucket(for: CGFloat(maxPixelSize))
         var resourceURL = url
         // A reused URL can still hold the old stat values after an editor save.
         resourceURL.removeAllCachedResourceValues()
         guard let values = try? resourceURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return nil }
-        let version = "v3:\(url.path):\(values.fileSize ?? 0):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(isVideo ? version : ""):\(size)\(top ? ":top" : "")"
+        let version = "v4:\(url.path):\(values.fileSize ?? 0):\(values.contentModificationDate?.timeIntervalSince1970 ?? 0):\(isVideo ? version : ""):\(preview?.revision ?? ""):\(size)\(top ? ":top" : "")"
         let filename = disk.url(for: version, source: owner).lastPathComponent
         let key = filename as NSString
         if let image = cache.object(forKey: key) { return image }
@@ -63,7 +67,8 @@ actor CaptureLibraryThumbnails {
         let decode = Task.detached(priority: .utility) { () -> CGImage? in
             if shouldTrim { disk.trim() }
             if let image = autoreleasepool(invoking: { disk.image(for: version, source: owner) }) { return image }
-            guard let image = await Self.decode(url, isVideo: isVideo, maxPixelSize: size, top: top) else { return nil }
+            guard let image = await Self.decode(url, isVideo: isVideo, maxPixelSize: size, top: top,
+                                               redactions: preview?.redactions ?? []) else { return nil }
             autoreleasepool { disk.store(image, for: version, source: owner) }
             return image
         }
@@ -110,10 +115,14 @@ actor CaptureLibraryThumbnails {
         else { waiters.removeFirst().1.resume(returning: true) }
     }
 
-    private nonisolated static func decode(_ url: URL, isVideo: Bool, maxPixelSize: Int, top: Bool) async -> CGImage? {
+    private nonisolated static func decode(_ url: URL, isVideo: Bool, maxPixelSize: Int, top: Bool, redactions: [RecordingRedaction]) async -> CGImage? {
         guard !Task.isCancelled else { return nil }
         if isVideo {
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+            if !redactions.isEmpty {
+                do { generator.videoComposition = try await RecordingRedactionFilter.composition(asset: generator.asset, redactions: redactions) }
+                catch { return nil }
+            }
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: maxPixelSize, height: maxPixelSize)
             return await withTaskCancellationHandler {

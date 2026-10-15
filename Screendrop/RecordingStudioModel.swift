@@ -137,6 +137,16 @@ final class RecordingStudioModel {
     private(set) var isCroppingVideo = false
     var workingVideoCropRect = CropRectEditor.unit
     var videoCropAspect: CropAspectRatio = .freeform
+    private(set) var redactions: [RecordingRedaction] = []
+    var selectedRedactionID: UUID?
+    private(set) var isSelectingRedaction = false
+    private(set) var isPreparingRedactionPreview = false
+    private(set) var redactionPreviewError: String?
+    private(set) var redactionEditError: String?
+    var isEditingSourceRegion: Bool { isCroppingVideo || isSelectingRedaction }
+    private var redactionPreviewTask: Task<Void, Never>?
+    private var redactionFailureObserver: NSObjectProtocol?
+    private var redactionStatusObserver: NSKeyValueObservation?
     /// The preview's copy of the reframe camera, kept current with every
     /// edit that would change the exported crop.
     private(set) var previewReframe: ReframeTrack?
@@ -399,7 +409,14 @@ final class RecordingStudioModel {
         // without a save - a crash, a force quit, or a Studio window that is
         // still open elsewhere. Reopen on the draft so nothing is lost; the
         // project simply opens dirty.
-        let document = session?.effectiveEditDocument()
+        let document: RecordingEditDocument?
+        do {
+            document = try session?.editDocumentForRendering()
+            for region in document?.redactions ?? [] { try region.validate(sourceDuration: sourceDuration) }
+        } catch {
+            loadError = "Could not read the recording edits: \(error.localizedDescription)"
+            return
+        }
         // Sessions recorded before the toggle moved into Studio stored the
         // choice in the manifest; honor it as the default.
         showsClickEffects = manifest?.pressEffectsEnabled ?? true
@@ -538,6 +555,12 @@ final class RecordingStudioModel {
         exportAspect = document.exportAspectPreset
         exportAspectMode = document.exportAspectContentMode
         videoCropRect = document.normalizedVideoCropRect
+        if isLoaded, redactions != document.redactions, !document.redactions.isEmpty {
+            isPreparingRedactionPreview = true
+            stylePoster = nil
+            timelineThumbnails.cancel()
+        }
+        redactions = document.redactions
         audioExportFormat = document.audioExportFormatValue
         audioVolume = CGFloat(RecordingAudioGain.normalized(document.audioVolume ?? 1))
     }
@@ -550,6 +573,10 @@ final class RecordingStudioModel {
         isLoaded = false
         StudioProjectRegistry.shared.unregister(self)
         exportTask?.cancel()
+        redactionPreviewTask?.cancel()
+        if let redactionFailureObserver { NotificationCenter.default.removeObserver(redactionFailureObserver) }
+        redactionFailureObserver = nil
+        redactionStatusObserver = nil
         audioExportTask?.cancel()
         replacementAudioTask?.cancel()
         cancelShare()
@@ -632,7 +659,7 @@ final class RecordingStudioModel {
     }
 
     func play() {
-        guard !isPlaying else { return }
+        guard !isPlaying, !isEditingSourceRegion, !isPreparingRedactionPreview, redactionPreviewError == nil else { return }
         if hoverPreviewTime != nil {
             hoverPreviewTime = nil
         }
@@ -919,7 +946,54 @@ final class RecordingStudioModel {
             )
         }
 
-        screenPlayer.replaceCurrentItem(with: AVPlayerItem(asset: playbackAsset))
+        redactionPreviewTask?.cancel()
+        if let redactionFailureObserver { NotificationCenter.default.removeObserver(redactionFailureObserver) }
+        redactionFailureObserver = nil
+        redactionStatusObserver = nil
+        redactionPreviewError = nil
+        let item = AVPlayerItem(asset: playbackAsset)
+        if redactions.isEmpty {
+            isPreparingRedactionPreview = false
+            screenPlayer.replaceCurrentItem(with: item)
+        } else {
+            // Never display the previous, potentially unmasked paused frame while rebuilding.
+            isPreparingRedactionPreview = true
+            screenPlayer.replaceCurrentItem(with: nil)
+            let regions = redactions
+            let timeline = clipTimeline
+            redactionFailureObserver = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main
+            ) { [weak self, weak item] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let item, self.screenPlayer.currentItem === item else { return }
+                    self.coverFailedRedactionPreview()
+                }
+            }
+            redactionStatusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+                guard item.status == .failed else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, self.screenPlayer.currentItem === item else { return }
+                    self.coverFailedRedactionPreview()
+                }
+            }
+            redactionPreviewTask = Task { [weak self] in
+                do {
+                    item.videoComposition = try await RecordingRedactionFilter.composition(
+                        asset: playbackAsset, redactions: regions, timeline: timeline
+                    )
+                    guard let self, !Task.isCancelled, !self.isTornDown else { return }
+                    self.screenPlayer.replaceCurrentItem(with: item)
+                    self.updatePlaybackVolume()
+                    self.movePlayers(to: self.displayTime)
+                    self.installEndObserver()
+                    self.isPreparingRedactionPreview = false
+                } catch {
+                    guard let self, !Task.isCancelled else { return }
+                    self.redactionPreviewError = error.localizedDescription
+                    self.isPreparingRedactionPreview = false
+                }
+            }
+        }
         updatePlaybackVolume()
         screenPlayer.actionAtItemEnd = .pause
         currentTime = min(max(editorTime, 0), duration)
@@ -940,6 +1014,13 @@ final class RecordingStudioModel {
         undoRevision &+= 1
     }
 
+    private func coverFailedRedactionPreview() {
+        pause()
+        isPreparingRedactionPreview = false
+        redactionPreviewError = RecordingRedactionError.filterFailed.localizedDescription
+        screenPlayer.replaceCurrentItem(with: nil)
+    }
+
     /// A small frame from early in the recording, for the Styles tiles.
     private(set) var stylePoster: CGImage?
 
@@ -947,17 +1028,23 @@ final class RecordingStudioModel {
     private func loadStylePoster() {
         let url = screenURL
         let duration = sourceDuration
+        let regions = redactions
+        stylePoster = nil
         Task { [weak self] in
-            let poster = await Self.posterFrame(url: url, duration: duration)
-            guard let self, !self.isTornDown else { return }
+            let poster = await Self.posterFrame(url: url, duration: duration, redactions: regions)
+            guard let self, !self.isTornDown, self.redactions == regions else { return }
             self.stylePoster = poster
         }
     }
 
     /// About a second in, past a blank first frame; the first frame if that
     /// fails.
-    nonisolated private static func posterFrame(url: URL, duration: TimeInterval) async -> CGImage? {
+    nonisolated private static func posterFrame(url: URL, duration: TimeInterval, redactions: [RecordingRedaction]) async -> CGImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        if !redactions.isEmpty {
+            do { generator.videoComposition = try await RecordingRedactionFilter.composition(asset: generator.asset, redactions: redactions) }
+            catch { return nil }
+        }
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 360, height: 360)
         for seconds in [min(1, duration / 2), 0] where seconds.isFinite {
@@ -969,7 +1056,7 @@ final class RecordingStudioModel {
     }
 
     private func loadTimelineThumbnails() {
-        timelineThumbnails.prepare(url: screenURL, duration: sourceDuration)
+        timelineThumbnails.prepare(url: screenURL, duration: sourceDuration, redactions: redactions)
     }
 
     /// Speed of whichever clip covers this editor time; 1 when nothing
@@ -1322,25 +1409,27 @@ final class RecordingStudioModel {
             replacementAudioFileName: replacementAudio?.url.lastPathComponent ?? replacementAudioReference?.fileName,
             replacementAudioDisplayName: replacementAudio?.displayName ?? replacementAudioReference?.displayName,
             audioExportFormat: audioExportFormat,
-            audioVolume: Double(audioVolume)
+            audioVolume: Double(audioVolume),
+            redactions: redactions
         )
     }
 
     /// Persists the working copy. Cheap, debounced, and never touches the
     /// committed `edit.json`, so a crash or a failed save costs nothing.
-    private func writeDraftNow() {
-        guard isLoaded else { return }
+    @discardableResult
+    private func writeDraftNow() -> Bool {
+        guard isLoaded else { return false }
         let document = currentDocument()
         guard let session else {
             hasUnsavedChanges = document != lastSavedDocument
-            return
+            return true
         }
         do { if document != openedDocument { try keepOpeningSession() } }
         catch {
             lastSaveSucceeded = false
             hasUnsavedChanges = true
             // A saved opening is safe in edit.json; an opening draft is not.
-            if openedOnDraft { return }
+            if openedOnDraft { return false }
         }
         if document == lastSavedDocument {
             // Edited back to the saved state (undo, or a discard landing):
@@ -1348,10 +1437,16 @@ final class RecordingStudioModel {
             session.removeDraftDocument()
             hasUnsavedChanges = false
         } else {
-            try? session.writeDraftDocument(document)
+            do { try session.writeDraftDocument(document) }
+            catch {
+                lastSaveSucceeded = false
+                hasUnsavedChanges = true
+                return false
+            }
             hasUnsavedChanges = true
         }
         dropStaleRender(for: document, in: session)
+        return true
     }
 
     /// A cached flatten that no longer matches the edits is worse than no
@@ -1455,6 +1550,8 @@ final class RecordingStudioModel {
         isApplyingDocument = false
 
         try? rebuildScreenPlayerItem(preserving: currentTime)
+        loadTimelineThumbnails()
+        loadStylePoster()
         rebuildPointerTimeline()
         rebuildViewportTimeline()
         rebuildPreviewReframe()
@@ -1487,7 +1584,7 @@ final class RecordingStudioModel {
     /// A project, loaded, not cropping, and with no export or upload that
     /// is rendering the current edits.
     var canRevert: Bool {
-        isLoaded && isProject && !isCroppingVideo && !hasRunningWork
+        isLoaded && isProject && !isEditingSourceRegion && !hasRunningWork
     }
 
     /// File › Revert To › Original: every edit back to what a new recording
@@ -1874,6 +1971,67 @@ final class RecordingStudioModel {
 
     // MARK: - Video crop
 
+    var selectedRedaction: RecordingRedaction? {
+        redactions.first { $0.id == selectedRedactionID }
+    }
+
+    func beginRedaction() {
+        guard isLoaded, !hasRunningWork else { return }
+        pause()
+        cancelVideoCrop()
+        selectedCueID = nil
+        hoverPreviewTime = nil
+        workingVideoCropRect = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+        videoCropAspect = .freeform
+        isSelectingRedaction = true
+    }
+
+    func cancelRedaction() { isSelectingRedaction = false }
+
+    func addRedaction() {
+        guard isSelectingRedaction else { return }
+        let start = min(sourceTime(atEditorTime: currentTime), max(0, sourceDuration - 0.01))
+        let region = RecordingRedaction(start: start, end: sourceDuration, rect: workingVideoCropRect)
+        applyRedactions(redactions + [region])
+        selectedRedactionID = region.id
+        isSelectingRedaction = false
+    }
+
+    func updateRedaction(_ region: RecordingRedaction) {
+        applyRedactions(redactions.map { $0.id == region.id ? region : $0 })
+    }
+
+    func removeRedaction(_ id: UUID) {
+        applyRedactions(redactions.filter { $0.id != id })
+        if selectedRedactionID == id { selectedRedactionID = nil }
+    }
+
+    private func applyRedactions(_ next: [RecordingRedaction]) {
+        redactionEditError = nil
+        guard next != redactions else { return }
+        do { for region in next { try region.validate(sourceDuration: sourceDuration) } }
+        catch { redactionEditError = error.localizedDescription; return }
+        let previous = redactions
+        pause()
+        redactions = next
+        guard writeDraftNow() else {
+            redactions = previous
+            FailureAlert.present(message: "The video redaction could not be saved",
+                                 error: CocoaError(.fileWriteUnknown),
+                                 detail: "The change was not applied. Resolve the project storage problem and try again.")
+            return
+        }
+        registerUndo("Video Redaction") { $0.applyRedactions(previous) }
+        scheduleProjectSave()
+        QuickLookPreviewPresenter.dismiss()
+        if let session { ScreenshotPreviewStack.shared.dismissRecordingSession(session.directoryURL) }
+        RecordingProjectStore.shared.reload()
+        do { try rebuildScreenPlayerItem(preserving: currentTime) }
+        catch { redactionPreviewError = error.localizedDescription }
+        loadTimelineThumbnails()
+        loadStylePoster()
+    }
+
     var isVideoCropped: Bool {
         RecordingVideoCropGeometry.isCropped(videoCropRect)
     }
@@ -1891,6 +2049,7 @@ final class RecordingStudioModel {
             return
         }
         pause()
+        cancelRedaction()
         workingVideoCropRect = videoCropRect
         videoCropAspect = .freeform
         isCroppingVideo = true
@@ -1928,12 +2087,12 @@ final class RecordingStudioModel {
     }
 
     func moveVideoCrop(from start: CGRect, byNormalized delta: CGSize) {
-        guard isCroppingVideo else { return }
+        guard isEditingSourceRegion else { return }
         workingVideoCropRect = CropRectEditor.move(start, by: delta)
     }
 
     func updateVideoCrop(handle: CropHandle, toNormalized point: CGPoint) {
-        guard isCroppingVideo else { return }
+        guard isEditingSourceRegion else { return }
         let aspect = handle.isCorner
             ? videoCropAspect.normalizedRatio(imageSize: videoSize)
             : nil
@@ -2024,7 +2183,8 @@ final class RecordingStudioModel {
             audioVolume: Double(audioVolume),
             reframe: reframe,
             fitContentAspect: fitContentAspect,
-            usesUniformPadding: exportAspect == .original
+            usesUniformPadding: exportAspect == .original,
+            redactions: redactions
         )
     }
 
@@ -2081,7 +2241,7 @@ final class RecordingStudioModel {
     }
 
     var previewCanvasSize: CGSize {
-        if exportAspect == .original, isCroppingVideo {
+        if isEditingSourceRegion {
             RecordingStudioLayout.originalCanvasSize(
                 sourceSize: videoSize, style: style, contentCropRect: CropRectEditor.unit
             )
@@ -2101,7 +2261,7 @@ final class RecordingStudioModel {
     }
 
     var previewVideoCropRect: CGRect {
-        isCroppingVideo ? CropRectEditor.unit : videoCropRect
+        isEditingSourceRegion ? CropRectEditor.unit : videoCropRect
     }
 
     /// How the content occupies the card on a target-aspect canvas.

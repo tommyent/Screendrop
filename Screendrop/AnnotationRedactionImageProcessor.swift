@@ -212,12 +212,12 @@ enum RedactionImageProcessor {
         return max(scale, 0.01)
     }
 
-    static func pixelBlockSize(for density: CGFloat) -> CGFloat {
+    nonisolated static func pixelBlockSize(for density: CGFloat) -> CGFloat {
         let normalized = min(max(density, 0), 1)
         return 4 + normalized * 36
     }
 
-    static func blurRadius(for density: CGFloat) -> CGFloat {
+    nonisolated static func blurRadius(for density: CGFloat) -> CGFloat {
         let normalized = min(max(density, 0), 1)
         return 2 + normalized * 28
     }
