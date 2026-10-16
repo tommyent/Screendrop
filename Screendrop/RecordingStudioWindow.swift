@@ -1829,6 +1829,9 @@ private struct StudioTimelineEditor: View {
                 scrollingLanes(scale: scale)
             }
             .overlay {
+                StudioTimelineHoverMarker(model: model, scale: scale, scrollX: scrollX)
+            }
+            .overlay {
                 StudioTimelinePlayhead(
                     time: model.currentTime,
                     scale: scale,
@@ -2286,7 +2289,7 @@ private struct StudioTimelinePlayhead: View {
     let scrollX: CGFloat
     let onScrub: (TimeInterval) -> Void
 
-    private enum Metrics {
+    fileprivate enum Metrics {
         static let crownWidth: CGFloat = 11
         static let crownHeight: CGFloat = 13
         static let hitWidth: CGFloat = 26
@@ -2339,6 +2342,41 @@ private struct StudioTimelinePlayhead: View {
             }
         }
         .coordinateSpace(name: Self.coordinateSpace)
+    }
+}
+
+/// Faint twin of the playhead crown at the hovered moment, with its line down
+/// through the ruler. The clip lane draws the rest of the skim line, in the
+/// same 42% accent.
+private struct StudioTimelineHoverMarker: View {
+    // Read here, not by the timeline, so hover ticks redraw only this view.
+    let model: RecordingStudioModel
+    let scale: StudioTimelineScale
+    let scrollX: CGFloat
+
+    var body: some View {
+        GeometryReader { proxy in
+            let time = model.hoverPreviewTime
+            let x = time.map { scale.x(for: $0) - scrollX } ?? -1
+            let crown = StudioTimelinePlayhead.Metrics.self
+            let lineTop = crown.crownHeight - 2
+            let clipLaneTop = StudioTimelineMetrics.playheadLaneHeight
+                + StudioTimelineMetrics.rulerHeight + StudioTimelineMetrics.rowSpacing * 2
+
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .frame(width: 1, height: clipLaneTop - lineTop)
+                    .offset(x: x - 0.5, y: lineTop)
+                PlayheadCrownShape()
+                    .frame(width: crown.crownWidth, height: crown.crownHeight)
+                    .offset(x: x - crown.crownWidth / 2)
+            }
+            .foregroundStyle(Color.accentColor)
+            // One layer, so the crown's tail and the line don't double up where they overlap.
+            .compositingGroup()
+            .opacity(x >= 0 && x <= proxy.size.width ? 0.42 : 0)
+        }
+        .allowsHitTesting(false)
     }
 }
 
