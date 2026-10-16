@@ -103,6 +103,39 @@ struct AnnotationClipboardTests {
         #expect(target.shapes.first?.imageProps == pasted && target.imageAssets[pasted.assetID]?.data == bytes)
     }
 
+    @Test static func detachedCurvedArrowsKeepTheirRenderedArc() throws {
+        let board = board()
+        defer { board.releaseGlobally() }
+        for bend in [-80.0, 80, 180] {
+            for includeStartTarget in [false, true] {
+                let source = AnnoEditor()
+                let start = AnnoShape(x: 100, y: 200, kind: .geo(GeoProps(w: 80, h: 80)))
+                let end = AnnoShape(x: 400, y: 200, kind: .geo(GeoProps(w: 80, h: 80)))
+                let arrow = AnnoShape(x: 0, y: 0, kind: .arrow(ArrowProps(start: Vec(140, 240), end: Vec(440, 240), bend: bend)))
+                let bindings = [(ArrowTerminal.start, start.id), (.end, end.id)].map { terminal, id in
+                    ArrowBinding(arrowId: arrow.id, toId: id, terminal: terminal,
+                                 normalizedAnchor: Vec(0.5, 0.5), isPrecise: false, isExact: false)
+                }
+                source.replaceDocument(shapes: [start, end, arrow], bindings: bindings)
+                source.selectedIds = includeStartTarget ? [start.id, arrow.id] : [arrow.id]
+                let before = try #require(source.document.arrowInfo(arrow.id))
+                #expect(source.copySelection(to: board))
+                let target = AnnoEditor()
+                #expect(target.pasteAnnotations(from: board))
+                let copiedArrow = try #require(target.shapes.last)
+                let after = try #require(target.document.arrowInfo(copiedArrow.id))
+                guard case let .arc(original) = before.body, case let .arc(copy) = after.body else {
+                    Issue.record("Curved arrow became straight"); continue
+                }
+                #expect(Vec.dist(original.center, copy.center) < 0.0001)
+                #expect(abs(original.radius - copy.radius) < 0.0001)
+                #expect(original.sweepFlag == copy.sweepFlag && original.largeArcFlag == copy.largeArcFlag)
+                #expect(Vec.dist(before.start.point, after.start.point) < 0.0001)
+                #expect(Vec.dist(before.end.point, after.end.point) < 0.0001)
+            }
+        }
+    }
+
     @Test static func noSelectionAndNewPictureOrTextNeverReuseAnOldAnnotationCopy() {
         let board = board()
         defer { board.releaseGlobally() }

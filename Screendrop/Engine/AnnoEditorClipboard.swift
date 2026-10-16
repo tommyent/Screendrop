@@ -19,8 +19,22 @@ extension AnnoEditor {
         for index in shapes.indices {
             guard case var .arrow(props) = shapes[index].kind,
                   let info = document.arrowInfo(shapes[index].id) else { continue }
-            if let binding = info.bindings.start, !ids.contains(binding.toId) { props.start = info.start.point }
-            if let binding = info.bindings.end, !ids.contains(binding.toId) { props.end = info.end.point }
+            let detachStart = info.bindings.start.map { !ids.contains($0.toId) } ?? false
+            let detachEnd = info.bindings.end.map { !ids.contains($0.toId) } ?? false
+            if detachStart { props.start = info.start.point }
+            if detachEnd { props.end = info.end.point }
+            // Clipping changes the chord, so keeping the old bend would produce a different circle.
+            if detachStart || detachEnd, case .arc = info.body {
+                let start = detachStart ? props.start : info.start.handle
+                let end = detachEnd ? props.end : info.end.handle
+                let arc = ArrowShared.arcInfo(start, end, info.middle)
+                if arc.radius.isFinite, arc.size.isFinite {
+                    let middle = Vec.add(arc.center, Vec.fromAngle(Vec.angle(arc.center, start) + arc.size / 2, arc.radius))
+                    let offset = Vec.sub(middle, Vec.med(start, end))
+                    let perpendicular = Vec.sub(end, start).uni.per
+                    props.bend = -offset.x * perpendicular.x - offset.y * perpendicular.y
+                }
+            }
             shapes[index].kind = .arrow(props)
         }
         let assetIDs = Set(shapes.compactMap { $0.imageProps?.assetID })

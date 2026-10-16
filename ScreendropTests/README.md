@@ -20,7 +20,7 @@ The regular Build action builds the app; the Test action builds the app and runs
 Fixtures should be generated in memory. Keep any required recorded regression fixture small and local to the test bundle; never depend on an agent's temporary folder or a network URL. Use `#expect`/`#require`, which remain active in optimized builds, instead of `assert` or trapping `precondition`.
 
 `AnnotationClipboardTests` checks annotation clipboard round-trips, new IDs, repeated paste offsets,
-unchanged geometry across screenshot sizes, internal arrow bindings, detached terminals, embedded
+unchanged geometry across screenshot sizes, internal arrow bindings, detached terminals and arcs, embedded
 pictures, newest-copy replacement and engine Undo/Redo. After a Dev build, run
 `python3 scripts/check-editor-idle-save.py /path/to/DevDerivedData scripts/check-annotation-copy-paste.swift`
 for the actual editor model's no-selection Copy fallback, annotation/picture routing, selection and
