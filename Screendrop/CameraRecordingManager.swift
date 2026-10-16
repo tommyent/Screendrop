@@ -59,6 +59,7 @@ final class CameraRecordingManager {
 
     private let engine = CameraCaptureEngine()
     private var previewPanel: NSPanel?
+    private var screenshotCaptureCount = 0
     private var activePreviewDisplayID: CGDirectDisplayID?
     private(set) var isRunning = false
     /// True once frames are actually being written to a `camera.mov`, as
@@ -71,6 +72,21 @@ final class CameraRecordingManager {
     private var operation: Task<CameraRecordingResult?, Never>?
 
     private init() {}
+
+    var previewWindowID: CGWindowID? {
+        previewPanel.map { CGWindowID($0.windowNumber) }
+    }
+
+    // Native screenshots cannot filter windows, and sharingType is a legacy exclusion.
+    func hidePreviewForScreenshot() {
+        screenshotCaptureCount += 1
+        previewPanel?.orderOut(nil)
+    }
+
+    func restorePreviewAfterScreenshot() {
+        screenshotCaptureCount -= 1
+        if screenshotCaptureCount == 0 { previewPanel?.orderFrontRegardless() }
+    }
 
     /// Starts the capture session and shows the floating preview, without
     /// writing anything to disk yet. Call this as soon as the camera is
@@ -214,7 +230,7 @@ final class CameraRecordingManager {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
-        PreviewWindowCaptureExclusion.shared.register(window: panel)
+        panel.sharingType = .none
 
         let container = NSView(frame: CGRect(origin: .zero, size: CGSize(width: diameter, height: diameter)))
         container.wantsLayer = true
@@ -231,7 +247,7 @@ final class CameraRecordingManager {
         container.layer?.addSublayer(previewLayer)
 
         panel.contentView = container
-        panel.orderFrontRegardless()
+        if screenshotCaptureCount == 0 { panel.orderFrontRegardless() }
         previewPanel = panel
         activePreviewDisplayID = displayID
     }

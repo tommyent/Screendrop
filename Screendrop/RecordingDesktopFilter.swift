@@ -7,7 +7,8 @@ nonisolated struct RecordingDesktopFilter {
     let excludedApplications: [SCRunningApplication]
     let excludedWindows: [SCWindow]
 
-    init(content: SCShareableContent, includesAppWindows: Bool, cleanDesktop: Bool) {
+    init(content: SCShareableContent, includesAppWindows: Bool, cleanDesktop: Bool,
+         cameraPreviewWindowID: CGWindowID? = nil) {
         self.cleanDesktop = cleanDesktop
         excludedApplications = content.applications.filter {
             Self.excludesApplication(
@@ -21,7 +22,10 @@ nonisolated struct RecordingDesktopFilter {
             Self.excludesWindow(
                 bundleIdentifier: $0.owningApplication?.bundleIdentifier,
                 layer: $0.windowLayer,
-                cleanDesktop: cleanDesktop
+                cleanDesktop: cleanDesktop,
+                windowID: $0.windowID,
+                cameraPreviewWindowID: cameraPreviewWindowID,
+                includesAppWindows: includesAppWindows
             )
         }
     }
@@ -49,8 +53,14 @@ nonisolated struct RecordingDesktopFilter {
             || bundleIdentifier == "com.apple.notificationcenterui")
     }
 
-    static func excludesWindow(bundleIdentifier: String?, layer: Int, cleanDesktop: Bool) -> Bool {
-        cleanDesktop && bundleIdentifier == "com.apple.finder"
+    static func excludesWindow(bundleIdentifier: String?, layer: Int, cleanDesktop: Bool,
+                               windowID: CGWindowID? = nil, cameraPreviewWindowID: CGWindowID? = nil,
+                               includesAppWindows: Bool = true) -> Bool {
+        if let cameraPreviewWindowID, windowID == cameraPreviewWindowID {
+            // An exception would re-include the bubble when the whole app is already excluded.
+            return includesAppWindows
+        }
+        return cleanDesktop && bundleIdentifier == "com.apple.finder"
             && layer == Int(CGWindowLevelForKey(.desktopIconWindow))
     }
 }
