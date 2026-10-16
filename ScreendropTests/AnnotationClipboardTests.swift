@@ -7,6 +7,93 @@ struct AnnotationClipboardTests {
         NSPasteboard(name: NSPasteboard.Name("annotation-copy-tests-\(UUID().uuidString)"))
     }
 
+    private struct Payload: Encodable {
+        var shapes: [AnnoShape]
+        var bindings: [ArrowBinding]
+        var images: [String: Data]
+    }
+
+    private static func expectRejected(_ shapes: [AnnoShape], bindings: [ArrowBinding] = []) throws {
+        let board = board()
+        defer { board.releaseGlobally() }
+        let bytes = PastedImageTests.bandedPNG()
+        let asset = try #require(AnnoImageAsset(data: bytes))
+        let editor = AnnoEditor()
+        let text = AnnoShape(x: 10, y: 20, kind: .text(TextProps()))
+        editor.replaceDocument(shapes: [text])
+        editor.imageAssets["kept"] = asset
+        editor.selectedIds = [text.id]
+        editor.markUndo()
+        editor.nudgeSelected(dx: 1, dy: 0)
+        editor.undo()
+        editor.editingTextId = text.id
+        let before = editor.document.snapshot()
+        let revision = editor.historyRevision
+        let selection = editor.selectedIds
+        let tool = editor.tool
+        let images = editor.imageAssets.mapValues { ObjectIdentifier($0.image) }
+        var notifications = 0
+        editor.onChange = { notifications += 1 }
+        let picture = AnnoShape(x: 30, y: 40, kind: .image(ImageProps(assetID: "incoming", w: 20, h: 20)))
+        let payload = Payload(shapes: [picture] + shapes, bindings: bindings, images: ["incoming": bytes])
+        board.setData(try JSONEncoder().encode(payload), forType: AnnoEditor.annotationPasteboardType)
+        #expect(!editor.pasteAnnotations(from: board))
+        #expect(editor.shapes == before.shapes && editor.document.bindings == before.bindings)
+        #expect(editor.historyRevision == revision && editor.canUndo && editor.canRedo)
+        #expect(editor.imageAssets.mapValues(\.data) == ["kept": bytes])
+        #expect(editor.imageAssets.mapValues({ ObjectIdentifier($0.image) }) == images)
+        #expect(editor.editingTextId == text.id && editor.selectedIds == selection && editor.tool == tool)
+        #expect(editor.annotationPasteRun?.count == nil && notifications == 0)
+    }
+
+    @Test static func selfBoundArrowIsRejectedWithoutMutation() throws {
+        let arrow = AnnoShape(x: 0, y: 0, kind: .arrow(ArrowProps()))
+        let binding = ArrowBinding(arrowId: arrow.id, toId: arrow.id, terminal: .end,
+                                   normalizedAnchor: Vec(0.5, 0.5), isPrecise: false, isExact: false)
+        try expectRejected([arrow], bindings: [binding])
+    }
+
+    @Test static func extremeDashedGeometryIsRejectedWithoutMutation() throws {
+        for (width, stroke) in [(1e308, 1e-308), (100, 1e-308), (1e308, 8)] {
+            try expectRejected([AnnoShape(x: 0, y: 0, kind: .geo(GeoProps(w: width, h: 100, strokeWidth: stroke, dash: .dashed)))])
+        }
+    }
+
+    @Test static func clipboardBindingsUseTheDrawingRules() throws {
+        let arrow = AnnoShape(x: 0, y: 0, kind: .arrow(ArrowProps()))
+        let box = AnnoShape(x: 200, y: 100, kind: .geo(GeoProps()))
+        let invalidPairs = [(box, AnnoShape(x: 300, y: 100, kind: .geo(GeoProps()))),
+                            (arrow, AnnoShape(x: 100, y: 0, kind: .arrow(ArrowProps()))),
+                            (arrow, AnnoShape(x: 100, y: 0, kind: .highlight(HighlightProps()))),
+                            (arrow, AnnoShape(x: 100, y: 0, kind: .redaction(RedactionProps()))),
+                            (AnnoShape(x: 0, y: 0, kind: .arrow(ArrowProps(isHighlighter: true))), box)]
+        for (source, target) in invalidPairs {
+            let binding = ArrowBinding(arrowId: source.id, toId: target.id, terminal: .end,
+                                       normalizedAnchor: Vec(0.5, 0.5), isPrecise: false, isExact: false)
+            let shapes = source.id == target.id ? [source] : [source, target]
+            try expectRejected(shapes, bindings: [binding])
+        }
+        let unsafeAnchor = ArrowBinding(arrowId: arrow.id, toId: box.id, terminal: .end,
+                                        normalizedAnchor: Vec(1e308, 0.5), isPrecise: true, isExact: false)
+        try expectRejected([arrow, box], bindings: [unsafeAnchor])
+    }
+
+    @Test static func unsafeNumericPropertiesAndOffsetAreRejectedWithoutMutation() throws {
+        let shapes = [
+            AnnoShape(x: 1_000_000, y: 0, kind: .geo(GeoProps())), // Paste's offset exceeds the bound.
+            AnnoShape(x: 0, y: 0, kind: .geo(GeoProps(cornerRadius: 1e308))),
+            AnnoShape(x: 0, y: 0, kind: .draw(DrawProps(points: [Vec(0, 0, 1e308)]))),
+            AnnoShape(x: 0, y: 0, kind: .arrow(ArrowProps(end: Vec(1e308, 0)))),
+            AnnoShape(x: 0, y: 0, kind: .text(TextProps(fontSize: 1e308))),
+            AnnoShape(x: 0, y: 0, kind: .redaction(RedactionProps(density: 1e308))),
+            AnnoShape(x: 0, y: 0, kind: .highlight(HighlightProps(w: 1e308))),
+            AnnoShape(x: 0, y: 0, kind: .numbered(NumberedProps(diameter: 1e308))),
+            AnnoShape(x: 0, y: 0, kind: .magnifier(MagnifierProps(loupe: Vec(1e308, 0)))),
+            AnnoShape(x: 0, y: 0, kind: .image(ImageProps(assetID: "incoming", w: 20, h: 1e308))),
+        ]
+        for shape in shapes { try expectRejected([shape]) }
+    }
+
     @Test static func roundTripKeepsGeometryAndStylesWithNewIDsAndSteppingOffset() throws {
         let board = board()
         defer { board.releaseGlobally() }

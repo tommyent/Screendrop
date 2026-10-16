@@ -768,7 +768,6 @@ final class AnnotationEditorModel {
     func paste(from pasteboard: NSPasteboard = .general) -> Bool {
         guard !isCropping, imageSize != .zero else { return false }
         if pasteboard.availableType(from: [AnnoEditor.annotationPasteboardType]) != nil {
-            commitTextEditing()
             guard engine.pasteAnnotations(from: pasteboard) else {
                 errorMessage = "Unable to paste the copied annotations."
                 return false

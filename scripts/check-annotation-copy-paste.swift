@@ -5,6 +5,11 @@ import Foundation
 @main
 struct AnnotationCopyPasteChecks {
     struct Failure: Error, CustomStringConvertible { let description: String }
+    struct Payload: Encodable {
+        var shapes: [AnnoShape]
+        var bindings: [ArrowBinding]
+        var images: [String: Data]
+    }
 
     static func check(_ value: @autoclosure () -> Bool, _ message: String) throws {
         if !value() { throw Failure(description: message) }
@@ -80,6 +85,30 @@ struct AnnotationCopyPasteChecks {
         try check(source.copySelectedAnnotations(to: board) && source.errorMessage != nil && board.changeCount == change,
                   "Failed selection Copy fell back to finishing or destroyed the clipboard")
         print("PASS newest clipboard wins; picture fallback and one-step Undo; plain text and crop gates")
+        target.isCropping = false
+        let text = AnnoShape(x: 0, y: 0, kind: .text(TextProps()))
+        target.engine.document.add(text)
+        target.engine.editingTextId = text.id
+        let beforeShapes = target.shapes
+        let historyRevision = target.engine.historyRevision
+        let revision = target.revision
+        let assets = target.engine.imageAssets.mapValues(\.data)
+        let arrow = AnnoShape(x: 0, y: 0, kind: .arrow(ArrowProps()))
+        let selfBinding = ArrowBinding(arrowId: arrow.id, toId: arrow.id, terminal: .end,
+                                       normalizedAnchor: Vec(0.5, 0.5), isPrecise: false, isExact: false)
+        let extreme = AnnoShape(x: 0, y: 0, kind: .geo(GeoProps(w: 1e308, h: 100, strokeWidth: 1e-308, dash: .dashed)))
+        let incoming = AnnoShape(x: 0, y: 0, kind: .image(ImageProps(assetID: "incoming", w: 4, h: 4)))
+        for (shape, bindings) in [(arrow, [selfBinding]), (extreme, [])] {
+            board.clearContents()
+            board.setData(try JSONEncoder().encode(Payload(shapes: [incoming, shape], bindings: bindings, images: ["incoming": bytes])),
+                          forType: AnnoEditor.annotationPasteboardType)
+            try check(!target.paste(from: board), "Model accepted a crash payload")
+            try check(target.shapes == beforeShapes && target.engine.editingTextId == text.id
+                      && target.engine.historyRevision == historyRevision && target.revision == revision
+                      && target.engine.imageAssets.mapValues(\.data) == assets,
+                      "Rejected model paste mutated text, document, history or assets")
+        }
+        print("PASS model rejects both crash payloads before text, document, history or asset mutation")
         print("All annotation copy/paste model checks passed; no windows created or shown")
     }
 }

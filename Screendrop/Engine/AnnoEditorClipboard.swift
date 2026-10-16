@@ -5,6 +5,55 @@ private struct AnnotationClipboard: Codable {
     var shapes: [AnnoShape]
     var bindings: [ArrowBinding]
     var images: [String: Data]
+
+    // Far beyond screenshot dimensions; the reciprocal also excludes unsafe divisors.
+    static let numericLimit = 1_000_000.0
+
+    private static func safe(_ values: Double...) -> Bool {
+        values.allSatisfy { $0.isFinite && abs($0) <= numericLimit }
+    }
+
+    private static func positive(_ values: Double...) -> Bool {
+        values.allSatisfy { (1 / numericLimit...numericLimit).contains($0) }
+    }
+
+    private static func safe(_ point: Vec) -> Bool { safe(point.x, point.y, point.z) }
+
+    static func isSafe(_ shape: AnnoShape) -> Bool {
+        guard safe(shape.x, shape.y, shape.rotation), (0...1).contains(shape.opacity) else { return false }
+        if let swatch = shape.swatch,
+           ![swatch.red, swatch.green, swatch.blue, swatch.alpha].allSatisfy({ (0...1).contains($0) }) { return false }
+        switch shape.kind {
+        case let .geo(p):
+            return positive(p.w, p.h, p.strokeWidth) && safe(p.cornerRadius) && p.cornerRadius >= 0
+        case let .draw(p):
+            return positive(p.strokeWidth) && p.points.allSatisfy { safe($0) }
+        case let .arrow(p):
+            return positive(p.strokeWidth) && safe(p.start) && safe(p.end) && safe(p.bend)
+        case let .text(p):
+            return positive(p.w, p.fontSize)
+        case let .redaction(p):
+            return positive(p.w, p.h) && (0...1).contains(p.density)
+        case let .highlight(p):
+            return positive(p.w, p.h)
+        case let .numbered(p):
+            return positive(p.diameter) && safe(Double(p.value))
+        case let .magnifier(p):
+            return p.isValid && positive(p.ringSize, p.loupeSize) && safe(p.ring) && safe(p.loupe) && safe(p.strokeWidth)
+        case let .image(p):
+            return positive(p.w, p.h)
+        }
+    }
+
+    var isValid: Bool {
+        guard !shapes.isEmpty, Set(shapes.map(\.id)).count == shapes.count,
+              shapes.allSatisfy({ Self.isSafe($0) }) else { return false }
+        let byID = Dictionary(uniqueKeysWithValues: shapes.map { ($0.id, $0) })
+        return bindings.allSatisfy { binding in
+            guard let source = byID[binding.arrowId], let target = byID[binding.toId] else { return false }
+            return AnnoEditor.canBind(source, to: target) && Self.safe(binding.normalizedAnchor)
+        }
+    }
 }
 
 extension AnnoEditor {
@@ -56,12 +105,10 @@ extension AnnoEditor {
     func pasteAnnotations(from pasteboard: NSPasteboard = .general) -> Bool {
         guard let data = pasteboard.data(forType: Self.annotationPasteboardType),
               let payload = try? JSONDecoder().decode(AnnotationClipboard.self, from: data),
-              !payload.shapes.isEmpty else { return false }
+              payload.isValid else { return false }
         let ids = Set(payload.shapes.map(\.id))
-        guard ids.count == payload.shapes.count,
-              payload.shapes.allSatisfy({ $0.x.isFinite && $0.y.isFinite && $0.rotation.isFinite }),
-              payload.bindings.allSatisfy({ ids.contains($0.arrowId) && ids.contains($0.toId) }) else { return false }
         let assetIDs = Set(payload.shapes.compactMap { $0.imageProps?.assetID })
+        guard Set(payload.images.keys) == assetIDs else { return false }
         var assets: [String: AnnoImageAsset] = [:]
         var assetMap: [String: String] = [:]
         for id in assetIDs {
@@ -73,6 +120,7 @@ extension AnnoEditor {
         let previousCount = annotationPasteRun.flatMap {
             $0.board == pasteboard.name.rawValue && $0.change == pasteboard.changeCount ? $0.count : nil
         } ?? 0
+        guard previousCount >= 0, Double(previousCount) < AnnotationClipboard.numericLimit / 20 else { return false }
         let count = previousCount + 1
         let offset = Double(count) * 20
         let idMap = Dictionary(uniqueKeysWithValues: ids.map { ($0, AnnoShapeID()) })
@@ -87,6 +135,7 @@ extension AnnoEditor {
             }
             return shape
         }
+        guard shapes.allSatisfy({ AnnotationClipboard.isSafe($0) }) else { return false }
         let bindings = payload.bindings.map { original in
             var binding = original
             binding.arrowId = idMap[original.arrowId]!
