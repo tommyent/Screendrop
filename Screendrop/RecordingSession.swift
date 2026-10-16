@@ -138,7 +138,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
     }
 
     /// True when two documents would render identical media and differ only in
-    /// the container they get wrapped in, or the GIF made from them.
+    /// the container they get wrapped in or GIF conversion dimensions/rate.
     static func differsOnlyByExportContainer(
         _ document: RecordingEditDocument,
         _ other: RecordingEditDocument?
@@ -146,7 +146,7 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         guard let other else { return false }
         var normalized = document
         normalized.exportSettings?.container = other.exportSettings?.container
-        normalized.exportSettings?.exportsGIF = other.exportSettings?.exportsGIF
+        // GIF intermediates omit music, so exportsGIF remains part of the media identity.
         normalized.exportSettings?.gifFrameRate = other.exportSettings?.gifFrameRate
         normalized.exportSettings?.gifWidth = other.exportSettings?.gifWidth
         return normalized == other
@@ -289,10 +289,11 @@ nonisolated struct RecordingSession: Sendable, Equatable {
         try? data.write(to: renderStampURL, options: .atomic)
     }
 
-    /// The flattened deliverable only when it provably matches `document`.
+    /// The movie deliverable only when it provably matches `document`; GIF export opts in explicitly.
     /// Export and Share can then skip the render instead of trusting that
     /// nothing has changed since it was made.
-    func freshFinalURL(matching document: RecordingEditDocument?) -> URL? {
+    func freshFinalURL(matching document: RecordingEditDocument?, forGIFExport: Bool = false) -> URL? {
+        let document = forGIFExport ? document : document?.forVideoRendering
         // Older renders could include cut caption wording or omit replacement audio.
         guard let existing = existingFinalURL,
               let data = try? Data(contentsOf: renderStampURL),

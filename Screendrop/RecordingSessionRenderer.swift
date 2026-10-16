@@ -45,6 +45,7 @@ enum RecordingSessionRenderer {
         editDocument: RecordingEditDocument?,
         onProgress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> URL {
+        let editDocument = editDocument?.forVideoRendering
         let manifest = session.loadCaptureManifest()
         let pointerSynthesized = manifest?.pointerSynthesized == true
         // Draft edits count: a flatten made for an upload must show what the
