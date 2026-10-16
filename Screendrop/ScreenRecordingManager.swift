@@ -165,8 +165,24 @@ final class ScreenRecordingManager {
                 // Own the session as soon as it exists. Any failure after this
                 // point must be able to remove or recover the directory.
                 self.session = session
+                // Create (or relocate) the bubble before the filter snapshots its window ID.
+                var cameraStarted = false
+                if let cameraID = options.cameraDeviceID {
+                    cameraStarted = await CameraRecordingManager.shared.start(
+                        outputURL: session.cameraURL,
+                        deviceID: cameraID,
+                        displayID: targetDisplayID
+                    )
+                    guard try isStarting(session: session) else { return }
+                    if !cameraStarted {
+                        Self.presentInputWarnings([
+                            "The selected camera could not start. The screen and selected audio will still be recorded."
+                        ])
+                    }
+                }
+
                 let content = try await ScreenRecordingCapture.availableContent(
-                    onScreenWindowsOnly: !options.cleanDesktop
+                    onScreenWindowsOnly: !options.cleanDesktop && CameraRecordingManager.shared.previewWindowID == nil
                 )
                 guard try isStarting(session: session) else { return }
                 let target = try Self.captureTarget(for: source, content: content, options: options)
@@ -204,21 +220,6 @@ final class ScreenRecordingManager {
                 writer.onFailure = { [weak self] error in
                     Task { @MainActor in
                         self?.handleWriterFailure(error)
-                    }
-                }
-
-                var cameraStarted = false
-                if let cameraID = options.cameraDeviceID {
-                    cameraStarted = await CameraRecordingManager.shared.start(
-                        outputURL: session.cameraURL,
-                        deviceID: cameraID,
-                        displayID: targetDisplayID
-                    )
-                    guard try isStarting(session: session) else { return }
-                    if !cameraStarted {
-                        Self.presentInputWarnings([
-                            "The selected camera could not start. The screen and selected audio will still be recorded."
-                        ])
                     }
                 }
 
@@ -740,7 +741,8 @@ final class ScreenRecordingManager {
             let plan = RecordingDesktopFilter(
                 content: content,
                 includesAppWindows: includesAppWindows,
-                cleanDesktop: options.cleanDesktop
+                cleanDesktop: options.cleanDesktop,
+                cameraPreviewWindowID: CameraRecordingManager.shared.previewWindowID
             )
             filter = plan.makeFilter(for: freshDisplay)
             sourceSize = CGSize(width: freshDisplay.width, height: freshDisplay.height)
@@ -767,7 +769,8 @@ final class ScreenRecordingManager {
             let plan = RecordingDesktopFilter(
                 content: content,
                 includesAppWindows: includesAppWindows,
-                cleanDesktop: options.cleanDesktop
+                cleanDesktop: options.cleanDesktop,
+                cameraPreviewWindowID: CameraRecordingManager.shared.previewWindowID
             )
             filter = plan.makeFilter(for: freshDisplay)
             let mappedSourceRect = Self.sourceRect(
