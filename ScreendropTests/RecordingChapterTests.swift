@@ -23,9 +23,9 @@ struct RecordingChapterTests {
             RecordingChapterPlanner.clampedStart(id: chapters[index].id, proposed: time, chapters: chapters, duration: 10)
         }
         #expect(clamp(0, -100) == 0)
-        #expect(clamp(0, 100) == 2.998)
-        #expect(clamp(1, -100) == 1.002)
-        #expect(clamp(1, 100) == 6.998)
+        #expect(clamp(0, 100) == 2.984)
+        #expect(clamp(1, -100) == 1.016)
+        #expect(clamp(1, 100) == 6.984)
         #expect(clamp(1, 5) == 5)
         let end = try #require(clamp(2, 100))
         var moved = chapters
@@ -35,6 +35,25 @@ struct RecordingChapterTests {
         #expect(clamp(1, .nan) == nil && clamp(1, .infinity) == nil)
         #expect(RecordingChapterPlanner.clampedStart(id: UUID(), proposed: 1, chapters: chapters, duration: 10) == nil)
         #expect(RecordingChapterPlanner.clampedStart(id: chapters[0].id, proposed: 0, chapters: chapters, duration: 0.4) == nil)
+    }
+
+    @Test func neighbourClampedDragKeepsAllChaptersAfterSpeedChanges() throws {
+        let timeline = RecordingClipTimeline.full(sourceDuration: 40)
+        let chapters = [RecordingChapter(title: "First", start: 5), RecordingChapter(title: "Middle", start: 15),
+                        RecordingChapter(title: "Last", start: 25)]
+        for proposed in [0.0, 40] {
+            var moved = chapters
+            let time = try #require(RecordingChapterPlanner.clampedStart(id: chapters[1].id, proposed: proposed,
+                chapters: RecordingChapterPlanner.mapped(chapters, through: timeline), duration: timeline.duration))
+            moved[1].start = timeline.sourceTime(at: time)
+            for speed in [1.0, 2, 3, 4, 6, 8] {
+                let faster = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 40, speed: speed)])
+                #expect(RecordingChapterPlanner.mapped(moved, through: faster).map(\.id) == chapters.map(\.id))
+                let payload = try #require(JSONSerialization.jsonObject(
+                    with: RecordingChapterPlanner.shareData(moved, through: faster)) as? [[String: Any]])
+                #expect(payload.compactMap { $0["title"] as? String } == chapters.map(\.title))
+            }
+        }
     }
 
     @Test func movedChapterMapsBackToItsSurvivingSourceAnchor() throws {

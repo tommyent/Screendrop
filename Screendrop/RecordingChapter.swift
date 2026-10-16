@@ -18,8 +18,8 @@ nonisolated enum RecordingChapterPlanner {
     static func clampedStart(id: UUID, proposed: TimeInterval, chapters: [RecordingChapter], duration: TimeInterval) -> TimeInterval? {
         guard proposed.isFinite, duration.isFinite, duration > 0,
               let index = chapters.firstIndex(where: { $0.id == id }) else { return nil }
-        // Stay clear of the mapper's 1 ms deduplication and half-second end margin.
-        let gap = 0.002
+        // Stay above the mapper's 1 ms deduplication even after the fastest supported speed change.
+        let gap = 0.002 * RecordingClipSegment.maximumSpeed
         let lower = index > 0 ? chapters[index - 1].start + gap : 0
         let upper = min(duration - 0.5 - gap,
                         index + 1 < chapters.count ? chapters[index + 1].start - gap : duration)
