@@ -124,6 +124,7 @@ final class AnnoEditor {
     var images: [String: CGImage] { imageAssets.mapValues(\.image) }
     var selectedIds: Set<AnnoShapeID> = []
     var viewport = AnnoViewport()
+    var annotationPasteRun: (board: String, change: Int, count: Int)?
 
     var tool: AnnotationTool = .rectangle {
         didSet {
@@ -262,6 +263,7 @@ final class AnnoEditor {
     func release() {
         replaceDocument(shapes: [])
         imageAssets.removeAll()
+        annotationPasteRun = nil
     }
 
     /// Where a pasted picture lands: no more than 40% of the screenshot's width and height (never

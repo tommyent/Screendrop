@@ -423,12 +423,17 @@ extension AnnoEditor {
         return Vec.add(anchor, Vec.fromAngle(angle, delta.len))
     }
 
+    static func canBind(_ arrow: AnnoShape, to target: AnnoShape) -> Bool {
+        arrow.isArrow && arrow.arrowProps?.isHighlighter != true
+            && arrow.id != target.id && !target.isArrow && !target.isHighlight && !target.isRedaction
+    }
+
     /// Bind an arrow terminal to whatever shape is under the pointer, or clear the binding.
     private func bindTerminal(arrowId: AnnoShapeID, terminal: ArrowTerminal, at pagePoint: Vec, precise: Bool) {
-        guard document.shape(arrowId)?.arrowProps?.isHighlighter != true else { return }
+        guard let arrow = document.shape(arrowId), arrow.arrowProps?.isHighlighter != true else { return }
         // Arrows don't bind to arrows, to themselves, or to the tools that aren't really objects.
         let target = document.shapes.reversed().first { shape in
-            guard shape.id != arrowId, !shape.isArrow, !shape.isHighlight, !shape.isRedaction else { return false }
+            guard Self.canBind(arrow, to: shape) else { return false }
             let local = document.pointInShapeSpace(shape, pagePoint)
             return document.geometry(shape).hitTestPoint(
                 local,

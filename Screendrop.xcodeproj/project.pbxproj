@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AFAC00000000000000000001 /* Screendrop/Engine/AnnoEditorClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAC00000000000000000002 /* Screendrop/Engine/AnnoEditorClipboard.swift */; };
 		AF3100000000000000000005 /* Screendrop/FreeToUseMusicPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3100000000000000000006 /* Screendrop/FreeToUseMusicPickerModel.swift */; };
 		AF3100000000000000000003 /* Screendrop/FreeToUseMusicPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3100000000000000000004 /* Screendrop/FreeToUseMusicPreview.swift */; };
 		AF3100000000000000000001 /* Screendrop/FreeToUseMusicAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3100000000000000000002 /* Screendrop/FreeToUseMusicAPI.swift */; };
@@ -97,6 +98,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		AFAC00000000000000000002 /* Screendrop/Engine/AnnoEditorClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/Engine/AnnoEditorClipboard.swift; sourceTree = SOURCE_ROOT; };
 		AF3100000000000000000006 /* Screendrop/FreeToUseMusicPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/FreeToUseMusicPickerModel.swift; sourceTree = SOURCE_ROOT; };
 		AF3100000000000000000004 /* Screendrop/FreeToUseMusicPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/FreeToUseMusicPreview.swift; sourceTree = SOURCE_ROOT; };
 		AF3100000000000000000002 /* Screendrop/FreeToUseMusicAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Screendrop/FreeToUseMusicAPI.swift; sourceTree = SOURCE_ROOT; };
@@ -241,6 +243,7 @@
 		AA6100000000000000000003 /* Tested logic */ = {
 			isa = PBXGroup;
 			children = (
+				AFAC00000000000000000002 /* Screendrop/Engine/AnnoEditorClipboard.swift */,
 				AF3100000000000000000006 /* Screendrop/FreeToUseMusicPickerModel.swift */,
 				AF3100000000000000000004 /* Screendrop/FreeToUseMusicPreview.swift */,
 				AF3100000000000000000002 /* Screendrop/FreeToUseMusicAPI.swift */,
@@ -464,6 +467,7 @@
 				AA6200000000000000000005 /* Screendrop/ScreenRecordingState.swift in Sources */,
 				AF1100000000000000000001 /* Screendrop/RecordingDesktopFilter.swift in Sources */,
 				AA6100000000000000000064 /* Screendrop/Engine/AnnoEditor.swift in Sources */,
+				AFAC00000000000000000001 /* Screendrop/Engine/AnnoEditorClipboard.swift in Sources */,
 				AA6100000000000000000065 /* Screendrop/Engine/AnnoEditorInteraction.swift in Sources */,
 				AA6100000000000000000066 /* Screendrop/Engine/AnnoEditorMagnifier.swift in Sources */,
 				AA6100000000000000000068 /* Screendrop/Engine/AnnoEditorSnapping.swift in Sources */,

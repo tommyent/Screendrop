@@ -19,6 +19,14 @@ The regular Build action builds the app; the Test action builds the app and runs
 
 Fixtures should be generated in memory. Keep any required recorded regression fixture small and local to the test bundle; never depend on an agent's temporary folder or a network URL. Use `#expect`/`#require`, which remain active in optimized builds, instead of `assert` or trapping `precondition`.
 
+`AnnotationClipboardTests` checks annotation clipboard round-trips, new IDs, repeated paste offsets,
+unchanged geometry across screenshot sizes, internal arrow bindings, detached terminals and arcs, embedded
+pictures, newest-copy replacement and engine Undo/Redo. After a Dev build, run
+`python3 scripts/check-editor-idle-save.py /path/to/DevDerivedData scripts/check-annotation-copy-paste.swift`
+for the actual editor model's no-selection Copy fallback, annotation/picture routing, selection and
+one-step Undo/Redo. Both use disposable named pasteboards. Native keyboard/menu delivery and text-field
+Copy/Paste remain for the coordinator's approved live round.
+
 `RecordingDesktopFilterTests` checks the production app/window exclusion rules: ordinary Finder windows and wallpaper stay, only Finder's desktop-icon layer is excluded, and recording cleanup stays independent of the app-window preference. Actual ScreenCaptureKit pixels, system-host recreation, area geometry and picker accessibility require the approved live round.
 
 `RecordingAgentPromptTests` compiles the production input/transcript schemas, clip timeline, prompt planner and folder writer. It checks cuts and speed, corrected versus recognizer text, cue-only and silent recordings, action grouping, Markdown escaping and legacy decoding. Its disposable red/blue movie checks JPEG pixels, relative links, collision handling, mismatched duration and cancellation cleanup. It does not run speech recognition, the full Studio renderer, Finder or clipboard actions.
