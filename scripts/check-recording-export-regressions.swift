@@ -392,6 +392,125 @@ struct RecordingExportRegressionChecks {
         }
     }
 
+    static func musicDelivery(in directory: URL) async throws {
+        print("CHECK: preparing mic/camera/MP3 delivery fixture")
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("music-delivery.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        let video = directory.appendingPathComponent("delivery-screen.mov")
+        let mic = directory.appendingPathComponent("delivery-mic.wav")
+        try await movie(at: video)
+        try await movie(at: session.cameraURL, colorAt: { _ in CGColor(red: 0.8, green: 0.1, blue: 0.1, alpha: 1) })
+        print("CHECK: screen and camera fixtures encoded")
+        try audioTone(at: mic, frequency: 220, active: { (1...2).contains($0) })
+        let composition = AVMutableComposition()
+        for url in [video, mic] {
+            let asset = AVURLAsset(url: url)
+            for track in try await asset.load(.tracks) {
+                let destination = composition.addMutableTrack(withMediaType: track.mediaType, preferredTrackID: kCMPersistentTrackID_Invalid)!
+                try destination.insertTimeRange(CMTimeRange(start: .zero, duration: CMTime(value: 8, timescale: 1)), of: track, at: .zero)
+            }
+        }
+        try await AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough)!.export(to: session.screenURL, as: .mov)
+        print("CHECK: mic-only screen master muxed")
+        var manifest = CaptureManifest()
+        manifest.duration = 8; manifest.pixelWidth = 320; manifest.pixelHeight = 180
+        manifest.includesMicrophone = true; manifest.cameraWidth = 320; manifest.cameraHeight = 180
+        try session.writeCaptureManifest(manifest)
+        var settings = VideoCompressionSettings()
+        settings.container = .mp4; settings.codec = .h264; settings.resolution = .p720
+        settings.frameRate = .fps30; settings.motionBlurEnabled = false; settings.exportsGIF = false
+        let document = RecordingEditDocument(style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [],
+            clipTimeline: .init(segments: [.init(sourceStart: 0, sourceEnd: 3)]), exportSettings: settings)
+        try session.writeEditDocument(document)
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        print("CHECK: Studio model loaded, error=\(model.loadError ?? "none")")
+        let mp3 = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("ScreendropTests/Fixtures/music-660-stereo.mp3")
+        model.setBackgroundMusic(fileURL: mp3, displayName: "Stereo MP3 tone", credit: nil, startOffset: 0)
+        try await until { !model.hasRunningWork }
+        try check(model.hasCameraVideo && model.backgroundMusic != nil && model.backgroundMusicError == nil,
+            "MP3/mic/camera fixture did not load")
+        model.flushDraft()
+        print("CHECK: MP3 imported and Studio draft flushed")
+        var failures: [String] = []
+        func verify(_ url: URL, _ label: String, expectsMusic: Bool = true) async throws {
+            let levels = try await audioLevels(at: url, time: 0.2, length: 0.2, frequencies: [660])
+            let present = levels[0] > 0.025
+            print("\(present == expectsMusic ? "PASS" : "FAIL"): \(label), music amplitude=\(levels[0])")
+            if present != expectsMusic { failures.append(label) }
+            let underVoice = try await audioLevels(at: url, time: 1.3, length: 0.2, frequencies: [220, 660])
+            try check(underVoice[0] > 0.1, "\(label) lost the microphone")
+            if expectsMusic, present {
+                try check(underVoice[1] > 0.004 && underVoice[1] < levels[0] * 0.4, "\(label) lost MP3 ducking")
+            }
+            let frame = try await pixels(in: url, at: 0.2)
+            let cameraPixels = stride(from: 0, to: frame.count, by: 4).filter {
+                frame[$0] > 100 && Int(frame[$0]) > Int(frame[$0 + 1]) * 2 && Int(frame[$0]) > Int(frame[$0 + 2]) * 2
+            }.count
+            try check(cameraPixels > 1000, "\(label) lost the camera bubble")
+        }
+        do {
+            let fresh = try await RecordingStudioExporter().export(model.makeExportConfiguration(), progress: { _ in })
+            defer { try? FileManager.default.removeItem(at: fresh) }
+            try await verify(fresh, "fresh Studio-model MP4 720p with mic, camera and stereo MP3")
+        } catch {
+            print("FAIL: fresh Studio-model MP4 threw \(error)")
+            failures.append("fresh Studio-model MP4 render error")
+        }
+        do {
+            let upload = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+            try await verify(upload, "fresh upload-path movie with MP3 from the Studio draft")
+        } catch {
+            print("FAIL: fresh upload-path movie threw \(error)")
+            failures.append("fresh upload-path render error")
+        }
+        session.removeFinalVideos()
+        model.exportSettings.exportsGIF = true
+        model.flushDraft()
+        let gifDocument = model.currentDocument()
+        let gifMovie = try await RecordingStudioExporter().export(model.makeExportConfiguration(), progress: { _ in })
+        try await verify(gifMovie, "GIF intermediate deliberately omits music", expectsMusic: false)
+        try session.installFinalVideo(movingFrom: gifMovie, renderedFrom: gifDocument)
+        model.exportSettings.exportsGIF = false
+        try check(!RecordingSession.differsOnlyByExportContainer(gifDocument, model.currentDocument()),
+            "GIF and movie settings were treated as identical media")
+        let cached = model.freshDeliverableURL()
+        let movie = if let cached { cached } else {
+            try await RecordingStudioExporter().export(model.makeExportConfiguration(), progress: { _ in })
+        }
+        defer { if cached == nil { try? FileManager.default.removeItem(at: movie) } }
+        let saved = directory.appendingPathComponent("studio-gif-to-mp4.mp4")
+        try await VideoFileActions.save(from: movie, to: saved)
+        try await verify(saved, "Studio-model MP4 after a cached GIF intermediate")
+        model.flushDraft()
+        let afterGIF = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+        try await verify(afterGIF, "upload-path MP4 after a cached GIF intermediate")
+        session.removeFinalVideos()
+        model.exportSettings.exportsGIF = true
+        model.flushDraft()
+        let withGIFPreference = try await RecordingSessionRenderer.ensureDeliverable(for: session)
+        try await verify(withGIFPreference, "upload movie while GIF export preference is on")
+        try check(model.exportSettings.effectiveExportsGIF, "Movie delivery changed the user's GIF export preference")
+        try check(session.loadRenderStamp()?.exportSettings?.effectiveExportsGIF == false,
+            "Movie delivery cached the wrong render identity")
+        model.flushDraft()
+        try check(session.freshFinalURL(matching: model.currentDocument()) != nil,
+            "Draft flushing invalidated the correct movie render")
+        try check(model.freshDeliverableURL(forGIFExport: true) == nil,
+            "GIF export reused the music-bearing movie render")
+        let sharedConfiguration = try model.makeExportConfiguration(settings: model.currentDocument().forVideoRendering.exportSettings)
+        let studioShare = try await RecordingStudioExporter().export(sharedConfiguration, progress: { _ in })
+        defer { try? FileManager.default.removeItem(at: studioShare) }
+        try await verify(studioShare, "Studio upload configuration while GIF export preference is on")
+        var remux = model.currentDocument().forVideoRendering
+        remux.exportSettings?.container = .mov
+        try check(RecordingSession.differsOnlyByExportContainer(remux, session.loadRenderStamp()),
+            "Container-only reuse stopped working")
+        try check(failures.isEmpty, "Music delivery failures: \(failures.joined(separator: "; "))")
+    }
+
     static func backgroundMusicMixing(in directory: URL) async throws {
         func tone(_ url: URL, frequency: Float, duration: Double = 8, active: (Double) -> Bool = { _ in true }) throws {
             let format = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
@@ -993,10 +1112,15 @@ struct RecordingExportRegressionChecks {
         let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
         let support = ScreendropStorage.applicationSupportDirectory.resolvingSymlinksInPath().path
         try check(home == directory && support.hasPrefix(directory.path + "/"), "Foundation storage escaped isolated home")
+        if ProcessInfo.processInfo.environment["SCREENDROP_CHECK_MUSIC_DELIVERY_ONLY"] == "1" {
+            try await musicDelivery(in: directory)
+            return
+        }
         try await chapterAtPlayhead(in: directory)
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
         try await quickLookInstant(in: directory)
+        try await musicDelivery(in: directory)
         try await replacementVideoTiming(in: directory)
         try await backgroundMusicMixing(in: directory)
         try await backgroundMusicHistory(in: directory)

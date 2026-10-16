@@ -76,3 +76,11 @@ live music or open the picker. Audible streaming, native scrubbing/accessibility
 activation and the merged Studio receiver remain in the approved live round.
 
 `RecordingBackgroundMusicTests` checks stored defaults/validation, loop fill and start offsets, microphone RMS speech intervals, short-gap bridging, cut/speed mapping, attack/release and the final-second fade. The windowless recording regression harness also imports a synthetic picker download and deletes it immediately, restores saved music after discard, rejects invalid audio, checks legacy decoding and retained files, and compares tone levels in the actual Studio preview composition, shared video and WAV export. It checks music under voice/system audio, source-mic ducking, looping from an offset, independent volume, exact cut duration and compatibility with Replace and Isolate Voice. Real voice/music quality, inspector layout, native accessibility activation, clipboard credit copying and picker integration remain for the coordinator's approved live round.
+
+That harness also checks a microphone-only recording with a camera and a generated
+44.1 kHz stereo MP3 through Studio's configuration/cache decisions and MP4 720p
+export, plus the shared upload renderer. It rejects a GIF intermediate as a movie
+cache, preserves music in upload movies while GIF export is selected, retains the
+correct movie cache through draft flushing, and keeps container-only reuse.
+Set `SCREENDROP_CHECK_MUSIC_DELIVERY_ONLY=1` to run just these delivery checks.
+It does not invoke export notifications, Finder, upload transport or live UI.

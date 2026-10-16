@@ -152,6 +152,13 @@ struct RecordingEditDocument: Codable, Equatable {
         self.redactions = redactions
     }
 
+    /// Uploads and shared deliverables are movies even when the export picker last chose GIF.
+    nonisolated var forVideoRendering: Self {
+        var document = self
+        document.exportSettings?.exportsGIF = false
+        return document
+    }
+
     var audioExportFormatValue: RecordingAudioFormat {
         audioExportFormat.flatMap(RecordingAudioFormat.init(rawValue:)) ?? .m4a
     }

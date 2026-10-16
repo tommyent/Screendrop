@@ -2566,8 +2566,9 @@ final class RecordingStudioModel {
         return .init(url: session.directoryURL.appendingPathComponent(settings.fileName), settings: settings)
     }
 
-    private func makeExportConfiguration() throws -> RecordingStudioExporter.Configuration {
-        let audioReplacementURL = try replacementAudioURLForExport(includeAudio: !exportSettings.removeAudio)
+    func makeExportConfiguration(settings: VideoCompressionSettings? = nil) throws -> RecordingStudioExporter.Configuration {
+        let settings = settings ?? exportSettings
+        let audioReplacementURL = try replacementAudioURLForExport(includeAudio: !settings.removeAudio)
         let reframe = makeReframeTrack()
         let captions = RecordingTranscript(words: transcriptWords, cues: subtitleCues).renderCaptions(in: clipTimeline)
         let fitContentAspect: CGFloat? =
@@ -2592,12 +2593,12 @@ final class RecordingStudioModel {
             canvasSize: basePreviewCanvasSize,
             videoCropRect: videoCropRect,
             clipTimeline: clipTimeline,
-            exportSettings: exportSettings,
+            exportSettings: settings,
             audioReplacementURL: audioReplacementURL,
             audioVolume: Double(audioVolume),
             isolatedMicrophoneURL: voiceIsolationEnabled && !hasReplacementAudio ? isolatedMicrophone?.url : nil,
             microphoneTrackID: microphoneTrackID,
-            backgroundMusic: backgroundMusicConfiguration(includeAudio: !exportSettings.removeAudio && !exportSettings.effectiveExportsGIF),
+            backgroundMusic: backgroundMusicConfiguration(includeAudio: !settings.removeAudio && !settings.effectiveExportsGIF),
             reframe: reframe,
             fitContentAspect: fitContentAspect,
             usesUniformPadding: exportAspect == .original,
@@ -2697,12 +2698,12 @@ final class RecordingStudioModel {
     /// The flattened deliverable when it provably matches the current
     /// in-memory edits - the render is stamped with the document that
     /// produced it. Both Export and Share can then skip the render entirely.
-    private var freshDeliverableURL: URL? {
+    func freshDeliverableURL(forGIFExport: Bool = false) -> URL? {
         // Measure the actual renderer during development comparisons, even
         // when this exact document already has a flattened deliverable.
         guard ProcessInfo.processInfo.environment["SCREENDROP_EXPORT_BYPASS_CACHE"] != "1" else { return nil }
         guard let session else { return nil }
-        return session.freshFinalURL(matching: currentDocument())
+        return session.freshFinalURL(matching: currentDocument(), forGIFExport: forGIFExport)
     }
 
     /// `recording_<date>_<time>`, not the session package's internal name.
@@ -2795,7 +2796,7 @@ final class RecordingStudioModel {
         // A fresh deliverable (e.g. right after a share) is byte-identical
         // to what this render would produce - same configuration builds
         // both - so exporting becomes a plain copy into the save folder.
-        if let cached = freshDeliverableURL {
+        if let cached = freshDeliverableURL(forGIFExport: exportSettings.effectiveExportsGIF) {
             let suggestedFileName = exportSuggestedFileName
             let settings = exportSettings
             startExportTask { [weak self] in
@@ -3150,18 +3151,19 @@ final class RecordingStudioModel {
 
         // A fresh deliverable (e.g. sharing again without edits) skips
         // the render and goes straight to upload.
-        let cachedDeliverable = freshDeliverableURL
+        let sharedDocument = currentDocument()
+        let videoDocument = sharedDocument.forVideoRendering
+        let cachedDeliverable = freshDeliverableURL()
         let configuration: RecordingStudioExporter.Configuration?
         do {
-            configuration = cachedDeliverable == nil ? try makeExportConfiguration() : nil
+            configuration = cachedDeliverable == nil ? try makeExportConfiguration(settings: videoDocument.exportSettings) : nil
         } catch {
             shareState = .failed(error.localizedDescription)
             return
         }
         let session = session
-        let sharedDocument = currentDocument()
         let sharedChapterData = try? RecordingChapterPlanner.shareData(chapters, through: clipTimeline, cues: subtitleCues, words: transcriptWords)
-        let renderedDocument = session == nil ? nil : sharedDocument
+        let renderedDocument = session == nil ? nil : videoDocument
         shareItemID = nil
         shareState = cachedDeliverable == nil ? .rendering(progress: 0) : .uploading
 
