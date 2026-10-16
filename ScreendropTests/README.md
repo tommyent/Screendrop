@@ -71,6 +71,8 @@ Chapter regressions also cover the half-second end margin, automatic names after
 
 Add-at-playhead checks in that harness cover corrected surviving narration after cuts/speed changes, transcript edits until a manual rename, numbered silence fallback before the next chapter, duplicate prevention, legacy numbered names, persistence and Undo/Redo. Hostless chapter tests also check numbered automatic fallbacks in Studio/share data without changing legacy names.
 
+Chapter-marker tests cover current-chapter boundaries and neighbour/end clamping in edited time. The recording harness checks local drag previews, one saved source-anchor move across cuts/speed changes, list updates, paused seeking, one-step Undo/Redo, reopen persistence and invalid/no-op moves. Native marker clicks, drags, tooltips, accessibility adjustment, crown hit priority, label truncation and zoom/scroll remain for the approved live round.
+
 `FreeToUseMusicTests` compiles the production API client, picker model and preview
 controller. Saved category/search JSON checks all category pages, ordered artist
 and tag pairs, premium filtering, media URL validation, credit text, search query

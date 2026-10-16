@@ -9,6 +9,24 @@ nonisolated struct RecordingChapter: Identifiable, Codable, Equatable, Sendable 
 }
 
 nonisolated enum RecordingChapterPlanner {
+    /// Chapters here are the sorted, visible chapters in edited timeline time.
+    static func current(_ chapters: [RecordingChapter], at time: TimeInterval, duration: TimeInterval) -> RecordingChapter? {
+        guard time.isFinite, duration.isFinite, time >= 0, time <= duration else { return nil }
+        return chapters.last { $0.start <= time }
+    }
+
+    static func clampedStart(id: UUID, proposed: TimeInterval, chapters: [RecordingChapter], duration: TimeInterval) -> TimeInterval? {
+        guard proposed.isFinite, duration.isFinite, duration > 0,
+              let index = chapters.firstIndex(where: { $0.id == id }) else { return nil }
+        // Stay clear of the mapper's 1 ms deduplication and half-second end margin.
+        let gap = 0.002
+        let lower = index > 0 ? chapters[index - 1].start + gap : 0
+        let upper = min(duration - 0.5 - gap,
+                        index + 1 < chapters.count ? chapters[index + 1].start - gap : duration)
+        guard lower.isFinite, upper.isFinite, lower <= upper else { return nil }
+        return min(max(proposed, lower), upper)
+    }
+
     static func title(from text: String) -> String {
         let clean = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let sentence = clean.prefix { !".!?。！？".contains($0) }

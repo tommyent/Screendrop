@@ -2165,6 +2165,17 @@ final class RecordingStudioModel {
         applyChapters(chapters.filter { $0.id != id }, actionName: "Remove Chapter")
     }
 
+    /// A marker drag previews locally; its release saves once through the Chapters edit path.
+    func moveChapter(id: UUID, to editorTime: TimeInterval) {
+        guard isLoaded, !hasRunningWork,
+              let time = RecordingChapterPlanner.clampedStart(id: id, proposed: editorTime,
+                  chapters: visibleChapters, duration: duration),
+              let index = chapters.firstIndex(where: { $0.id == id }) else { return }
+        var next = chapters
+        next[index].start = clipTimeline.sourceTime(at: time)
+        applyChapters(next, actionName: "Move Chapter")
+    }
+
     func jumpToChapter(_ chapter: RecordingChapter) {
         pause()
         seek(to: chapter.start)

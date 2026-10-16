@@ -2,6 +2,57 @@ import Foundation
 import Testing
 
 struct RecordingChapterTests {
+    @Test func currentChapterUsesEditedBoundariesAndHidesBeforeTheFirst() {
+        let chapters = [RecordingChapter(title: "Opening", start: 2), RecordingChapter(title: "Closing", start: 6)]
+        for time in [-1.0, 0, 1.999, 10.001, .nan, .infinity] {
+            #expect(RecordingChapterPlanner.current(chapters, at: time, duration: 10) == nil)
+        }
+        for time in [2.0, 3, 5.999] {
+            #expect(RecordingChapterPlanner.current(chapters, at: time, duration: 10)?.id == chapters[0].id)
+        }
+        for time in [6.0, 9.999, 10] {
+            #expect(RecordingChapterPlanner.current(chapters, at: time, duration: 10)?.id == chapters[1].id)
+        }
+        #expect(RecordingChapterPlanner.current([], at: 2, duration: 10) == nil)
+    }
+
+    @Test func chapterDragClampsBetweenNeighboursAndStaysVisibleAtTheEnd() throws {
+        let chapters = [RecordingChapter(title: "First", start: 1), RecordingChapter(title: "Middle", start: 3),
+                        RecordingChapter(title: "Last", start: 7)]
+        let clamp = { (index: Int, time: Double) in
+            RecordingChapterPlanner.clampedStart(id: chapters[index].id, proposed: time, chapters: chapters, duration: 10)
+        }
+        #expect(clamp(0, -100) == 0)
+        #expect(clamp(0, 100) == 2.998)
+        #expect(clamp(1, -100) == 1.002)
+        #expect(clamp(1, 100) == 6.998)
+        #expect(clamp(1, 5) == 5)
+        let end = try #require(clamp(2, 100))
+        var moved = chapters
+        moved[2].start = end
+        #expect(end < 9.5 && end > chapters[1].start)
+        #expect(RecordingChapterPlanner.mapped(moved, through: .full(sourceDuration: 10)).map(\.id) == chapters.map(\.id))
+        #expect(clamp(1, .nan) == nil && clamp(1, .infinity) == nil)
+        #expect(RecordingChapterPlanner.clampedStart(id: UUID(), proposed: 1, chapters: chapters, duration: 10) == nil)
+        #expect(RecordingChapterPlanner.clampedStart(id: chapters[0].id, proposed: 0, chapters: chapters, duration: 0.4) == nil)
+    }
+
+    @Test func movedChapterMapsBackToItsSurvivingSourceAnchor() throws {
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 2, speed: 2),
+                                                        .init(sourceStart: 4, sourceEnd: 8)])
+        let chapters = [RecordingChapter(title: "First", start: 0.5), RecordingChapter(title: "Middle", start: 5),
+                        RecordingChapter(title: "Last", start: 7)]
+        let visible = RecordingChapterPlanner.mapped(chapters, through: timeline)
+        let time = try #require(RecordingChapterPlanner.clampedStart(id: chapters[1].id, proposed: 1,
+                                                                     chapters: visible, duration: timeline.duration))
+        #expect(time == 1 && timeline.sourceTime(at: time) == 4)
+        var moved = chapters
+        moved[1].start = timeline.sourceTime(at: time)
+        let mapped = RecordingChapterPlanner.mapped(moved, through: timeline)
+        #expect(mapped.map(\.start) == [0.25, 1, 4])
+        #expect(RecordingChapterPlanner.current(mapped, at: 1, duration: timeline.duration)?.id == chapters[1].id)
+    }
+
     @Test func suggestsLongPausesAndPreservesExistingNames() {
         let cues = [RecordingSubtitleCue(start: 1, end: 3, text: "Corrected opening."),
                     RecordingSubtitleCue(start: 26, end: 28, text: "Export settings. More detail"),

@@ -1832,14 +1832,7 @@ private struct StudioTimelineEditor: View {
                 StudioTimelineHoverMarker(model: model, scale: scale, scrollX: scrollX)
             }
             .overlay {
-                StudioTimelinePlayhead(
-                    time: model.currentTime,
-                    scale: scale,
-                    scrollX: scrollX
-                ) { time in
-                    model.pause()
-                    model.seek(to: time)
-                }
+                StudioTimelineChapters(model: model, scale: scale, scrollX: scrollX)
             }
             .onChange(of: proxy.size.width, initial: true) { _, width in
                 viewportWidth = max(width, 1)
@@ -2280,14 +2273,107 @@ private struct StudioTimelineScale: Equatable {
     }
 }
 
+/// Map chapter names only when chapter/transcript edits change, not on playback ticks.
+private struct StudioTimelineChapters: View {
+    let model: RecordingStudioModel
+    let scale: StudioTimelineScale
+    let scrollX: CGFloat
+
+    var body: some View {
+        let chapters = model.visibleChapters
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                ForEach(chapters) { chapter in
+                    StudioTimelineChapterMarker(model: model, chapter: chapter, chapters: chapters,
+                                                scale: scale, scrollX: scrollX, viewportWidth: proxy.size.width)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+        }
+        .coordinateSpace(name: StudioTimelineChapterMarker.coordinateSpace)
+        .clipped()
+        // The crown stays above the marker controls, with its original, unclipped hit area.
+        .overlay {
+            StudioTimelinePlayhead(model: model, chapters: chapters, scale: scale, scrollX: scrollX)
+        }
+    }
+}
+
+private struct StudioTimelineChapterMarker: View {
+    let model: RecordingStudioModel
+    let chapter: RecordingChapter
+    let chapters: [RecordingChapter]
+    let scale: StudioTimelineScale
+    let scrollX: CGFloat
+    let viewportWidth: CGFloat
+    @State private var draftStart: TimeInterval?
+    @State private var grabOffset: CGFloat?
+
+    private static let hitWidth: CGFloat = 12
+    static let coordinateSpace = "studio.chapterMarker"
+
+    var body: some View {
+        let x = scale.x(for: draftStart ?? chapter.start) - scrollX
+        let visible = x >= 0 && x <= viewportWidth
+        Button {
+            model.jumpToChapter(chapter)
+        } label: {
+            Rectangle()
+                .fill(Color.orange)
+                .frame(width: 1, height: StudioTimelineMetrics.rulerHeight)
+                .frame(width: Self.hitWidth, height: StudioTimelineMetrics.rulerHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(chapter.title)
+        .accessibilityLabel("Chapter, \(chapter.title)")
+        .accessibilityValue(Text("\(chapter.start, format: .number.precision(.fractionLength(2))) seconds"))
+        .accessibilityHint("Activate to jump. Adjust to move the chapter start.")
+        .accessibilityAdjustableAction { direction in
+            model.pause()
+            switch direction {
+            case .increment: model.moveChapter(id: chapter.id, to: chapter.start + 1)
+            case .decrement: model.moveChapter(id: chapter.id, to: chapter.start - 1)
+            @unknown default: break
+            }
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.coordinateSpace))
+                .onChanged { value in
+                    if grabOffset == nil {
+                        grabOffset = value.startLocation.x - (scale.x(for: chapter.start) - scrollX)
+                        model.pause()
+                    }
+                    draftStart = clampedTime(at: value.location.x)
+                }
+                .onEnded { value in
+                    if let time = clampedTime(at: value.location.x) { model.moveChapter(id: chapter.id, to: time) }
+                    draftStart = nil
+                    grabOffset = nil
+                }
+        )
+        .disabled(!model.isLoaded || model.hasRunningWork)
+        .opacity(visible || grabOffset != nil ? 1 : 0)
+        .allowsHitTesting(visible || grabOffset != nil)
+        .offset(x: x - Self.hitWidth / 2,
+                y: StudioTimelineMetrics.playheadLaneHeight + StudioTimelineMetrics.rowSpacing)
+    }
+
+    private func clampedTime(at x: CGFloat) -> TimeInterval? {
+        RecordingChapterPlanner.clampedStart(id: chapter.id,
+            proposed: scale.time(forX: x + scrollX - (grabOffset ?? 0)),
+            chapters: chapters, duration: scale.duration)
+    }
+}
+
 /// Full-height playhead with a grabbable crown pin in the lane above the
 /// ruler. The crown is the only hit target - everywhere else the overlay
 /// passes clicks through to the tracks underneath.
 private struct StudioTimelinePlayhead: View {
-    let time: TimeInterval
+    let model: RecordingStudioModel
+    let chapters: [RecordingChapter]
     let scale: StudioTimelineScale
     let scrollX: CGFloat
-    let onScrub: (TimeInterval) -> Void
 
     fileprivate enum Metrics {
         static let crownWidth: CGFloat = 11
@@ -2300,6 +2386,7 @@ private struct StudioTimelinePlayhead: View {
     private static let coordinateSpace = "studio.playheadLane"
 
     var body: some View {
+        let time = model.currentTime
         GeometryReader { proxy in
             let width = max(proxy.size.width, 1)
             // Viewport space: the playhead overlay never scrolls, it just
@@ -2308,6 +2395,21 @@ private struct StudioTimelinePlayhead: View {
             let isVisible = x >= -Metrics.lineWidth && x <= width + Metrics.lineWidth
 
             ZStack(alignment: .topLeading) {
+                if isVisible, let chapter = RecordingChapterPlanner.current(chapters, at: time, duration: scale.duration) {
+                    let inset = Metrics.hitWidth / 2 + 4
+                    let right = max(0, width - x - inset)
+                    let left = max(0, x - inset)
+                    let useRight = right >= min(240, left)
+                    let labelWidth = min(240, useRight ? right : left)
+                    Text(chapter.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(width: labelWidth, height: StudioTimelineMetrics.playheadLaneHeight,
+                               alignment: useRight ? .leading : .trailing)
+                        .offset(x: useRight ? x + inset : x - inset - labelWidth)
+                        .allowsHitTesting(false)
+                }
                 Rectangle()
                     .fill(Color.accentColor)
                     .frame(
@@ -2336,7 +2438,8 @@ private struct StudioTimelinePlayhead: View {
                             coordinateSpace: .named(Self.coordinateSpace)
                         )
                         .onChanged { value in
-                            onScrub(scale.time(forX: value.location.x + scrollX))
+                            model.pause()
+                            model.seek(to: scale.time(forX: value.location.x + scrollX))
                         }
                     )
             }
