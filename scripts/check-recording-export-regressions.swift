@@ -222,6 +222,63 @@ struct RecordingExportRegressionChecks {
         print("PASS: Add at Playhead uses surviving corrected narration/source time, follows transcript edits until renamed, preserves legacy titles, bounds silence by the next chapter, persists and supports Undo/Redo")
     }
 
+    static func chapterMarkerDrag(in directory: URL) async throws {
+        let session = RecordingSession(directoryURL: directory.appendingPathComponent("chapter-marker-drag.screendroprec"))
+        try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
+        try await movie(at: session.screenURL)
+        let chapters = [RecordingChapter(title: "First", start: 0.5), RecordingChapter(title: "Middle", start: 5),
+                        RecordingChapter(title: "Last", start: 7)]
+        try session.updateProjectMetadata { $0.chapters = chapters }
+        let timeline = RecordingClipTimeline(segments: [.init(sourceStart: 0, sourceEnd: 2, speed: 2),
+                                                        .init(sourceStart: 4, sourceEnd: 8)])
+        try session.writeEditDocument(RecordingEditDocument(
+            style: RecordingStudioStyle(), zoomEnabled: false, zoomCues: [], clipTimeline: timeline
+        ))
+        let model = RecordingStudioModel(url: session.directoryURL)
+        defer { model.teardown() }
+        await model.load()
+        try check(model.isLoaded && model.visibleChapters.map(\.start) == [0.25, 2, 4], "Marker fixture did not load")
+        let stored = try Data(contentsOf: session.projectMetadataURL)
+        let edit = try Data(contentsOf: session.editDocumentURL)
+        var draft: Double?
+        for proposed in [-10.0, 20, 3, 1] {
+            draft = RecordingChapterPlanner.clampedStart(id: chapters[1].id, proposed: proposed,
+                                                        chapters: model.visibleChapters, duration: model.duration)
+        }
+        try check(model.chapters == chapters && !model.canUndo
+                  && Data(contentsOf: session.projectMetadataURL) == stored, "Drag previews mutated chapters or history")
+        guard let draft else { throw Failure(description: "Marker preview did not produce a start") }
+        model.moveChapter(id: chapters[1].id, to: draft) // One release after multiple local previews.
+        let moved = model.chapters
+        try check(moved[1].start == 4 && model.visibleChapters.map(\.start) == [0.25, 1, 4],
+                  "Marker release did not move to the surviving source anchor or update the list")
+        try check(model.chapterError == nil && session.loadProjectMetadata()?.chapters == moved,
+                  "Marker release was not immediately saved")
+        model.jumpToChapter(model.visibleChapters[1])
+        try check(model.currentTime == 1 && !model.isPlaying, "Marker activation did not seek paused")
+        model.undo()
+        try check(model.chapters == chapters && session.loadProjectMetadata()?.chapters == chapters
+                  && !model.canUndo && model.canRedo, "One Undo did not restore the whole drag")
+        model.redo()
+        try check(model.chapters == moved && session.loadProjectMetadata()?.chapters == moved && !model.canRedo,
+                  "One Redo did not restore the whole drag")
+        model.undo()
+        let undone = try Data(contentsOf: session.projectMetadataURL)
+        model.moveChapter(id: chapters[1].id, to: .nan)
+        model.moveChapter(id: UUID(), to: 1)
+        model.moveChapter(id: chapters[1].id, to: 2)
+        try check(model.chapters == chapters && !model.canUndo && model.canRedo
+                  && Data(contentsOf: session.projectMetadataURL) == undone, "Invalid or unchanged moves added history or saved")
+        try check(Data(contentsOf: session.editDocumentURL) == edit, "Chapter move changed the render document")
+        model.redo()
+        let reopened = RecordingStudioModel(url: session.directoryURL)
+        defer { reopened.teardown() }
+        await reopened.load()
+        try check(reopened.chapters == moved && reopened.visibleChapters.map(\.start) == [0.25, 1, 4],
+                  "Reopening lost the moved marker")
+        print("PASS: chapter marker previews leave metadata/history unchanged; one release saves the cut/speed source anchor, updates the list, seeks paused, survives reopen and uses one Undo/Redo; invalid/no-op moves preserve history and render edits")
+    }
+
     static func captionPixels(in directory: URL) async throws {
         let session = RecordingSession(directoryURL: directory.appendingPathComponent("fixture.screendroprec"))
         try FileManager.default.createDirectory(at: session.directoryURL, withIntermediateDirectories: false)
@@ -1116,6 +1173,7 @@ struct RecordingExportRegressionChecks {
             try await musicDelivery(in: directory)
             return
         }
+        try await chapterMarkerDrag(in: directory)
         try await chapterAtPlayhead(in: directory)
         try await chapterRenameUndo(in: directory)
         try await unchangedRenderReuse(in: directory)
