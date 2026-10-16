@@ -758,6 +758,27 @@ final class AnnotationEditorModel {
 
     // MARK: - Tools and style
 
+    /// True when a selection handled Copy, including a failure that mustn't finish the editor.
+    func copySelectedAnnotations(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard !engine.selectedShapes.isEmpty else { return false }
+        if !engine.copySelection(to: pasteboard) { errorMessage = "Unable to copy the selected annotations." }
+        return true
+    }
+
+    func paste(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard !isCropping, imageSize != .zero else { return false }
+        if pasteboard.availableType(from: [AnnoEditor.annotationPasteboardType]) != nil {
+            commitTextEditing()
+            guard engine.pasteAnnotations(from: pasteboard) else {
+                errorMessage = "Unable to paste the copied annotations."
+                return false
+            }
+            syncStyleFromSelection()
+            return true
+        }
+        return pasteImage(from: pasteboard)
+    }
+
     /// Cmd-V with a picture on the pasteboard adds it as an annotation, selected (sd-eec). False
     /// without one, or with no screenshot to put it on, so the key passes on.
     func pasteImage(from pasteboard: NSPasteboard = .general) -> Bool {

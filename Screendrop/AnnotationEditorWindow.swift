@@ -137,7 +137,9 @@ struct AnnotationEditorWindow: View {
                 isEnabled: { !model.isBlockingCommit },
                 onDelete: model.deleteSelectedAnnotation,
                 onSave: saveEdits,
-                onCopy: copyAndFinishEditing,
+                onCopy: {
+                    if !model.copySelectedAnnotations() { copyAndFinishEditing() }
+                },
                 onUndo: model.undo,
                 onRedo: model.redo,
                 onSelectAll: model.selectAllAnnotations,
@@ -156,7 +158,7 @@ struct AnnotationEditorWindow: View {
                 isCropping: { model.isCropping },
                 onCopyColor: probe.copyHovered,
                 onPaste: {
-                    guard model.pasteImage() else { return false }
+                    guard model.paste() else { return false }
                     probe.isPicking = false
                     probe.isMeasuringTool = false
                     return true
@@ -536,7 +538,7 @@ struct AnnotationEditorWindow: View {
         }
     }
 
-    /// Cmd-C: saves and closes, then puts the finished image - annotations
+    /// Cmd-C without a selection: saves and closes, then puts the finished image - annotations
     /// included - on the clipboard whatever the auto-copy setting, for a
     /// capture, mark up, paste loop that never touches the mouse.
     private func copyAndFinishEditing() {

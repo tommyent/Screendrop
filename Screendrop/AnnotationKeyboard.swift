@@ -25,7 +25,7 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
     let isCropping: () -> Bool
     /// Tab: copies the colour under the pointer; false when it isn't over the image.
     let onCopyColor: () -> Bool
-    /// Cmd-V: adds a pasted picture; false without one, so the key passes on (sd-eec).
+    /// Cmd-V: pastes annotations or a picture; false without either so the key passes on.
     let onPaste: () -> Bool
     /// A held arrow key measures (an axis); its release, or the window
     /// losing focus, ends that (nil). Returns whether the key was used.
@@ -43,6 +43,10 @@ struct AnnotationKeyCommandHandler: NSViewRepresentable {
 
     func updateNSView(_ nsView: AnnotationKeyCommandHandlerView, context: Context) {
         apply(to: nsView)
+    }
+
+    static func dismantleNSView(_ nsView: AnnotationKeyCommandHandlerView, coordinator: ()) {
+        nsView.detachClipboardResponder()
     }
 
     private func apply(to view: AnnotationKeyCommandHandlerView) {
@@ -99,9 +103,18 @@ final class AnnotationKeyCommandHandlerView: NSView {
     private var localKeyMonitor: Any?
     private var localKeyUpMonitor: Any?
     private var resignKeyObserver: NSObjectProtocol?
+    private let clipboardResponder = AnnotationClipboardResponder()
+    private weak var clipboardWindow: NSWindow?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        detachClipboardResponder()
+        if let window {
+            clipboardResponder.owner = self
+            clipboardResponder.nextResponder = window.nextResponder
+            window.nextResponder = clipboardResponder
+            clipboardWindow = window
+        }
         updateLocalKeyMonitor()
         // A key released while another window has focus never reaches us.
         if let resignKeyObserver { NotificationCenter.default.removeObserver(resignKeyObserver) }
@@ -110,6 +123,19 @@ final class AnnotationKeyCommandHandlerView: NSView {
                 MainActor.assumeIsolated { self?.endMeasuring() }
             }
         }
+    }
+
+    func detachClipboardResponder() {
+        var previous: NSResponder? = clipboardWindow
+        while let next = previous?.nextResponder {
+            if next === clipboardResponder {
+                previous?.nextResponder = clipboardResponder.nextResponder
+                break
+            }
+            previous = next
+        }
+        clipboardResponder.nextResponder = nil
+        clipboardWindow = nil
     }
 
     private func endMeasuring() {
@@ -412,5 +438,26 @@ final class AnnotationKeyCommandHandlerView: NSView {
         case "n": return .numberedCircle
         default: return nil
         }
+    }
+}
+
+/// Native Edit-menu actions arrive after the window's text responders have had first refusal.
+final class AnnotationClipboardResponder: NSResponder, NSUserInterfaceValidations {
+    weak var owner: AnnotationKeyCommandHandlerView?
+
+    private var isEnabled: Bool {
+        owner?.window?.isKeyWindow == true && owner?.isEnabled?() != false && owner?.isCropping?() != true
+    }
+
+    @objc func copy(_ sender: Any?) {
+        if isEnabled { owner?.onCopy?() }
+    }
+
+    @objc func paste(_ sender: Any?) {
+        if isEnabled { _ = owner?.onPaste?() }
+    }
+
+    func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        isEnabled
     }
 }
